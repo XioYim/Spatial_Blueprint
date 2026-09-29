@@ -20,6 +20,14 @@ public class S2C_BlueprintChunkMessage {
     /** Safe chunk size well below Minecraft's 1 MB custom-payload cap. */
     public static final int CHUNK_SIZE = 512_000;
 
+    /**
+     * Maximum accepted chunk count (~125 MB in total), comfortably above the 64 MB
+     * {@code BlueprintStorage.MAX_FILE_BYTES} ceiling. Guards {@link #decode} and
+     * {@link ClientBlueprintCache#receiveChunk} against a packet that declares a huge
+     * chunk count purely to force a large allocation.
+     */
+    public static final int MAX_TOTAL_CHUNKS = 256;
+
     private final String blueprintId;
     private final int    chunkIndex;
     private final int    totalChunks;
@@ -45,6 +53,18 @@ public class S2C_BlueprintChunkMessage {
         int    chunkIndex  = buf.readVarInt();
         int    totalChunks = buf.readVarInt();
         int    length      = buf.readVarInt();
+        if (totalChunks < 1 || totalChunks > MAX_TOTAL_CHUNKS) {
+            throw new io.netty.handler.codec.DecoderException(
+                    "Blueprint chunk count out of range: " + totalChunks);
+        }
+        if (chunkIndex < 0 || chunkIndex >= totalChunks) {
+            throw new io.netty.handler.codec.DecoderException(
+                    "Blueprint chunk index out of range: " + chunkIndex + "/" + totalChunks);
+        }
+        if (length < 0 || length > CHUNK_SIZE || length > buf.readableBytes()) {
+            throw new io.netty.handler.codec.DecoderException(
+                    "Blueprint chunk length out of range: " + length);
+        }
         byte[] data        = new byte[length];
         buf.readBytes(data);
         return new S2C_BlueprintChunkMessage(id, chunkIndex, totalChunks, data);

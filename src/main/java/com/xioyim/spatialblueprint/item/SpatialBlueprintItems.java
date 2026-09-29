@@ -31,8 +31,17 @@ public class SpatialBlueprintItems {
     public static final RegistryObject<Item> ENGINEERING_BLUEPRINT = ITEMS.register("engineering_blueprint",
             () -> new EngineeringBlueprintItem(new Item.Properties().stacksTo(1)));
 
-    public static final RegistryObject<Item> PROJECT_BLUEPRINT = ITEMS.register("project_blueprint",
-            () -> new ProjectBlueprintItem(new Item.Properties()));
+    /** 奖励蓝图：投影蓝图的特殊变体，OP 专属创建，免费放置、用后销毁。 */
+    public static final RegistryObject<Item> REWARD_BLUEPRINT = ITEMS.register("reward_blueprint",
+            () -> new RewardBlueprintItem(new Item.Properties().stacksTo(1)));
+
+    public static final RegistryObject<Item> PUBLIC_PROJECT_BLUEPRINT =
+            ITEMS.register("public_project_blueprint",
+                    () -> new PublicProjectBlueprintItem(new Item.Properties()));
+
+    public static final RegistryObject<Item> PRIVATE_PROJECT_BLUEPRINT =
+            ITEMS.register("private_project_blueprint",
+                    () -> new PrivateProjectBlueprintItem(new Item.Properties()));
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

@@ -19,7 +19,7 @@ import java.util.UUID;
  * <pre>
  * config/spatial_blueprint/projects/{project-uuid}/
  *   project.dat                     ← ProjectData 序列化（与蓝图格式无关，不受影响）
- *   {index}_{eng-uuid}.litematic    ← 子工程（工程蓝图格式，BlueprintData，litematic 兼容 NBT）
+ *   {eng-uuid}.litematic            ← 子工程（工程蓝图格式，BlueprintData，litematic 兼容 NBT）
  * </pre>
  *
  * <p>所有写操作先写临时文件再原子移动，确保文件不被损坏。</p>
@@ -55,9 +55,9 @@ public class ProjectStorage {
         return projectDir(projectId).resolve("project.dat");
     }
 
-    /** 返回子工程文件路径：{index}_{eng-uuid}.litematic */
-    public static Path entryDatPath(UUID projectId, int index, UUID engId) {
-        return projectDir(projectId).resolve(index + "_" + engId + ".litematic");
+    /** 返回子工程文件路径：{eng-uuid}.litematic（不带 index，见 saveEntry 注释）。 */
+    public static Path entryDatPath(UUID projectId, UUID engId) {
+        return projectDir(projectId).resolve(engId + ".litematic");
     }
 
     // ── 写 project.dat ────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ public class ProjectStorage {
         Path file = projectDatPath(projectId);
         if (!Files.exists(file)) return null;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             return ProjectData.deserialize(tag);
         } catch (Exception e) {
             SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to load project {}: {}", projectId, e.getMessage());
@@ -93,27 +93,48 @@ public class ProjectStorage {
         return Files.exists(projectDatPath(projectId));
     }
 
+    /**
+     * 扫 {@code projects/} 下所有带 project.dat 的目录，返回其 UUID。
+     * 目录名不是合法 UUID 的（手工拷进来的杂物）跳过不报错。
+     */
+    public static java.util.List<UUID> listProjectIds() {
+        java.util.List<UUID> ids = new java.util.ArrayList<>();
+        java.io.File[] dirs = root().toFile().listFiles(java.io.File::isDirectory);
+        if (dirs == null) return ids;
+        for (java.io.File dir : dirs) {
+            UUID id;
+            try {
+                id = UUID.fromString(dir.getName());
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            if (projectExists(id)) ids.add(id);
+        }
+        return ids;
+    }
+
     // ── 写子工程文件（从工程蓝图 BlueprintData 复制）────────────────────────
 
     /**
      * 将工程蓝图数据写入项目子工程文件。
-     * 文件名格式：{index}_{eng-uuid}.litematic
+     * 文件名格式：{eng-uuid}.litematic
      *
      * @param projectId 目标项目 UUID
-     * @param index     子工程序号（1-based）
      * @param engId     工程蓝图的原始 UUID（用于文件名）
      * @param data      工程蓝图数据
      * @return 实际写入的文件名（不含路径），供存入 EntryData.filename
      */
-    public static String saveEntry(UUID projectId, int index, UUID engId, BlueprintData data) {
-        String filename = index + "_" + engId + ".litematic";
-        Path file = projectDir(projectId).resolve(filename);
+    public static String saveEntry(UUID projectId, UUID engId, BlueprintData data) {
+        // 文件名只用 engUuid，不带 index —— 删除条目后重新编号会让文件名与 index
+        // 对不上，index 只存在 EntryData 里。
+        String filename = engId + ".litematic";
+        Path file = entryDatPath(projectId, engId);
         try {
             Files.createDirectories(projectDir(projectId));
             writeAtomic(data.serialize(), file);
-            SpatialBlueprintMod.LOGGER.debug("[ProjectStorage] Saved entry {} → {}", index, file);
+            SpatialBlueprintMod.LOGGER.debug("[ProjectStorage] Saved entry {} → {}", engId, file);
         } catch (IOException e) {
-            SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to save entry {}/{}: {}", projectId, index, e.getMessage());
+            SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to save entry {}/{}: {}", projectId, engId, e.getMessage());
         }
         return filename;
     }
@@ -123,12 +144,50 @@ public class ProjectStorage {
         Path file = projectDir(projectId).resolve(filename);
         if (!Files.exists(file)) return null;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             return BlueprintData.deserialize(tag);
         } catch (Exception e) {
             SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to load entry {}/{}: {}", projectId, filename, e.getMessage());
             return null;
         }
+    }
+
+    /** 删除子工程文件；失败只记 error 不抛（条目照样移除，避免留个删不掉的鬼条目）。 */
+    public static void deleteEntryFile(UUID projectId, String filename) {
+        if (filename == null || filename.isEmpty()) return;
+        try {
+            Files.deleteIfExists(projectDir(projectId).resolve(filename));
+            SpatialBlueprintMod.LOGGER.debug("[ProjectStorage] Deleted entry {}", filename);
+        } catch (IOException e) {
+            SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to delete entry {}/{}: {}",
+                    projectId, filename, e.getMessage());
+        }
+    }
+
+    // ── 删除整个项目（project.dat + 全部子工程文件）─────────────────────────
+
+    /**
+     * 删除项目目录及其全部内容。返回删除后目录是否已不存在 ——
+     * 目录本来就不在也算成功（目标状态达成）；个别文件删不掉时记 error 并返回 false。
+     */
+    public static boolean deleteProject(UUID projectId) {
+        Path dir = projectDir(projectId);
+        if (!Files.exists(dir)) return true;
+        try (java.util.stream.Stream<Path> walk = Files.walk(dir)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to delete {}: {}", path, e.getMessage());
+                }
+            });
+        } catch (IOException e) {
+            SpatialBlueprintMod.LOGGER.error("[ProjectStorage] Failed to walk project {}: {}", projectId, e.getMessage());
+            return false;
+        }
+        boolean gone = !Files.exists(dir);
+        if (gone) SpatialBlueprintMod.LOGGER.info("[ProjectStorage] Deleted project {}", projectId);
+        return gone;
     }
 
     // ── 原子写入 ──────────────────────────────────────────────────────────────

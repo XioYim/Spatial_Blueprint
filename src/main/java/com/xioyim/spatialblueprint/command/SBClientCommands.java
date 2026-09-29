@@ -35,14 +35,14 @@ public class SBClientCommands {
                         .then(Commands.literal("on").executes(ctx -> {
                             ClientPreviewSettings.setEnabled(true);
                             ctx.getSource().sendSuccess(
-                                    () -> Component.literal("§a[SBP] 已开启其他玩家蓝图预览显示"),
+                                    () -> Component.translatable("spatial_blueprint.client.preview.enabled"),
                                     false);
                             return 1;
                         }))
                         .then(Commands.literal("off").executes(ctx -> {
                             ClientPreviewSettings.setEnabled(false);
                             ctx.getSource().sendSuccess(
-                                    () -> Component.literal("§c[SBP] 已关闭其他玩家蓝图预览显示"),
+                                    () -> Component.translatable("spatial_blueprint.client.preview.disabled"),
                                     false);
                             return 1;
                         })))
@@ -53,7 +53,7 @@ public class SBClientCommands {
                                     String name = StringArgumentType.getString(ctx, "player");
                                     ClientPreviewSettings.block(name);
                                     ctx.getSource().sendSuccess(
-                                            () -> Component.literal("§e[SBP] 已屏蔽玩家预览：" + name),
+                                            () -> Component.translatable("spatial_blueprint.client.preview.blocked", name),
                                             false);
                                     return 1;
                                 })))
@@ -64,7 +64,7 @@ public class SBClientCommands {
                                     String name = StringArgumentType.getString(ctx, "player");
                                     ClientPreviewSettings.unblock(name);
                                     ctx.getSource().sendSuccess(
-                                            () -> Component.literal("§a[SBP] 已解除屏蔽：" + name),
+                                            () -> Component.translatable("spatial_blueprint.client.preview.unblocked", name),
                                             false);
                                     return 1;
                                 })))
@@ -73,11 +73,11 @@ public class SBClientCommands {
                     var list = ClientPreviewSettings.getBlockedPlayers();
                     if (list.isEmpty()) {
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§7[SBP] 屏蔽列表为空"),
+                                () -> Component.translatable("spatial_blueprint.client.blocklist.empty"),
                                 false);
                     } else {
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§e[SBP] 屏蔽列表：" + String.join(", ", list)),
+                                () -> Component.translatable("spatial_blueprint.client.blocklist", String.join(", ", list)),
                                 false);
                     }
                     return 1;
@@ -88,7 +88,7 @@ public class SBClientCommands {
                             new ArrayList<>(ClientOtherPreviewCache.all());
                     if (entries.isEmpty()) {
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§7[SBP] 当前范围内没有其他玩家的蓝图预览"),
+                                () -> Component.translatable("spatial_blueprint.client.no_previews"),
                                 false);
                         return 0;
                     }
@@ -96,7 +96,7 @@ public class SBClientCommands {
                         // Only one player — download directly
                         OtherPlayerDownloadScreen.downloadEntry(entries.get(0));
                         ctx.getSource().sendSuccess(
-                                () -> Component.literal("§a[SBP] 正在下载 " + entries.get(0).playerName + " 的蓝图数据..."),
+                                () -> Component.translatable("spatial_blueprint.client.downloading", entries.get(0).playerName),
                                 false);
                     } else {
                         // Multiple players — open selection screen
@@ -108,7 +108,7 @@ public class SBClientCommands {
                 .then(Commands.literal("clearcache").executes(ctx -> {
                     ClientBlueprintCache.clearAll();
                     ctx.getSource().sendSuccess(
-                            () -> Component.literal("§a[SBP] 已清除全部蓝图客户端缓存"),
+                            () -> Component.translatable("spatial_blueprint.client.cache_cleared"),
                             false);
                     return 1;
                 }))

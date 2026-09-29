@@ -25,7 +25,7 @@ public class OtherPlayerDownloadScreen extends Screen {
     private final List<ClientOtherPreviewCache.Entry> entries;
 
     public OtherPlayerDownloadScreen(List<ClientOtherPreviewCache.Entry> entries) {
-        super(Component.literal("选择要下载的蓝图预览"));
+        super(Component.translatable("spatial_blueprint.gui.download.title"));
         this.entries = entries;
     }
 
@@ -37,19 +37,19 @@ public class OtherPlayerDownloadScreen extends Screen {
             ClientOtherPreviewCache.Entry e = entries.get(i);
             int y = startY + i * 26;
             String label = e.playerName + "  §7[" + e.blueprintId.substring(0, Math.min(8, e.blueprintId.length())) + "...]";
-            addRenderableWidget(Button.builder(Component.literal("下载 — " + label), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("spatial_blueprint.gui.download.btn.download", label), b -> {
                 downloadEntry(e);
                 this.onClose();
             }).bounds(this.width / 2 - 110, y, 220, 20).build());
         }
-        addRenderableWidget(Button.builder(Component.literal("取消"), b -> this.onClose())
+        addRenderableWidget(Button.builder(Component.translatable("spatial_blueprint.gui.download.btn.cancel"), b -> this.onClose())
                 .bounds(this.width / 2 - 50, startY + entries.size() * 26 + 8, 100, 20).build());
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(graphics);
-        graphics.drawCenteredString(font, "选择要下载的蓝图预览", this.width / 2, this.height / 2 - (entries.size() * 26) / 2 - 18, 0xFFFFAA);
+        graphics.drawCenteredString(font, Component.translatable("spatial_blueprint.gui.download.title"), this.width / 2, this.height / 2 - (entries.size() * 26) / 2 - 18, 0xFFFFAA);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

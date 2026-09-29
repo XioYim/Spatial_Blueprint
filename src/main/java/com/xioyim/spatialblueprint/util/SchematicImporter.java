@@ -3,17 +3,13 @@ package com.xioyim.spatialblueprint.util;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import javax.annotation.Nullable;
-import net.minecraftforge.fml.loading.FMLPaths;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,7 +26,8 @@ import com.xioyim.spatialblueprint.SpatialBlueprintMod;
  *   <li>标准 Schematica 格式（Blocks + Data + TileEntities，YZX 顺序）</li>
  *   <li>AddBlocks 扩展（方块 ID 超过 255 的情况）</li>
  *   <li>TileEntity NBT 保留（箱子、熔炉等内容物）</li>
- *   <li>Entities 列表忽略（画/展示框暂不支持，因格式差异大）</li>
+ *   <li>Entities 列表导入（画/展示框等，只搬运、不过滤，过滤交给
+ *       {@code BlueprintSanitizer.filterEntitiesInPlace}，与 .nbt 同口径）</li>
  * </ul>
  *
  * <p>方块映射覆盖 1.12 所有常用方块（ID 0–252），未识别方块视为空气并计数输出到日志。
@@ -48,18 +45,6 @@ public final class SchematicImporter {
 
     // ── 公共入口 ─────────────────────────────────────────────────────────────
 
-    /** 扫描 .minecraft/schematics/ 目录，返回所有 .schematic 文件（按修改时间降序）。 */
-    public static List<File> listSchematics() {
-        File dir = new File(FMLPaths.GAMEDIR.get().toFile(), "schematics");
-        List<File> result = new ArrayList<>();
-        if (!dir.isDirectory()) return result;
-        File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".schematic"));
-        if (files != null) {
-            for (File f : files) result.add(f);
-            result.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-        }
-        return result;
-    }
 
     /**
      * 读取 .schematic 文件并转换为 BlueprintData。
@@ -67,28 +52,26 @@ public final class SchematicImporter {
      * @param file       .schematic 文件（gzip-NBT，MCEdit / Schematica 格式）
      * @param name       赋予蓝图的名称，为空时使用文件名
      * @param playerName 创建者名称
-     * @return 填充好的 BlueprintData，文件错误时返回 null
+     * @return 填充好的 BlueprintData
+     * @throws StructureImportException 带上具体失败原因的语言键，供界面显示
      */
-    @Nullable
-    public static BlueprintData readSchematic(File file, String name, String playerName) {
+    public static BlueprintData readSchematic(File file, String name, String playerName)
+            throws StructureImportException {
         if (!file.exists() || !file.isFile()) {
-            SpatialBlueprintMod.LOGGER.error("[SchematicImport] 文件不存在: {}", file);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.file_missing");
         }
 
         CompoundTag nbt;
         try (FileInputStream fis = new FileInputStream(file)) {
-            nbt = NbtIo.readCompressed(fis);
+            nbt = SafeNbtIo.readCompressed(fis);
         } catch (IOException e) {
-            SpatialBlueprintMod.LOGGER.error("[SchematicImport] 读取失败 {}: {}", file, e.getMessage());
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.read_failed", e);
         }
 
         // ── 检查必要字段 ─────────────────────────────────────────────────────
         if (!nbt.contains("Width") || !nbt.contains("Height") || !nbt.contains("Length")
                 || !nbt.contains("Blocks") || !nbt.contains("Data")) {
-            SpatialBlueprintMod.LOGGER.error("[SchematicImport] 缺少必要 NBT 字段: {}", file);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.not_schematic");
         }
 
         final int W = nbt.getShort("Width")  & 0xFFFF;
@@ -100,9 +83,7 @@ public final class SchematicImporter {
         final int expected    = W * H * L;
 
         if (blockIds.length != expected) {
-            SpatialBlueprintMod.LOGGER.error("[SchematicImport] 方块数组长度不匹配 {}: 期望 {} 实际 {}",
-                    file, expected, blockIds.length);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.not_schematic");
         }
 
         // AddBlocks：高位半字节扩展 ID 超过 255
@@ -189,13 +170,53 @@ public final class SchematicImporter {
             }
         }
 
+        // ── 实体：老格式单盒子、无区域，原点即相对原点，直接落相对坐标 ──
+        int countEntity = importEntities(nbt, data, W, H, L);
+
         data.materialList = MaterialList.fromBlueprintData(data);
 
         SpatialBlueprintMod.LOGGER.info(
-                "[SchematicImport] '{}' 导入完成: {}×{}×{} | normal={} dep={} late={} 忽略={}",
-                data.name, W, H, L, countNormal, countDep, countLate, countIgnored);
+                "[SchematicImport] '{}' 导入完成: {}×{}×{} | normal={} dep={} late={} entity={} 忽略={}",
+                data.name, W, H, L, countNormal, countDep, countLate, countEntity, countIgnored);
 
         return data;
+    }
+
+    /**
+     * 导入 {@code Entities} 列表。
+     *
+     * <p>类型取 {@code id}（没有就试 {@code Id}）；坐标优先 {@code TileX/Y/Z}，
+     * 没有就 floor({@code Pos})。只搬运、不过滤（见
+     * {@link StructureNbtImporter} 的同名方法注释）。</p>
+     */
+    private static int importEntities(CompoundTag nbt, BlueprintData data, int w, int h, int l) {
+        if (!nbt.contains("Entities", 9)) return 0;
+        ListTag entities = nbt.getList("Entities", 10);
+        int count = 0;
+        for (int i = 0; i < entities.size(); i++) {
+            CompoundTag e = entities.getCompound(i).copy();
+            String type = e.getString("id");
+            if (type.isEmpty()) type = e.getString("Id");
+            if (type.isEmpty()) continue;
+            int tx, ty, tz;
+            if (e.contains("TileX")) {
+                tx = e.getInt("TileX"); ty = e.getInt("TileY"); tz = e.getInt("TileZ");
+            } else if (e.contains("Pos", 9)) {
+                ListTag pos = e.getList("Pos", 6);
+                if (pos.size() < 3) continue;
+                tx = (int) Math.floor(pos.getDouble(0));
+                ty = (int) Math.floor(pos.getDouble(1));
+                tz = (int) Math.floor(pos.getDouble(2));
+            } else {
+                continue;
+            }
+            if (tx < 0 || ty < 0 || tz < 0 || tx >= w || ty >= h || tz >= l) continue;
+            e.remove("UUID");
+            data.entities.add(new BlueprintData.EntityEntry(
+                    tx, ty, tz, StructureNbtImporter.readFacing(e), type, e));
+            count++;
+        }
+        return count;
     }
 
     // ── 内部：BlockState 缓存 ────────────────────────────────────────────────

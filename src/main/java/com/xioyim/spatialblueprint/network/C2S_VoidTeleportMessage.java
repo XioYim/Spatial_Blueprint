@@ -7,6 +7,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.PacketDistributor;
@@ -42,9 +44,21 @@ public class C2S_VoidTeleportMessage {
             }
             if (stack == null) return;
 
-            // OP check (creative bypasses)
-            if (!player.isCreative() && !player.hasPermissions(2)) {
-                sendResult(player, false, "spatial_blueprint.gui.void_dimensional.btn.tp.no_perm");
+            // 传送权限：OP / 创造模式天然拥有，其余看 /sb tpperm 授予的名单
+            if (!com.xioyim.spatialblueprint.util.TeleportPermissions.canTeleport(player)) {
+                sendResult(player, false, "spatial_blueprint.message.teleport.no_permission");
+                return;
+            }
+
+            // 传送冷却（服务端强制，e77）：与客户端 6 秒置灰同口径，防连点刷落地保护效果
+            long cdLeft = com.xioyim.spatialblueprint.util.TeleportPermissions.tryAcquireTeleport(player);
+            if (cdLeft > 0) {
+                long secs = (cdLeft + 999L) / 1000L;
+                BlueprintNetwork.CHANNEL.send(
+                        PacketDistributor.PLAYER.with(() -> player),
+                        new S2C_OperationResult(false,
+                                "spatial_blueprint.message.teleport.cooldown",
+                                "spatial_blueprint.gui.teleport.cooldown", new Object[]{secs}));
                 return;
             }
 
@@ -78,6 +92,10 @@ public class C2S_VoidTeleportMessage {
             }
 
             player.teleportTo(destX, destY, destZ);
+            // L4：落点无安全检查，落地给 5 秒保护（抗性提升 5 / 缓降 / 抗火）
+            player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 4));
+            player.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 100, 0));
+            player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 100, 0));
         });
         ctx.get().setPacketHandled(true);
     }

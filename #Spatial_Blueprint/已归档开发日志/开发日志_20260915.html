@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spatial_Blueprint · 开发日志</title>
+<style>
+  :root{
+    --bg:#f5f5f8; --card:#ffffff; --ink:#1f2328; --muted:#6b7280; --line:#e6e6ee;
+    --accent:#6366f1; --accent-soft:#eef0fe; --accent-line:#c7cafc;
+    --code-bg:#f2f2f7; --ok:#15803d; --ok-soft:#e8f5ec; --warn:#b45309; --warn-soft:#fdf3e3;
+    --bad:#b91c1c; --bad-soft:#fdeaea;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1015; --card:#171922; --ink:#e6e6ee; --muted:#9a9db0; --line:#282b3a;
+      --accent:#818cf8; --accent-soft:#1c1e3a; --accent-line:#33376a;
+      --code-bg:#1e2130; --ok:#4ade80; --ok-soft:#12291b; --warn:#fbbf24; --warn-soft:#2a2212;
+      --bad:#f87171; --bad-soft:#2c1414;
+      --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:40px 20px 72px}
+  .hero{
+    position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; box-shadow:var(--shadow); padding:28px 30px 24px; overflow:hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; left:0; right:0; top:0; height:4px;
+    background:linear-gradient(90deg,var(--accent),#a5b4fc);
+  }
+  h1{margin:0 0 6px; font-size:26px; letter-spacing:.5px}
+  h1 .dot{color:var(--accent)}
+  .sub{color:var(--muted); font-size:13.5px}
+  .chips{margin-top:14px; display:flex; flex-wrap:wrap; gap:8px}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 11px; border-radius:999px;
+    font-size:12.5px; background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
+    font-variant-numeric:tabular-nums;
+  }
+  .chip.gray{background:var(--code-bg); color:var(--muted); border-color:var(--line)}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); padding:22px 26px; margin-top:18px;
+  }
+  h2{font-size:16.5px; margin:0 0 12px; padding-left:12px; line-height:1.5; border-left:4px solid var(--accent)}
+  p{margin:8px 0}
+  .muted{color:var(--muted); font-size:13.5px}
+  code{
+    font:.88em/1.6 ui-monospace,"Cascadia Code",Consolas,"JetBrains Mono",monospace;
+    background:var(--code-bg); border:1px solid var(--line); border-radius:6px; padding:1px 6px;
+  }
+  /* 一条日志 = 一个 <details class="entry">；没有目录，按编号与时间顺序往下追加 */
+  .entry{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); margin-top:14px; overflow:hidden;
+  }
+  .entry[open]{border-color:var(--accent-line)}
+  .entry > summary{
+    list-style:none; cursor:pointer; position:relative;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px 18px 14px 30px;
+  }
+  .entry > summary::-webkit-details-marker{display:none}
+  .entry > summary::before{
+    content:"▸"; position:absolute; left:12px; color:var(--accent); transition:transform .15s;
+  }
+  .entry[open] > summary::before{transform:rotate(90deg)}
+  .entry > summary:hover{background:var(--accent-soft)}
+  .eno{color:var(--accent); font-weight:700; font-size:12.5px; font-variant-numeric:tabular-nums; flex:0 0 auto}
+  .etitle{font-weight:600; font-size:15.5px}
+  .edate{margin-left:auto; color:var(--muted); font-size:12.5px; white-space:nowrap; font-variant-numeric:tabular-nums}
+  /* 状态标签：ok 已完成·已实测 / wait 已完成·待实测 / back 已回滚 / part 部分完成 / aux 辅助 AI 执行记录 */
+  .stag{font-size:11.5px; font-weight:500; border-radius:999px; padding:1px 9px; border:1px solid; white-space:nowrap}
+  .stag.ok{color:var(--ok); background:var(--ok-soft); border-color:var(--ok)}
+  .stag.wait{color:var(--warn); background:var(--warn-soft); border-color:var(--warn)}
+  .stag.back{color:var(--bad); background:var(--bad-soft); border-color:var(--bad)}
+  .stag.part{color:var(--accent); background:var(--accent-soft); border-color:var(--accent-line)}
+  .stag.aux{color:var(--muted); background:var(--code-bg); border-color:var(--line)}
+  .entry.aux{border-style:dashed}
+  .ebody{padding:2px 26px 20px; border-top:1px solid var(--line)}
+  .ebody ul,.ebody ol{margin:8px 0; padding-left:22px}
+  .ebody li{margin:3px 0}
+  .ebody ul li::marker{color:var(--accent)}
+  .ebody ol li::marker{color:var(--accent); font-weight:600}
+  .ebody .tail{color:var(--muted); font-size:13.5px; margin-top:10px; padding-top:8px; border-top:1px dashed var(--line); font-variant-numeric:tabular-nums}
+  .ebody .tail b{color:var(--ink)}
+  table{border-collapse:separate; border-spacing:0; width:100%; margin:4px 0; font-size:14px}
+  th,td{padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  thead th{background:var(--code-bg); color:var(--muted); font-weight:600; font-size:12.5px; letter-spacing:.4px}
+  thead th:first-child{border-top-left-radius:10px} thead th:last-child{border-top-right-radius:10px}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--accent-soft)}
+  footer{margin-top:26px; text-align:center; color:var(--muted); font-size:12.5px; line-height:2; font-variant-numeric:tabular-nums}
+  footer .sep{margin:0 8px; opacity:.5}
+  @media print{
+    :root{--bg:#fff; --shadow:none}
+    .wrap{max-width:none; padding:0}
+    .card,.hero,.entry{border-color:#ddd; box-shadow:none; break-inside:avoid}
+    .entry > summary::before{content:""}
+    .entry:not([open]) .ebody{display:block}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+    <h1>Spatial_Blueprint <span class="dot">·</span> 开发日志（2026-09-15 归档）</h1>
+    <div class="sub">2026-09-15 从 #Spatial_Blueprint\开发日志.html 移出的旧条目（主日志只保留首条 e01「本日志写法」与「规矩」）· 只读存档</div>
+    <div class="chips">
+      <span class="chip">共 15 条</span>
+      <span class="chip gray">归档：2026-09-15 19:44:27</span>
+    </div>
+  </header>
+
+<details class="entry" open id="e02">
+    <summary>
+      <span class="eno">02</span>
+      <span class="etitle">2026-08-12 前主要开发内容（记忆导出 project_context）</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-08-12 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<ul>
+  <li><code>block_substitutions.toml</code> 每次重启被覆盖 → 修复（<code>List.of</code> 改 <code>new ArrayList&lt;&gt;</code>）</li>
+  <li>拴绳结处理简化：不再捕获，允许自然掉落</li>
+  <li>材料清单附魔 NBT 修复（<code>itemNbtSamples</code> + <code>getDisplayStack</code>）</li>
+  <li>GUI 物品渲染防崩溃（<code>KNOWN_CRASH</code> 缓存）</li>
+  <li>选区与预览渲染系统（Outliner 包、ghost box、流体渲染）</li>
+  <li>全量国际化（lang key 迁移）</li>
+  <li>配置菜单与材料系统（多子页、批量材料转换、自动生成替换表）</li>
+  <li>检测报告系统（非法/危险/特殊实体检测、CaptureMode）</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e03">
+    <summary>
+      <span class="eno">03</span>
+      <span class="etitle">上一批改动（2026-09-05，同样未实机）</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-05 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p>详见 <code>最新开发日志.md</code>「次元蓝图容器内容不再被安全线倒空（2026-09-05）」。</p>
+<ul>
+  <li><code>BlueprintSanitizer</code>：安全项抽出 <code>applySafetyStripInPlace</code>（private）； <code>stripDangerousBlockNbt</code> 行为逐字不变（仍无条件倒容器，上传路径继续用它）； 新增 <code>stripDangerousBlockNbtKeepContents</code> —— 安全项照做，容器仅在 <code>containsIllegalItemDeep</code> 命中时整体倒空。</li>
+  <li><code>CaptureAreaMessage</code>：按 <code>msg.clearAfterCapture</code> 二选一，次元蓝图走 KeepContents 版本。</li>
+  <li>未改：实体侧（SANITIZE 仍清展示框物品与盔甲架装备）、路径 B（<code>C2S_VoidRecaptureMessage</code>）。</li>
+  <li><strong>未 bump mod_version</strong> —— 没动任何 wire 格式，无需重建双端。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e04">
+    <summary>
+      <span class="eno">04</span>
+      <span class="etitle">最近两批改动（compileJava + build exit 0；mod_version 2.4.1 → 2.5.0 → 2.6.0）</span>
+      <span class="stag wait">已完成 · 待实测</span>
+    </summary>
+    <div class="ebody">
+<h6>第二批：Create 超级胶水兼容（2026-09-09，→ 2.6.0）</h6>
+<ul>
+  <li>新增 <code>BlueprintConfig.BOX_ENTITIES</code>（默认 <code>["create:super_glue"]</code>）—— 「位置由 NBT 的 From/To 角点描述、而不是 Pos/TileXYZ」的实体。按注册 ID 字符串匹配， <strong>对 Create 零依赖</strong>（From/To 是纯 vanilla 的 double ListTag，反编译 Create 6.0.8 确认）。</li>
+  <li>捕获 <code>CaptureAreaMessage.captureBoxEntities</code>：From/To 转相对坐标； <strong>只收整盒都在选区内的</strong>，跨界的直接跳过（刻意取舍，不做 Create 那种裁剪）。</li>
+  <li>放置 <code>BlueprintPlacementHandler.placeBoxEntity</code>：变换回世界坐标，两条放置路径都接了。</li>
+  <li><code>BlueprintTransform</code> 新增 <code>cornerX</code>/<code>cornerZ</code>：<strong>角点公式不带 -1</strong>（方块跑 0..size-1， 角点跑 0..size），照抄方块版会让盒子偏一格。三种旋转已手工验算与方块版吻合。</li>
+  <li>没改 <code>EntityEntry</code> 结构与序列化格式；产物已验 5 个 class 的 client 引用 0 命中。</li>
+</ul>
+<h6>第一批：安全修复（2026-09-07，→ 2.5.0）</h6>
+<p>详见 <code>最新开发日志.md</code> 末节，以及只读审查报告 <code>安全审查_双端同步_20260907.md</code>。</p>
+<ul>
+  <li><strong>M1</strong>：6 个客户端缓存补 <code>ClientPlayerNetworkEvent.LoggingOut</code> 复位 —— <code>ClientConfigPermCache</code>(clear) / <code>ClientTeleportPermCache</code>(clear) / <code>ClientBlueprintCache</code>(clearAll) / <code>ClientLibraryCache</code>(invalidate) / <code>ClientMaterialSpaceCache</code>(clear) / <code>ClientOtherPreviewCache</code>(clear)。 前两个的 javadoc 早写了要复位，但一直没有调用点。 未动 <code>ClientPreviewSettings</code>（本地 json 持久化设置，跨会话保留是设计意图）。</li>
+  <li><strong>M2</strong>：新增 <code>BlueprintValidator.canManageBlueprint(player, blueprintId)</code> = 主人或 OP；无主蓝图只有 OP 能碰（对齐 <code>isOwnedBy</code> / <code>countSlots</code> 既定语义）。 接入 <code>C2S_SetWithdrawProperty</code>（原本零校验）、<code>C2S_DeleteBlueprintMessage</code> 非次元分支、 <code>C2S_RenameBlueprintMessage</code>（后两者原本只查 <code>isCreative()</code>，该检查<strong>保留</strong>）。 新增 key <code>spatial_blueprint.error.blueprint_not_owner</code>（zh_cn + en_us）。</li>
+  <li><strong>H1</strong>：<code>BlueprintNetwork.register()</code> 65 条消息全部绑定 <code>NetworkDirection</code> （新增 <code>c2s()</code> / <code>s2c()</code> 两个 helper）。改前是 5 参重载 = <code>Optional.empty()</code>， 而 Forge 的 <code>validatePacketDirection</code> 里 <code>expectedDirection.orElse(packetDirection)</code> 在 empty 时恒等于放行 —— 等于从来没校验过方向。 已验证：注册顺序与改前 diff <strong>65 条逐条一致</strong>；57 条带前缀的方向标注零不符； 8 条无前缀的都用 <code>getSender()</code> 确属 C2S；全仓 <code>sendToServer</code> 与 <code>CHANNEL.send</code> 的类名集合<strong>完全不重叠</strong>（没有双向消息，绑方向不会踢正常玩家）。</li>
+  <li><strong>H3</strong>：删掉按 <code>FMLEnvironment.dist</code>（物理端）分派的 <code>getBlueprintData</code> / <code>getMaterialList</code>，拆成显式的 <code>...Server</code>（读文件）/ <code>...Client</code>（读缓存）两组入口， 由编译器逼出全部 25 个调用点。tooltip 另开 <code>getMaterialListForTooltip</code> （按物理端二选一 —— 那里用物理端是对的，专服不渲染 tooltip）。</li>
+  <li><strong>蓝图库改名 bug</strong>：<code>BlueprintLibraryScreen.rebuildFiltered()</code> 的私人列表原本按 <code>creatorName</code> 认主，玩家改名后自己的蓝图会整批从列表消失。改为新增的 <code>isMineForListing()</code>：主判 <code>ownerUuid</code>，无主旧数据回退按名字（否则那批会集体消失）。 与 <code>isOwnerOfSelection()</code>（操作权限，无主一律 false）语义不同，javadoc 已写明别混用。 <code>myName()</code> 失去唯一调用者，一并删除。纯客户端改动。</li>
+  <li><strong>M1 / M2 / 改名 bug 不动 wire 格式；H1 动了</strong> —— mod_version 2.4.1 → <strong>2.5.0</strong>， 必须双端一起重建，不能只更一边。</li>
+</ul>
+<p>改前备份：<code>D:\Mods\项目备份\Spatial_Blueprint_20260907_214938</code> （SHA256 <code>CE3E90FB…B51D</code>，解压 + 5 个待改文件逐字哈希已验证，445 文件）。</p>
+      <p class="tail">迁入 2026-09-14 18:45:34</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e05">
+    <summary>
+      <span class="eno">05</span>
+      <span class="etitle">2026-09-10 二改：次元蓝图实体侧物品放行</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-10 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-10 二改：次元蓝图实体侧物品放行</strong>（盔甲架装备 / 展示框物品不再被 SANITIZE,销毁），并修掉展示框判定只查方块表、漏掉全部纯物品（刷怪蛋等）的口径漏洞。,<strong>已 bump 到 2.6.2、已构建、已部署到两个测试环境</strong>，测试清单已补第九组（42~47）。,<strong>未实机。</strong>,,<strong>2026-09-10：次元蓝图捕获的领地校验改为遵循 <code>denyCreativePlacementInProtectedArea</code></strong> （创造模式玩家不再无条件跳过），<strong>已 bump 到 2.6.1、已构建、已部署到两个测试环境</strong>， 测试清单已补第八组（36~41）。<strong>未实机</strong>。</p>
+<p><strong>2026-09-09：新增 Create 超级胶水兼容，mod_version 2.5.0 → 2.6.0</strong>， 已构建 <code>build/libs/spatial_blueprint-2.6.0.jar</code>，<strong>未实机</strong>。 含胶水的 Create 结构捕获后放置不再散架（只捕整盒在选区内的胶水）。</p>
+<p>在此之前的安全审查 11 条已修 4 条（M1 / M2 / H1 / H3）+ 一个蓝图库改名 bug， <strong>同样全部未实机</strong>（专服启动那半条除外，2026-09-08 已验）。 剩 H2 / L1~L4：M3 已于 2026-09-11 实现，其余等拍板。</p>
+<p>⚠ 现在待实机的是<strong>两批改动</strong>，测试清单已合并成一份 30+5 项。</p>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e06">
+    <summary>
+      <span class="eno">06</span>
+      <span class="etitle">一改：捕获领地校验（2026-09-10，compileJava exit 0，未 bump 版本）</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-09-10 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p>详见 <code>最新开发日志.md</code> 末节「次元蓝图捕获的领地校验改为遵循配置（2026-09-10）」。</p>
+<ul>
+  <li>症状：次元蓝图捕获清世界方块那步硬编码 <code>!isCreative()</code>，创造模式跳过领地检查 —— 开放创造的服上谁都能把别人领地里的建筑整片搬走，而同一片区域他<strong>放置</strong>却会被拦。</li>
+  <li>改法：<code>CaptureAreaMessage:253</code> 与 <code>C2S_VoidRecaptureMessage:138</code> 两处改成 <code>!isCreative() || DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA.get()</code>，与放置侧一致。</li>
+  <li><strong>复用同一开关，没加新配置项</strong>；键名保持 <code>denyCreativePlacementInProtectedArea</code> 以免动已有 toml。BlueprintConfig 的 comment 与 zh_cn/en_us 的 desc 已同步说明它现在 覆盖「放置 + 次元捕获」两个方向。</li>
+  <li>已查清别的蓝图没有同样的洞：会破坏世界的只有这两条捕获 + 放置侧， 空间/投影/工程/子工程/奖励捕获只读不破坏，四个结构导入器不碰世界。</li>
+  <li>⚠ 连带：创造玩家现在也要逐格 post BreakEvent（遍历整个包围盒，上限 1.6M 格）。 开放创造的服大范围搬家会变慢，嫌慢就把那个开关关掉。</li>
+  <li>✅ <strong>已 bump 到 2.6.1 并部署</strong>（2026-09-10 12:56）：build exit 0， <code>spatial_blueprint-2.6.1.jar</code> = 1,056,804 字节 / SHA256 <code>E759A9F6</code>…， jar 内 <code>mods.toml</code> 已确认 <code>version="2.6.1"</code>；两个环境与源文件哈希三份一致。 旧 2.6.0 移出到 <code>D:Mods项目备份替换出的旧jar60910_125635</code>（可回滚）。 ⚠ 协议版本 = mod 版本，2.6.0 与 2.6.1 <strong>不能混用</strong>，两边必须一起换（已一起换）。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e07">
+    <summary>
+      <span class="eno">07</span>
+      <span class="etitle">二改：实体侧物品放行（2026-09-10 下午，compileJava exit 0，未 bump）</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-09-10 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p>详见 <code>最新开发日志.md</code> 末节「次元蓝图实体侧物品放行 + 全路径口径统一」。</p>
+<ul>
+  <li><strong>销毁 bug</strong>：SANITIZE 无条件剥盔甲架装备/展示框物品，而次元蓝图的清除阶段又, 无条件删这些实体 —— 装备是被<strong>销毁</strong>，不是没带走。空间蓝图不清世界，没这问题。,- 实体三分支改为与方块容器严格对齐（<code>stripContents</code> 无条件清 /, <code>stripEntityBad</code> 含非法才倒 / 否则原样保留）；展示框、盔甲架、驮兽三处同一个条件。,- 新增 <code>BlueprintSanitizer.sanitizeEntityItemsInPlace</code>（比 <code>sanitizeMobInventoryInPlace</code>, 多一个 <code>Item</code> 键，覆盖展示框），后者改为委托它。,- <strong>口径漏洞</strong>：<code>isItemFrameItemDangerous</code> 原来把物品 id 拿去查<strong>方块表</strong>，, 刷怪蛋/命令方块矿车/调试棒/知识之书查出来都是 AIR → 一律放行。, 同一个刷怪蛋放箱子被拦、挂展示框能过。已改为先问 <code>isIllegalItemId</code>。, ⚠ 这是收紧，跟着变严的还有：捕获报告的危险扫描、工程/子工程捕获、上传净化。,- 路径 B（<code>C2S_VoidRecaptureMessage</code>）原本对实体物品完全不过滤，现在非 OP 同口径。,- 生物白名单与非法方块清单<strong>没动</strong>（那两个不是物品，语义不变）。,- ✅ <strong>已 bump 到 2.6.2 并部署</strong>（2026-09-10 13:51）：build exit 0，, 1,056,987 字节 / SHA256 <code>A8147D87</code>…，jar 内 <code>mods.toml</code> 已验 <code>version="2.6.2"</code>；, 两个环境与源文件三份哈希一致，旧 2.6.1 归档到, <code>D:Mods项目备份替换出的旧jar60910_135139</code>（可回滚）。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e08">
+    <summary>
+      <span class="eno">08</span>
+      <span class="etitle">2026-09-11：三改（OP 超额放行 + 配置 ♻/accepts 修复 + M3 预览校验），不动 wire；已 bump 2.6.3、build、双端部署。</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-11 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-11：三改（OP 超额放行 + 配置 ♻/accepts 修复 + M3 预览校验），不动 wire；已 bump 2.6.3、build、双端部署。</strong> 详见 <code>最新开发日志.md</code> 末节「OP 超额捕获放行『继续创建』+ 配置 ♻ 默认值修复」。</p>
+<ul>
+  <li><code>BlueprintReportScreen</code>：<code>ReportState</code> 加 <code>OVER_LIMIT</code>（黄「超额」）。OP 方块数超 类型上限且无非法/危险方块 → 标题黄、<code>继续创建</code> 可点（服务端对 OP 本来就放到 1.6M）。 非 OP 仍 DANGER。<strong>用户口径：类型上限对 OP 一律提示性，次元也放开</strong>——OP 现在能建 超次元上限的次元蓝图（会清世界入袋），改前这条路根本不存在。</li>
+  <li>lang <code>report.title_state</code> 由 <code>"({0})"</code> 改 <code>"(%s)"</code> —— 改前标题后缀渲染的是字面 <code>({0})</code>，「危险/安全」从没显示过。⚠ 同款 <code>{0}</code> 键还有 33 个未改，已作为独立任务挂出。</li>
+  <li><code>ConfigRegistry</code>：<code>defaultInt</code> 改 <code>value.getDefault()</code>（原来查错表，默认=当前值， ♻ 把玩家改过的 5 当默认）；<strong><code>accepts()</code> 同一个错误</strong> —— 服务端范围校验从没生效过， 越界值能直接写进配置（Forge 下次校验会重置整个文件），已改 <code>getSpec()</code>。</li>
+  <li>测试清单已补第十组（48~54）+ 第十一组（55~57）。<strong>未实机。</strong></li>
+  <li>✅ 已 bump 到 2.6.3（2026-09-11 23:52）：build exit 0，<code>spatial_blueprint-2.6.3.jar</code> = 1,057,613 字节 / SHA256 <code>F14CA3CE</code>…，jar 内 <code>mods.toml</code> 已确认 <code>version="2.6.3"</code>； 源文件与两个环境三份哈希一致。旧 2.6.2 归档到 <code>D:\Mods\项目备份\替换出的旧jar\20260911_235208\</code>（server/client 各一份，可回滚）。 ⚠ 2.6.2 曾在同一版本号下存在两个产物（1,056,987 旧 / 1,057,614 含 09-11 改动）。 全量实机待跑（清单 57 项，先跑标★的 11/28/36/42/43/48/49/53）。 ✅ 专服启动冒烟（2.6.3 源码栈，2026-09-11）：<code>runServer --offline</code> → <code>Done (2.778s)!</code>， 无 NoClassDefFoundError / LoadingFailedException / invalid dist，mod 正常加载。 ✅ 静态预检 48~57 全部符合清单预期（详见下）。 🔄 实机测试进度：第 1 项版本门禁 ✅ 通过（2.6.2 客户端连 2.6.3 服务端被拒，已验证后换回 2.6.3）； 第 11 项 H3 局域网放置 ✅ 通过（Dev 开局域网、TestPlayer2 捕获后放置正常）； 第 28 项 蓝图库改名 ✅ 通过（离线改 creatorName、ownerUuid 不动，9 张蓝图重进后仍在私人列表；测后已还原）。 第十组 48~54 ✅ 全部通过（OP 超额放行、标题后缀、配置 ♻ 默认值、越界值夹回；真实服务端实机）。 第九组 42~47 ✅ 全部通过（SANITIZE 搬盔甲架/展示框保留装备与物品、非法物品仍倒空、报告一致、 空间蓝图防复制未削弱、路径 B 同口径；真实服务端实机）。 H1 全流程冒烟 2~7、9 ✅ 通过（无「Illegal packet received」踢线）；8、10 跳过（8 未测、10 需双客户端）。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e09">
+    <summary>
+      <span class="eno">09</span>
+      <span class="etitle">2026-09-12：清单第 31 项（Create 胶水）在 2.6.3 实机失败 —— 一个胶水都没捕到。</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-12 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-12：清单第 31 项（Create 胶水）在 2.6.3 实机失败 —— 一个胶水都没捕到。</strong> 根因：Create 的 <code>From</code>/<code>To</code> 是<strong>相对 <code>Pos</code> 的偏移</strong>（盒底中心为原点），不是世界坐标； 2.6.0 那批当世界坐标用，捕获时「整盒在选区内」永远不成立。已改两处 （捕获取 <code>entity.getBoundingBox()</code>；放置按 Create 约定写 <code>Pos</code>=盒底中心、<code>From/To</code>=相对偏移）， 详见 <code>最新开发日志.md</code> 末节「Create 胶水兼容实机失败 → From/To 是相对 Pos 的偏移」。</p>
+<ul>
+  <li>✅ bump 到 <strong>2.6.4</strong>，build exit 0：<code>spatial_blueprint-2.6.4.jar</code> = 1,057,570 字节 / SHA256 <code>BF46642A</code>…，jar 内 <code>mods.toml</code> 已验 <code>version="2.6.4"</code>。</li>
+  <li>❌ <strong>未部署</strong>：构建时测试服与客户端都在跑，jar 被占。<strong>下一步：停两边 → 换 2.6.4 → 2.6.3 归档到 <code>替换出的旧jar\&lt;时间戳&gt;\</code> → 在 2.6.4 上重跑 31~35</strong>（32 旋转最该盯）。</li>
+  <li>协议版本 = mod 版本，2.6.3 与 2.6.4 不能混用，两边一起换。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e10">
+    <summary>
+      <span class="eno">10</span>
+      <span class="etitle">2026-09-12 14:51：2.6.5 已部署双端</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-09-12 14:51:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-12 14:51：2.6.5 已部署双端</strong>（<code>57556498…</code> / 1,061,491 字节，旧 2.6.3 归档 <code>替换出的旧jar\20260912_145126\</code>）。 测试清单已补 68~71（TASK-008）与 72~74（区块闸门 / 漏推修复 / 查看范围高亮）。<strong>✅ 实机 31~74 全部通过（2026-09-12）。</strong></p>
+<ul>
+  <li>路径 B 区块闸门：<code>VoidDimensionalScreen</code> 选区区块未加载时「重新储存」置灰 + 点击兜底横幅；仅客户端（与主捕获信任模型一致）。</li>
+  <li>路径 B 漏推修复：<code>C2S_VoidRecaptureMessage</code> 覆盖写回 <code>placed=false</code> 后补 <code>sendBlueprintTo</code>，修「重新储存后第一次右键误弹『已被放置』，第二次才正常」。</li>
+  <li>查看范围高亮：<code>BlueprintSelectionRenderer.renderVoidDimensionalSelection</code> 加红（非法）/ 橙（危险）/ 蓝（展示框）框；「查看范围」按钮发 <code>C2S_RequestIllegalBlocksMessage</code>。</li>
+  <li><strong>剩余未测项已分离到新的 <code>简易测试清单.txt</code></strong>（8 / 10 / 12 / 13后半 / 14~20 / 21~27 / 29 / 30 / 36~41 / 55~57）； 已通过项归档到 <code>日志归档\简易测试清单_20260912.txt</code>。</li>
+</ul>
+<p><strong>2026-09-12 下午：次元蓝图收紧 —— 禁净化、非法物品整单拒收、OP 不豁免，报告界面 OP 按钮仅 OP 显示。</strong> compileJava exit 0，四个非 client 类 javap 验 0 client 引用，<strong>未 bump / 未出 jar / 未部署 / 未实机</strong>。 详见 <code>最新开发日志.md</code> 末节「次元蓝图收紧」。测试清单已补第十二组（58~67）。</p>
+<ul>
+  <li>服务端 <code>CaptureAreaMessage</code> 次元分支：<code>effMode != SAFE</code> 直接拒；非法方块预扫 OP 也查； 同循环查方块实体 <code>hasDangerousBlockNbt</code>；之后 <code>findEntityWithIllegalItems</code> 扫实体。三道预扫都在清世界之前。</li>
+  <li>路径 B 同口径；扫描报告盔甲架改整份 NBT 递归（改前只查方块表）、生物加背包扫描（改前不扫）。</li>
+  <li><code>BlueprintSanitizer</code> 新增 <code>entityHasIllegalItems</code> / <code>findEntityWithIllegalItems</code>，捕获预扫与报告共用。</li>
+  <li><code>BlueprintReportScreen</code>：次元蓝图「净化并继续」恒灰；两个 OP 按钮只对 OP 加进界面。</li>
+  <li>改前备份 <code>D:/Mods/项目备份/Spatial_Blueprint_20260912_132251</code>（SHA256 <code>3E7DC448</code>…）。</li>
+  <li>✅ <strong>TASK-008 已验收 PASS（2026-09-12）</strong>：路径 B 补捕白名单生物 / 拴绳结 / 胶水，并同集合清除。 主会话逐条 grep 核实：对备份 <code>20260912_141709</code> diff → <code>CaptureAreaMessage</code> 恰 1 行（<code>captureBoxEntities</code> 可见性）、 <code>C2S_VoidRecaptureMessage</code> 47 行纯新增 0 删除；<code>captureMobs</code> 声明 :227，同一变量管捕获 :252 与清除 :350； 捕获集 == 清除集（画/展示框/盔甲架/生物/拴绳结，胶水只捕不清与主路径一致）；预扫段与 <code>stripEntityBad=true</code> 未动； compileJava 复跑 exit 0；两类 javap 0 client 引用；报告无代码块。清单已补 68~71，实机随 2.6.5。 原派单记录： <code>Spatial_Blueprint_执行手册/TASK_008_虚空重捕获补捕生物与胶水.md</code>，报告回 <code>REPORT_008.md</code>。 验收要点：捕获集合 == 清除集合；<code>captureMobs = isCreative()</code> 同一变量管两处；预扫段字节不变； <code>CaptureAreaMessage</code> 只允许改 <code>captureBoxEntities</code> 可见性一行。跟 2.6.5 一起出，不单独 bump。 ⚠ 主路径次元清除阶段<strong>没删胶水</strong>（捕了不删可能复制），不在 TASK-008 范围，实机跑 31~35 时一并看原地有无残留胶水实体。</li>
+  <li>⚠ <strong>下一步要一起做</strong>：停两边 → bump <strong>2.6.5</strong>（把 2.6.4 胶水修复 + 本批一起带上）→ build → 双端换 jar → 2.6.3 归档 → 跑 31~35（胶水）+ 58~67（次元收紧）。别再让 2.6.4 单独部署， 那个号已经有一个未部署产物了。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录到分）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e11">
+    <summary>
+      <span class="eno">11</span>
+      <span class="etitle">2026-09-12 晚：TASK-009 已写好待执行</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-12 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-12 晚：TASK-009 已写好待执行</strong> —— <code>Spatial_Blueprint_执行手册\TASK_009_胶水清除_预览框_跨界横幅.md</code>， 报告回 <code>REPORT_009.md</code>。三件事：① 两条次元路径清除段补删胶水（<strong>与选区相交的全删</strong>，跨界的也删，用户拍板）； ② 预览用 Create 自家材质 <code>create:textures/special/glue.png</code> 画胶水框（整盒在内绿 <code>0x68C586</code> / 跨界红）， 数据走现成扫描 <code>S2C_IllegalBlocksListMessage</code> 末尾追加 <code>BoxEntity</code> 列表 → <strong>动 wire，bump 2.6.6</strong>； 没 Create 材质时退回投影蓝图同款（<code>GHOST_BOX_COLOR_PROJECTION</code> + 自家 checker）； ③ 跨界胶水横幅：选点界面收到扫描回包即弹、次元界面 <code>init()</code> 发扫描 + <code>tick()</code> 收包弹，文案 <code>spatial_blueprint.message.glue_crossing</code> = 「检测到胶水区域超出选区：超出部分不会被捕获，次元蓝图储存时该胶水会被整体清除，建议调整选区」，只提醒不锁按钮。 验收要点：六个 inside 比较与 <code>captureBoxEntities</code> 逐字一致；<code>removeBoxEntities</code> 两处都在清方块之前； encode/decode 新列表在末尾且顺序对称；<code>handle</code> 先赋 <code>clientBoxEntities</code> 再改 <code>clientReceiveTime</code>； 四个 network 类 javap 0 client 引用；<code>captureBoxEntities</code> / <code>placeBoxEntity</code> / <code>BlueprintNetwork.register</code> 无 hunk。 验收通过后：停两边 → 换 2.6.6 → 2.6.5 归档 → 清单补第十三组（胶水清除 / 预览框 / 横幅）。</p>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e12">
+    <summary>
+      <span class="eno">12</span>
+      <span class="etitle">2026-09-12：TASK-009 验收 PASS，2.6.6 已部署双端，✅ 实机第十三组（75~84）全部通过。</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-09-12 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-12：TASK-009 验收 PASS，2.6.6 已部署双端，✅ 实机第十三组（75~84）全部通过。</strong></p>
+<ul>
+  <li>验收（主会话逐条 grep）：<code>removeBoxEntities</code> :764，主路径 :618 / 路径 B :368 都在拴绳结之后、清方块之前， 主路径在 <code>clearAfterCapture</code> 分支内；扫描端六个 inside 比较与 <code>captureBoxEntities</code>:737 逐字同构； encode/decode 新列表在末尾、7 字段同序；<code>handle</code> 先赋 <code>clientBoxEntities</code> 再改 <code>clientReceiveTime</code>； <code>renderGlueBoxes</code> 四分支（有/无 Create 贴图 × 内含/跨界）与手册一致，两处调用点在特殊实体循环之后； 两界面横幅按 <code>clientReceiveTime</code> 去重、不锁按钮；四个 network 类 javap 0 client 引用； 对执行前备份解压 diff：<code>BlueprintConfig</code> / <code>BlueprintData</code> / <code>BlueprintPlacementHandler</code> / <code>BlueprintTransform</code> / <code>BlueprintNetwork</code> 逐字相同，<code>CaptureAreaMessage</code> 仅两个 hunk（617-618 / 754-773）， <code>captureBoxEntities</code> 未动。</li>
+  <li>部署：<code>spatial_blueprint-2.6.6.jar</code> = 1,066,074 字节 / SHA256 <code>8911558B</code>…，源文件 + 两环境三份一致； 旧 2.6.5 归档 <code>D:\Mods\项目备份\替换出的旧jar\20260912_185008\</code>（server/client 各一份）。 ⚠ wire 变了（扫描回包多一个列表），2.6.5 与 2.6.6 不能混用。</li>
+  <li>测试清单已补第十三组 75~84，标★的 75 / 76 / 78 / 80 先跑；84 是空间蓝图防回归。</li>
+  <li>✅ 实机：第十三组 75~84、85~87、M1 的 14~20、12、13后半、29、30、36~41 全部通过；8、10 跳过。</li>
+  <li>FTB Chunks 已装双端（<code>ftb-chunks-forge-2001.3.8.jar</code> / SHA256 <code>783F7AA4…</code>），已重启加载；36~41 通过。</li>
+  <li>工程蓝图传送 tooltip 文案修复已随 <strong>2.6.7</strong> 部署（见上）。 剩余：21~27 与 55~57（需改包工具）。</li>
+  <li>执行方未创建 <code>辅助AI记忆日志.MD</code>（无投稿），无需审阅。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e13">
+    <summary>
+      <span class="eno">13</span>
+      <span class="etitle">2026-09-12：横幅改为点 [创建] / [查看范围] 才弹（用户反馈每次右键都弹太吵）；工程蓝图传送 tooltip 去掉「仅OP」。2.6.7 已部署双端。</span>
+      <span class="stag wait">已完成 · 待实测</span>
+      <span class="edate">2026-09-12 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>2026-09-12：横幅改为点 [创建] / [查看范围] 才弹（用户反馈每次右键都弹太吵）；工程蓝图传送 tooltip 去掉「仅OP」。2.6.7 已部署双端。</strong> 详见 <code>最新开发日志.md</code> 末节「跨界胶水横幅改为按钮触发」。</p>
+<ul>
+  <li>三处：<code>S2C_IllegalBlocksListMessage.hasCrossingBoxEntityIn(min,max)</code>（common 静态助手，按选区过滤）； <code>PointSelectionScreen</code> [创建] 点击第一下弹并拦、同一选区第二下放行（按选点记，不按回包时间戳 —— 点击会触发重扫）；<code>VoidDimensionalScreen</code> 删 tick，[查看范围] 关界面后走 <code>ErrorToastScreen.show</code>。 <code>init()</code> 的静默扫描保留（给点击时提供数据）。文案 / 红框 / Create 材质不动，不动 wire。</li>
+  <li>本次 2.6.7 还含：工程蓝图传送 tooltip <code>gui.engineering.btn.tp.tip</code> 去掉「（仅OP）」。</li>
+  <li>✅ 部署：<code>spatial_blueprint-2.6.7.jar</code> = 1,066,217 字节 / SHA256 <code>98E509CE</code>…， 源文件 + 服务端 + 客户端三份一致；旧 2.6.6（1,066,074 / <code>8911558B</code>…）归档 <code>D:\Mods\项目备份\替换出的旧jar\20260912_220938\</code>。</li>
+  <li>FTB Chunks 已装双端（<code>ftb-chunks-forge-2001.3.8.jar</code> / <code>783F7AA4</code>…），36~41 环境就绪（重启加载）。</li>
+  <li>下一步：跑清单 85~87（80 / 81 口径已作废）；剩余 21~27、55~57 需改包工具。</li>
+  <li>改前备份 <code>Spatial_Blueprint_20260912_190843</code>（<code>B630620D</code>…）。</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e14">
+    <summary>
+      <span class="eno">14</span>
+      <span class="etitle">历史归档</span>
+      <span class="stag ok">已完成 · 已实测</span>
+    </summary>
+    <div class="ebody">
+<p>旧日志 / 方案书 / 旧清单已全部移入 <code>已归档开发日志\</code>（2026-09-14 迁移，只挪不删）：</p>
+<ul>
+  <li><code>已归档开发日志\旧开发日志_20260912.md</code>（2551 行）—— 覆盖 2026-08-08 ~ 2026-09-12 的日志；首条为 2026-08-24「/sb config 改为读写服务端配置」，文末是各专题总结节。</li>
+  <li><code>已归档开发日志\最新开发日志_20260912.md</code>（2074 行）—— 覆盖 2026-08-13 ~ 2026-09-12 的日志；首条「本轮改动（2026-08-26）」，末条「实机测试收尾（2026-09-12，2.6.5 → 2.6.8）」。</li>
+</ul>
+<p>以下文件也在这批归档里（2026-09-12 起移入，2026-09-14 统一迁到 <code>已归档开发日志\</code>）：</p>
+<ul>
+  <li><code>技术细节与更新记录_20260912.md</code> — 数据结构 / 网络 / GUI / 配置总览（内容已进 注意事项 第 3 卡）</li>
+  <li><code>项目蓝图构建思路_20260912.md</code> — 项目蓝图设计（内容已进 注意事项 第 6 卡）</li>
+  <li><code>报错提示UI接入方法_20260912.md</code> — 旧接入文档（内容已进 注意事项 第 4、5 卡）</li>
+  <li><code>上传文件检测细节和方案计划_20260912.md</code> — 上传检测方案书（内容已进 注意事项 第 2 卡）</li>
+  <li><code>简易测试清单_20260912.txt</code>、<code>简易测试清单_20260912_233642.txt</code> — 已通过的旧测试清单</li>
+  <li><code>lang-audit_20260903\</code> — lang 审计产物（JSON / TXT / __pycache__）</li>
+  <li><code>CURRENT_20260914.md</code>、<code>待办事项_20260914.MD</code>、<code>最新开发日志_20260914.md</code>、<code>简易测试清单_20260914.txt</code> — 本工作流迁移前的四份原文件（内容已分流进六份 HTML）</li>
+</ul>
+      <p class="tail">迁入 2026-09-14 18:45:34</p>
+    </div>
+  </details>
+
+  <details class="entry" open id="e15">
+    <summary>
+      <span class="eno">15</span>
+      <span class="etitle">2026-09-14 文档体系 HTML → Markdown（全项目迁移）</span>
+      <span class="stag ok">已完成 · 已实测</span>
+      <span class="edate">2026-09-14 00:00:00</span>
+    </summary>
+    <div class="ebody">
+<p><strong>为什么</strong>：HTML 体系只活了一天。用户判定 md 更省：每次读要剥标签、每次写要过转换器、样式块白占 token，不跑 Claude Code hook 的执行方（opencode 等）更用不上；md 直接 Write/Edit 就行。</p>
+<p><strong>做了什么</strong>：</p>
+<ul>
+  <li>写一次性转换器（<code>html2md.py</code>，Python stdlib）机械转换，<strong>不重写内容</strong>：本项目的 <code>项目接入 / 待办事项 / 开发日志 / 测试清单 / 代码约束 / 踩坑记录</code> 六个单文档 + <strong>注意事项一卡一文件</strong>（<code>注意事项\NN_*.md</code> + <code>00_目录.md</code> 索引）。</li>
+  <li>校验：把 HTML 正文剥标记后作为<strong>字符子序列</strong>在转换结果里逐卡 / 逐文件匹配（丢内容或乱序会定位到具体字符），再比表格行数、列表项数、代码块数、文本长度（0.99~1.01）。</li>
+  <li>全局规则同步改 md（全局 CLAUDE.md / 协作指南 / hook / 命令 / 新项目骨架）；<code>html2text.ps1</code> / <code>md转html.ps1</code> / <code>文档模板.html</code> 已删除。Healthy_Diets 同日一并迁移。</li>
+  <li>迁移前备份：<code>Spatial_Blueprint_20260914_023515</code>（<code>5462D143</code>）。</li>
+</ul>
+<p><strong>遗留处理（2026-09-14 用户拍板）</strong>：<code>草稿\</code> 目录（旧转换流程的中间稿 + <code>_frag_*.md</code> + <code>外部导入\</code> 旧记忆导出）<strong>已删除</strong> —— 内容均已被正式文档取代或吸收；记忆目录的六份独立记忆文件（feedback_* / project_*）同日合并删除，内容确认已分别在 <code>踩坑记录.md</code> §一/§二（UTF-8 工具链、TASK 协作）、<code>代码约束.md</code>（ErrorToast 横幅、sendBlueprintTo 推送路径、NBT 预算）、<code>注意事项\05_</code>/<code>08_</code>（ErrorToast 接入、NBT 预算原理）、<code>项目接入.md</code>（项目简介与路径）里，记忆目录只留 <code>MEMORY.md</code> 路径索引。<code>任务派发与核验\SB-001_*.txt</code> 是那次迁移的 TASK / 报告，属历史证据，未改。</p>
+      <p class="tail">迁入 2026-09-14 18:45:34（原记录只有日期）</p>
+    </div>
+  </details>
+
+    <details class="entry aux" open id="e-SB-003">
+    <summary>
+      <span class="eno">SB-003</span>
+      <span class="etitle">执行记录：精简 注意事项_分类.md（归档原文与精简前全文移入本条）</span>
+      <span class="stag aux">辅助 AI 执行记录</span>
+      <span class="edate">2026-09-14 19:30:09</span>
+    </summary>
+    <div class="ebody">
+<p><strong>任务</strong>：精简 注意事项_分类.md（SB-003）—— T/K 每条压成「规则 + 原因」，C3–C6 压成一句话结论；失效指向与和协作指南 / 全局约定重复的段落删除。规则的语义未改，被删内容全文在下。</p>
+<p><strong>去向</strong>：本条收录 ①C3–C6 所指的四份归档原文（全量，原 注意事项\ 卡 02 / 03 / 04 / 06）；②精简前的 注意事项_分类.md 全文（2026-09-14 SB-002 版）。执行前备份：Spatial_Blueprint_20260914_192853（36D7E444）。</p>
+<p><strong>删除清单（全文见 B 节）</strong>：与 Claude_AI_协作指南.md / 全局约定重复 6 处（必须使用中文回复、不要追问谁来执行、TASK 执行方中立、核心原则 10 条、任务规模阈值、日志更新习惯）；失效指向（最新开发日志.md、安全审查_双端同步_20260907.md）与旧卡制残留（一卡一文件 / 目录行）随之删。K4 的历史备份清单（10 份）移入本条。</p>
+<h3>A · 归档原文（四份，全量）</h3>
+<h4>上传文件检测细节与方案计划（归档原文 · 2026-09-12）</h4>
+<h4>蓝图上传文件检测细节与方案计划</h4>
+<p>文档状态：部分已实现（见第 11 节） 最后更新：2026-07-19（本次：11.2 ✅ 11.3 ✅ Bug 9/10/11 ✅ 蓝图库 Tab 重排 + 动态布局 + Shift Tooltip / 材料清单面板 UI 重设计 / ♻✚ 按钮改为 OP 专属）</p>
+<hr>
+<h5>目录</h5>
+<ul>
+  <li>1. [整体架构](#1-整体架构)</li>
+  <li>2. [三层上传策略](#2-三层上传策略)</li>
+  <li>3. [净化管线（BlueprintSanitizer）](#3-净化管线)</li>
+  <li>4. [字段逐一处理规则](#4-字段逐一处理规则)</li>
+  <li>5. [手动审核系统（ReviewQueue）](#5-手动审核系统)</li>
+  <li>6. [危险放置广播](#6-危险放置广播)</li>
+  <li>7. [日志模块（DangerousUploadLogger）](#7-日志模块)</li>
+  <li>8. [配置项一览](#8-配置项一览)</li>
+  <li>9. [注意事项](#9-注意事项)</li>
+  <li>10. [已知 Bug](#10-已知-bug)</li>
+  <li>11. [待实现功能代办](#11-待实现功能代办)</li>
+</ul>
+<hr>
+<h5>1. 整体架构</h5>
+<p>系统分为三个独立模块（HMAC 签名已取消，出问题由 OP 负责）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">A. BlueprintSanitizer     — 净化引擎（服务端，上传时运行）
+B. ReviewQueue            — 审核队列（内存，10分钟TTL）
+C. DangerousUploadLogger  — 日志模块（游戏内广播 + 磁盘文件）</p>
+<h6>上传总流程</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">客户端发送 .dat 文件字节流
+    │
+    ▼
+[检测1] 原始字节数 &gt; MAX_UPLOAD_FILE_BYTES？→ 直接拒绝（必须是第一个检测，防止内存炸弹）
+    │
+    ▼
+[检测2] 反序列化 NBT，解析为 BlueprintData
+    │
+    ▼
+[检测3] 任意 NBT 节点嵌套深度 &gt; MAX_NBT_DEPTH？→ 拒绝整个文件（永远不豁免，OP也不能跳过）
+    │
+    ▼
+[净化] BlueprintSanitizer.sanitize()
+  ├─ 覆盖元数据字段（creatorName / sourceName / createdAt）
+  ├─ 校验字符串字段（name / category / fixedDimension）
+  ├─ 校验数值字段（animDuration / customWithdrawXp / customWithdrawLimit / maxDistance）
+  ├─ 校验坐标字段（BlockEntry.pos / fixedStartPos / fixedEndPos / 总方块数）
+  ├─ 清空所有容器 Items（通过 NBT 字段检测，不枚举方块类型）
+  ├─ 过滤实体（白名单之外的一律丢弃，含所有生物）
+  ├─ 检测非法/危险方块（命令方块 / 刷怪笼 NBT / 告示牌 clickEvent 等）
+  │   ├─ 自动净化模式（勾选）：整块从列表移除，生成删除报告
+  │   └─ 手动审核模式（未勾选）：进入 ReviewQueue，通知在线 OP
+  └─ 重新计算 size 和 materialList
+    │
+    ▼
+[结果]
+  ├─ 净化成功 → 生成新 .dat 文件入库
+  │   └─ 若有删除记录 → 在服务器索引打 hasIllegalBlocks 标记 + 向玩家发送删除报告
+  └─ 进入审核 → ReviewQueue → 通知在线 OP</p>
+<hr>
+<h5>2. 三层上传策略</h5>
+<table>
+  <thead><tr><th>蓝图类型</th><th>上传者</th><th>非法方块处理</th><th>容器物品</th><th>实体生物</th></tr></thead>
+  <tbody>
+    <tr><td><strong>空间蓝图</strong></td><td>创造/生存模式玩家</td><td>自动净化（整块删除）+ 报告</td><td>强制清空 Items</td><td>丢弃（白名单外）</td></tr>
+    <tr><td><strong>投影蓝图</strong></td><td>创造/生存模式玩家</td><td>可选：自动净化 或 申请手动审核</td><td>强制清空 Items</td><td>丢弃（白名单外）</td></tr>
+    <tr><td><strong>投影模板</strong></td><td>任意（来源不明）</td><td>最严格：强制自动净化（整块删除）+ 报告</td><td>强制清空 Items</td><td>丢弃（白名单外）</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>投影模板不提供此选项，始终强制自动净化。</li>
+</ul>
+<hr>
+<h5>3. 净化管线</h5>
+<h6>3.1 文件大小检测（第一步，最优先）</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">原始字节数 &gt; MAX_UPLOAD_FILE_BYTES → 立即拒绝，不反序列化</p>
+<p>必须在反序列化之前检测。高压缩比 NBT 文件可将 50KB 压缩数据展开为数百 MB 内存， 先解压再检测会被绕过。</p>
+<h6>3.2 NBT 嵌套深度检测</h6>
+<p>扫描方式：<strong>迭代 BFS，绝对不使用递归</strong>。恶意构造的 NBT 可嵌套数千层，递归扫描会直接 StackOverflow 崩溃服务器——这是本系统中最需要防范的代码层面漏洞。</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">任意节点嵌套深度 &gt; MAX_NBT_DEPTH → 整个文件拒绝（不豁免，OP 也不能跳过）</p>
+<h6>3.3 容器物品清空</h6>
+<p>通过 NBT 字段名检测，不枚举方块类型（对原版和绝大多数模组容器都有效）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 箱子 / 桶 / 漏斗 / 投掷器 / 发射器 / Create桶 / 铁箱等 → 移除 Items
+if (nbt.contains("Items")) nbt.remove("Items");
+// 唱片机
+if (nbt.contains("RecordItem")) nbt.remove("RecordItem");</p>
+<p>保留空容器方块，不删除方块本身。蓝图放置后容器为空。</p>
+<p>净化流程中无 <code>Level</code> 对象，无法通过 <code>BlockEntity instanceof Container</code> 检测， NBT 字段检测是唯一可行方案，且效果等价。</p>
+<h6>3.4 实体白名单</h6>
+<p>上传时只允许以下实体类型，其他全部丢弃（含所有生物）：</p>
+<table>
+  <thead><tr><th>允许类型</th><th>额外过滤</th></tr></thead>
+  <tbody>
+    <tr><td><code>minecraft:painting</code></td><td>只保留 <code>variant</code>（画种类），丢弃其余 NBT</td></tr>
+    <tr><td><code>minecraft:item_frame</code></td><td>见下方展示框过滤规则</td></tr>
+    <tr><td><code>minecraft:glow_item_frame</code></td><td>见下方展示框过滤规则</td></tr>
+  </tbody>
+</table>
+<p><strong>展示框物品过滤逻辑</strong>：</p>
+<p>检查展示框 NBT 中的物品 <code>id</code> 是否属于危险方块（命令方块、结构方块等）：</p>
+<ul>
+  <li>是 → 连 <code>id</code> 一并丢弃（放置后展示框为空）</li>
+  <li>否 → 保留 <code>id</code> + <code>Count</code>，丢弃物品 <code>tag</code>（防止藏带危险 NBT 的物品）</li>
+</ul>
+<p>未来加入生物捕捉功能时可扩展此白名单，上传处默认过滤所有生物。 刷怪笼 SpawnData 白名单与此实体白名单共用同一套允许列表。</p>
+<h6>3.5 非法/危险方块检测</h6>
+<h6>硬编码非法方块列表（无论任何配置均拒绝/删除）</h6>
+<p>以下方块在原版中无法通过正常生存/创造途径自然获得，或具备直接执行指令/破坏服务器的能力， 上传时一律视为非法方块处理：</p>
+<table>
+  <thead><tr><th>方块 ID</th><th>名称</th><th>危险原因</th></tr></thead>
+  <tbody>
+    <tr><td><code>minecraft:command_block</code></td><td>命令方块</td><td>NBT <code>Command</code> 可执行任意服务器指令</td></tr>
+    <tr><td><code>minecraft:repeating_command_block</code></td><td>循环型命令方块</td><td>同上，且每 tick 自动执行</td></tr>
+    <tr><td><code>minecraft:chain_command_block</code></td><td>连锁型命令方块</td><td>同上，串联执行</td></tr>
+    <tr><td><code>minecraft:command_block_minecart</code></td><td>命令方块矿车（实体）</td><td>实体形式的命令执行器</td></tr>
+    <tr><td><code>minecraft:jigsaw</code></td><td>拼图方块</td><td>仅开发/数据包使用，可触发结构生成</td></tr>
+    <tr><td><code>minecraft:structure_block</code></td><td>结构方块</td><td>可加载/保存结构，潜在文件系统访问</td></tr>
+    <tr><td><code>minecraft:structure_void</code></td><td>结构空位</td><td>结构方块配套，无正常用途</td></tr>
+    <tr><td><code>minecraft:barrier</code></td><td>屏障</td><td>仅管理员使用，普通玩家不可获得</td></tr>
+    <tr><td><code>minecraft:bedrock</code></td><td>基岩</td><td>不可破坏，可被恶意用于永久封堵</td></tr>
+    <tr><td><code>minecraft:end_portal_frame</code></td><td>末地传送门框架</td><td>正常游戏无法获得，可构造末地传送门</td></tr>
+    <tr><td><code>minecraft:end_portal</code></td><td>末地传送门（虚空方块）</td><td>不可获得，传送门本体</td></tr>
+    <tr><td><code>minecraft:nether_portal</code></td><td>下界传送门（虚空方块）</td><td>不可获得，传送门本体</td></tr>
+    <tr><td><code>minecraft:end_gateway</code></td><td>末地折跃门</td><td>不可获得，强制传送玩家</td></tr>
+    <tr><td><code>minecraft:moving_piston</code></td><td>移动活塞（内部状态）</td><td>不可获得，引擎内部方块</td></tr>
+  </tbody>
+</table>
+<p><code>minecraft:light</code> 曾列入此表，经复核后移除：它只是创造模式可通过搜索栏正常获取的 隐形光源方块，没有 NBT 漏洞、不能执行指令，不构成安全风险，不该当作非法方块处理。</p>
+<p>上述列表为<strong>硬编码最小集</strong>，服务器还可通过现有 <code>ServerValidation.isIllegalBlock()</code> 配置追加自定义非法方块。</p>
+<h6>危险 NBT 检测（方块本身可能合法，但 NBT 内容危险）</h6>
+<p>以下情况打 <code>hasIllegalBlocks = true</code> 标记（存服务器索引），并触发删除或进入审核：</p>
+<table>
+  <thead><tr><th>类型</th><th>判断条件</th><th>危险原因</th></tr></thead>
+  <tbody>
+    <tr><td>命令方块危险 NBT</td><td><code>nbt.contains("Command") &amp;&amp; !nbt.getString("Command").isEmpty()</code></td><td>即便方块被 OP 允许保留，命令内容也必须清空</td></tr>
+    <tr><td>刷怪笼危险 NBT</td><td><code>SpawnData</code> 或 <code>SpawnPotentials</code> 含非白名单实体 ID</td><td>可生成任意实体（含模组实体）</td></tr>
+    <tr><td>告示牌点击事件</td><td>Text1–Text4 JSON 内含 <code>clickEvent.action = run_command</code></td><td>玩家点击告示牌可触发命令执行</td></tr>
+    <tr><td>讲台/书点击事件</td><td><code>Book</code> NBT 内 <code>pages</code> JSON 含 <code>clickEvent</code></td><td>同上</td></tr>
+    <tr><td>非法模组方块</td><td>调用现有 <code>ServerValidation.isIllegalBlock(BlockState)</code></td><td>按服务器当前非法方块配置</td></tr>
+  </tbody>
+</table>
+<p><strong>自动净化模式处理</strong>：</p>
+<ul>
+  <li>整块从 normalBlocks / dependentBlocks / lateBlocks 列表中移除（不留洞，直接删除）</li>
+  <li>记入删除报告，告知玩家方块类型和相对坐标</li>
+</ul>
+<p><strong>删除报告格式</strong>（游戏内消息，发给上传玩家）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">已删除 3 个非法方块 [点击复制日志信息]</p>
+<p>点击复制内容（玩家自行用编辑器查看坐标）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">已删除非法方块列表：
+minecraft:command_block @ (12,4,8), (5,2,3)
+minecraft:mob_spawner @ (8,1,0)</p>
+<h6>3.6 OP 上传特殊权限（ALLOW_OP_ILLEGAL_BLOCK_UPLOAD）</h6>
+<p>OP 开启此配置项后：</p>
+<p><strong>可保留</strong>：</p>
+<ul>
+  <li>非法方块本身（命令方块、刷怪笼方块结构）</li>
+  <li>服务器配置中的非法模组方块</li>
+</ul>
+<p><strong>依然强制过滤（OP 也不能跳过，硬编码底线）</strong>：</p>
+<ul>
+  <li>命令方块 NBT 中的 <code>Command</code> 字段（清空命令内容，保留方块结构）</li>
+  <li>告示牌 / 书的 <code>clickEvent.run_command</code></li>
+  <li>NBT 嵌套深度超出 <code>MAX_NBT_DEPTH</code></li>
+  <li>文件大小超出 <code>MAX_UPLOAD_FILE_BYTES</code></li>
+</ul>
+<p>"允许上传有争议方块" ≠ "允许执行危险 NBT"，后者是硬编码底线。</p>
+<p>OP 放置含危险内容的蓝图后，向全服广播警告（见第 6 节）。</p>
+<h6>3.7 净化后重建</h6>
+<p>净化完成后，以下字段由服务器重新生成，不信任客户端提供的值：</p>
+<table>
+  <thead><tr><th>字段</th><th>处理</th></tr></thead>
+  <tbody>
+    <tr><td><code>creatorName</code></td><td>服务器用认证玩家名覆盖（dat 内记录的捕捉者；无法确定时填上传者）</td></tr>
+    <tr><td><code>sourceName</code></td><td>改为<strong>上传玩家名</strong>（谁把这个文件提交到服务器）</td></tr>
+    <tr><td><code>createdAt</code></td><td>服务器 <code>System.currentTimeMillis()</code> 覆盖</td></tr>
+    <tr><td><code>size</code></td><td>根据实际 BlockEntry.pos 重新计算，不信任客户端值</td></tr>
+    <tr><td><code>materialList</code></td><td>根据净化后的方块列表重新统计生成，不信任客户端值</td></tr>
+    <tr><td><code>customWithdrawXp</code></td><td>非 OP 上传强制归 -1（OP 才能设定自定义经验）</td></tr>
+    <tr><td><code>customWithdrawLimit</code></td><td>非 OP 上传强制归 -1（OP 才能设定自定义上限）</td></tr>
+    <tr><td><code>hasIllegalBlocks</code></td><td>存服务器索引文件，不写入 dat；净化有删除记录则为 true</td></tr>
+  </tbody>
+</table>
+<h6>3.8 文件命名格式</h6>
+<p><code>.dat</code> 文件名格式升级为三段式：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">&lt;category&gt;_&lt;creatorName&gt;_&lt;uuid&gt;.dat</p>
+<p>示例：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">create_steve_550e8400-e29b-41d4-a716-446655440000.dat
+project_alex_3f2504e0-4f89-11d3-9a0c-0305e82c3301.dat
+dimensional_yim_7c9e6679-7425-40de-944b-e07fc1f90ae7.dat
+engineering_admin_1b4e28ba-2fa1-11d3-a4b5-0800200c9a66.dat</p>
+<p><code>category</code> 取值对应 <code>BlueprintData.category</code> 字段白名单：<code>create</code> / <code>project</code> / <code>dimensional</code> / <code>engineering</code>； 空字符串（旧格式兼容）使用 <code>unknown</code> 占位。</p>
+<p><code>creatorName</code> 经 <code>sanitizeForFilename()</code> 处理（仅保留字母数字，去除特殊字符），防止路径注入。</p>
+<p><strong><code>BlueprintStorage</code> 需同步更新</strong>：</p>
+<ul>
+  <li><code>save(UUID, BlueprintData)</code>：文件名改为 <code>category_creatorName_uuid.dat</code></li>
+  <li><code>findFile(String idStr)</code>：按优先级依次尝试：<code>*_*_&lt;idStr&gt;.dat</code> → <code>*_&lt;idStr&gt;.dat</code>（旧两段格式）→ <code>&lt;idStr&gt;.dat</code>（最旧格式）</li>
+  <li><code>loadSummaries()</code>：解析时从最后一个 <code>_</code> 后取 UUID（向后兼容，无论几段前缀都适用）</li>
+</ul>
+<p><strong>迁移策略</strong>：旧文件不重命名，仅新上传/捕捉的文件使用新命名。<code>findFile</code> 兼容三种历史格式，不做批量重命名迁移。</p>
+<hr>
+<h5>4. 字段逐一处理规则</h5>
+<h6>4.1 元数据（服务器覆盖）</h6>
+<p>见 3.7，所有元数据字段直接由服务器覆盖，不做客户端值校验。</p>
+<h6>4.2 字符串校验</h6>
+<table>
+  <thead><tr><th>字段</th><th>规则</th></tr></thead>
+  <tbody>
+    <tr><td><code>name</code></td><td>长度 ≤ 64；过滤 <code>§</code> 颜色码（防止 GUI 渲染异常）和控制字符（U+0000–U+001F / U+007F）</td></tr>
+    <tr><td><code>category</code></td><td>白名单：<code>create</code> / <code>project</code> / <code>dimensional</code> / <code>engineering</code> / <code>""</code>；其他值置空</td></tr>
+    <tr><td><code>fixedDimension</code></td><td>格式必须符合 <code>namespace:path</code>；仅允许服务器已注册的维度 ID，否则置空</td></tr>
+  </tbody>
+</table>
+<h6>4.3 数值范围校验</h6>
+<table>
+  <thead><tr><th>字段</th><th>合法范围</th><th>违规处理</th></tr></thead>
+  <tbody>
+    <tr><td><code>animDuration</code></td><td>0–300（秒）</td><td>超出归 0（使用配置文件默认值）</td></tr>
+    <tr><td><code>customWithdrawXp</code></td><td>-1 或 0–MAX_WITHDRAW_XP</td><td>非 OP 强制 -1；OP 也截断到上限</td></tr>
+    <tr><td><code>customWithdrawLimit</code></td><td>-1 或 1–MAX_WITHDRAW_COUNT</td><td>同上</td></tr>
+    <tr><td><code>maxDistance</code></td><td>-1 或 1–2048</td><td>超出归 -1（不限制）</td></tr>
+  </tbody>
+</table>
+<h6>4.4 坐标字段</h6>
+<table>
+  <thead><tr><th>字段</th><th>规则</th></tr></thead>
+  <tbody>
+    <tr><td><code>fixedStartPos</code> / <code>fixedEndPos</code></td><td>Y 在 [-64, 320]；X/Z 绝对值 ≤ 30000000；两者要么都有要么都置 null</td></tr>
+    <tr><td><code>BlockEntry.pos</code></td><td>X/Y/Z 在 [0, 2048)（蓝图内相对坐标）；越界则丢弃该方块</td></tr>
+    <tr><td>总方块数</td><td>normalBlocks + dependentBlocks + lateBlocks ≤ MAX_CAPTURE_VOLUME_CREATIVE（300000）</td></tr>
+  </tbody>
+</table>
+<h6>4.5 实体字段</h6>
+<table>
+  <thead><tr><th>字段</th><th>规则</th></tr></thead>
+  <tbody>
+    <tr><td><code>EntityEntry.type</code></td><td>白名单（见 3.4），不在白名单丢弃整条</td></tr>
+    <tr><td><code>EntityEntry.facing</code></td><td>画 [0,3]，展示框 [0,5]，越界丢弃整条</td></tr>
+    <tr><td><code>EntityEntry.tileX/Y/Z</code></td><td>[0, 2048)，越界丢弃整条</td></tr>
+    <tr><td><code>EntityEntry.nbt</code>（展示框）</td><td>检查物品 id 是否危险；是则丢弃 id；否则保留 id+Count，丢弃 tag</td></tr>
+    <tr><td><code>EntityEntry.nbt</code>（画）</td><td>只保留 <code>variant</code>，丢弃其余</td></tr>
+  </tbody>
+</table>
+<h6>4.6 BlockEntry NBT 处理</h6>
+<table>
+  <thead><tr><th>方块类型</th><th>NBT 处理</th></tr></thead>
+  <tbody>
+    <tr><td>容器（箱子/桶/漏斗/投掷器/发射器等）</td><td>移除 <code>Items</code> 列表</td></tr>
+    <tr><td>唱片机</td><td>移除 <code>RecordItem</code></td></tr>
+    <tr><td>命令方块</td><td>清空 <code>Command</code> 字段（OP 开启配置时可保留方块本身，但命令始终清空）</td></tr>
+    <tr><td>刷怪笼</td><td>清空 <code>SpawnData</code> / <code>SpawnPotentials</code>；只保留纯数值字段（Delay / MinSpawnDelay / MaxSpawnDelay / MaxNearbyEntities）</td></tr>
+    <tr><td>告示牌</td><td>过滤 Text1–Text4 JSON 中的 <code>clickEvent</code></td></tr>
+    <tr><td>讲台/书</td><td>过滤 <code>pages</code> JSON 中的 <code>clickEvent</code></td></tr>
+    <tr><td>其他未知 TE（模组方块）</td><td>默认通过，保留 nbt；后续维护模组方块白名单，白名单内方块直接放行，后果由 OP/服主承担</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>5. 手动审核系统</h5>
+<h6>5.1 设计约束</h6>
+<ul>
+  <li>仅玩家<strong>主动申请</strong>，不自动进入（上传时未勾选"自动净化"且检测到非法内容）</li>
+  <li>同一玩家同时只能有 <strong>1 个</strong> 待审申请（防止刷审核骚扰 OP）</li>
+  <li>有效期 <strong>10 分钟</strong>，无 OP 在线时到期自动销毁；到期后向玩家发送"申请已过期，请重新提交"</li>
+  <li>玩家提交申请时若无 OP 在线，<strong>立即提示玩家</strong>（不静默等待）</li>
+  <li>验证码<strong>单次使用，使用后立即失效</strong>（防重放）</li>
+  <li>队列存储在<strong>内存中</strong>，服务器重启清空（玩家需重新提交）</li>
+</ul>
+<h6>5.2 流程</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">玩家上传（未勾选自动净化）→ 服务器检测到非法方块/内容
+    │
+    ▼
+玩家点击 [申请手动审核]
+    ├─ 无 OP 在线？→ 立即提示玩家："当前无管理员在线，申请将在 10 分钟后失效"
+    ├─ 该玩家已有待审申请？→ 提示"您已有一个待审申请（剩余 X 分钟），请等待处理后再试"
+    ▼
+生成 6 位随机验证码（10 分钟有效，单次使用）
+    ▼
+向所有在线 OP 发送游戏内通知 + 服务器后台输出：
+  "[SpatialBlueprint] Steve 申请上传蓝图 '古城'
+   包含：命令方块 x3 / 刷怪笼 x1 / 容器 Items 已清空 x5
+   审核命令：/sbp review &lt;code&gt; approve | reject | download
+   有效期：10 分钟"
+    ▼
+OP 执行命令：
+  /sbp review &lt;code&gt; approve   → 通过，文件净化后入库，通知玩家，写入审核日志
+  /sbp review &lt;code&gt; reject    → 拒绝，通知玩家，写入审核日志
+  /sbp review &lt;code&gt; download  → 见 5.3
+    ▼
+到期未处理 → 自动销毁，写入过期日志，向玩家发送过期消息</p>
+<h6>5.3 OP 下载原始文件</h6>
+<p>OP 执行 <code>/sbp review &lt;code&gt; download</code> 后：</p>
+<ul>
+  <li>1. 文件大小 &gt; <code>OP_DOWNLOAD_WARN_THRESHOLD</code> 时，服务器先发提示：</li>
+</ul>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">   该文件大小为 3.2 MB，是否确认下载到本地？[确认] [取消]</p>
+<ul>
+  <li>2. OP 确认后，服务器通过网络包将<strong>净化前的原始文件</strong>推送到 OP 客户端</li>
+  <li>3. 客户端写入：<code>.minecraft/spatial_blueprint/review/&lt;code&gt;.dat</code></li>
+  <li>4. OP 自行用外部编辑器审查，决定是否手动上传处理后的版本</li>
+</ul>
+<h6>5.4 hasIllegalBlocks 标记管理</h6>
+<ul>
+  <li>标记存服务器索引文件，<strong>不写入 dat 文件本身</strong></li>
+  <li>OP 可执行 <code>/sbp review clear &lt;uuid&gt;</code> 移除标记：</li>
+  <li>移除后，该蓝图放置时不再触发危险广播</li>
+  <li>任意 OP 均可执行（无需是原处理 OP）</li>
+  <li>操作写入磁盘日志（见第 7 节 <code>MARK_CLEARED</code> 格式）</li>
+</ul>
+<hr>
+<h5>6. 危险放置广播</h5>
+<p><strong>触发条件</strong>：任意玩家放置一个服务器索引中标记了 <code>hasIllegalBlocks = true</code> 的蓝图。</p>
+<h6>6.1 游戏内广播（全服所有玩家可见）</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">[§c危险操作§r] §6Steve§r（OP管理员）在 §b主世界§r (§e128, 64, -300§r) 放置了危险蓝图 §6"古城"§r
+  包含：§cminercraft:command_block x3§r | §c刷怪笼 x1§r | 共 §e1842§r 个方块
+  原始上传者：Alex | 请注意该行为可能带来的危险后果！</p>
+<h6>6.2 磁盘日志</h6>
+<p>同步写入磁盘日志，格式见第 7 节 <code>DANGEROUS_PLACE</code>。</p>
+<hr>
+<h5>7. 日志模块</h5>
+<h6>7.1 日志文件路径与滚动</h6>
+<p>路径：<code>logs/spatial_blueprint/dangerous_uploads_&lt;YYYY-MM-DD&gt;.log</code></p>
+<ul>
+  <li>按日期命名，每天一个文件，防止单文件无限增长</li>
+  <li>超过 <code>LOG_RETENTION_DAYS</code> 天的文件自动删除</li>
+  <li>游戏内广播与磁盘写入<strong>同时进行</strong></li>
+  <li>净化报告（删除了哪些方块）只发游戏内消息，<strong>不写磁盘日志</strong></li>
+</ul>
+<h6>7.2 危险上传 / 审核日志格式</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">[2026-07-18 14:32:11] UPLOAD_REVIEW | Player: Steve | Blueprint: "古城" (uuid)
+  Illegal blocks: minecraft:command_block (x3) @ (12,4,8),(5,2,3),(1,0,0)
+                  minecraft:mob_spawner (x1) @ (8,1,0)
+  Items stripped: chest x2, barrel x1
+  Entities filtered: zombie x2
+  Review code: 284619 | Status: PENDING</p>
+<h6>7.3 危险放置日志格式</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">[2026-07-18 15:44:02] DANGEROUS_PLACE | OP: Steve | Blueprint: "古城" (uuid)
+  Dimension: minecraft:overworld | Pos: (128,64,-300)
+  Blocks: 1842 | Illegal: command_block x3, mob_spawner x1
+  Original uploader: Alex | Upload time: 2026-07-18 14:22:10</p>
+<h6>7.4 审核结果日志格式</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">[2026-07-18 14:38:44] REVIEW_RESULT | Code: 284619 | OP: Admin | Action: APPROVED
+[2026-07-18 14:39:02] REVIEW_RESULT | Code: 284619 | OP: Admin | Action: REJECTED
+[2026-07-18 14:42:11] REVIEW_RESULT | Code: 284619 | Action: EXPIRED (no OP online)</p>
+<h6>7.5 标记清除日志格式</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">[2026-07-18 16:10:05] MARK_CLEARED | OP: Admin | Blueprint: "古城" (uuid) | hasIllegalBlocks removed</p>
+<hr>
+<h5>8. 配置项一览，开发中梗概</h5>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">toml
+# ── 上传安全检测 ─────────────────────────────────────────────────────────────
+[upload_security]
+
+# 上传文件大小上限（字节）。第一个检测，超过直接拒绝，防止内存炸弹攻击。
+# 默认 5MB = 5,242,880 字节
+MAX_UPLOAD_FILE_BYTES = 5242880
+
+# NBT 嵌套深度上限。超过整个文件拒绝。
+# 此项永远不豁免，OP 也无法绕过。原版正常 TE 不超过 5 层，默认 8 留有余量。
+MAX_NBT_DEPTH = 8
+
+# 空间蓝图全部 BlockEntry NBT 序列化后总字节上限。
+# 超过拒绝上传。定位：可搬家（含家具箱子结构），但不能搬仓库（十几个满载箱子）。
+# 默认 512KB
+MAX_SPACE_BLUEPRINT_NBT_BYTES = 524288
+
+# ── OP 上传特殊权限 ──────────────────────────────────────────────────────────
+[op_upload_policy]
+
+# 允许 OP 上传含非法方块（命令方块/刷怪笼等）的蓝图。
+# 注意：危险 NBT 内容（Command 字段、clickEvent 等）依然强制清空，此项不豁免。
+ALLOW_OP_ILLEGAL_BLOCK_UPLOAD = false
+
+# 允许 OP 上传含服务器配置中非法模组方块的蓝图。
+ALLOW_OP_MOD_ILLEGAL_BLOCK_UPLOAD = false
+
+# ── 玩家上传蓝图数量上限 ─────────────────────────────────────────────────────
+[upload_limits]
+
+# 每个玩家可上传的空间蓝图数量上限。
+MAX_SPACE_BLUEPRINTS_PER_PLAYER = 3
+
+# 每个玩家可上传的投影蓝图数量上限。
+MAX_PROJECTION_BLUEPRINTS_PER_PLAYER = 30
+
+# 次元蓝图单个蓝图最大方块数上限（超出拒绝放置）。-1 表示不限制。
+MAX_DIMENSIONAL_BLUEPRINT_BLOCKS = -1
+
+# 是否允许玩家自行删除蓝图（删除后腾出名额）。false 则必须由 OP 操作。
+ALLOW_PLAYER_SELF_DELETE = true
+
+# ── OP 审核文件下载 ──────────────────────────────────────────────────────────
+[op_download]
+
+# OP 下载原始文件前的询问阈值（字节）。超过此大小时显示确认提示。
+# 默认 1MB = 1,048,576 字节
+OP_DOWNLOAD_WARN_THRESHOLD = 1048576
+
+# ── 大型蓝图全服提示 ─────────────────────────────────────────────────────────
+[large_blueprint]
+
+# 放置方块数超过此值时，向全服广播提示。-1 表示关闭。
+LARGE_BLUEPRINT_BROADCAST_THRESHOLD = 80000
+
+# ── 构建时间自动调整（6 档，方块数阈值，单位：个）──────────────────────────────
+# 按方块数量自动设定构建动画时长（秒）。tier6 为兜底（≥ tier5MaxBlocks 均使用）。
+[build_time_tiers]
+buildTimeTier1MaxBlocks = 10000
+buildTimeTier1Seconds   = 8
+buildTimeTier2MaxBlocks = 50000
+buildTimeTier2Seconds   = 12
+buildTimeTier3MaxBlocks = 80000
+buildTimeTier3Seconds   = 16
+buildTimeTier4MaxBlocks = 100000
+buildTimeTier4Seconds   = 25
+buildTimeTier5MaxBlocks = 200000
+buildTimeTier5Seconds   = 30
+buildTimeTier6Seconds   = 40
+
+# 全局时长限制（所有玩家含 OP/创造均受约束）
+animationDurationMin         = 3
+animationDurationMax         = 600
+allowCreativeDurationEdit    = false  # true = 创造模式玩家可手动修改时长（同 OP 权限）
+
+# ── 领地保护 ─────────────────────────────────────────────────────────────────
+[protection]
+
+# 创造模式玩家是否也受领地 mod 保护检测，默认限制。
+# false（默认）= 创造玩家不受领地限制；true = 创造玩家与生存玩家相同检测流程。
+DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA = true
+
+# ── 日志 ─────────────────────────────────────────────────────────────────────
+[logging]
+
+# 危险上传日志保留天数，过期文件自动删除。
+LOG_RETENTION_DAYS = 30</p>
+<hr>
+<h5>9. 注意事项</h5>
+<ul>
+  <li><strong>hasIllegalBlocks 标记</strong>：存服务器索引，不写入 dat 文件。OP 通过 <code>/sbp review clear &lt;uuid&gt;</code> 移除；移除后放置不再广播；操作写磁盘日志；任意 OP 均可执行。</li>
+  <li><strong>审核申请到期</strong>：到期时向玩家发送"申请已过期，请重新提交"消息。提交时若无 OP 在线立即提示玩家（不静默等待）。</li>
+  <li><strong>净化报告</strong>：只发游戏内消息给上传玩家，不写磁盘日志。</li>
+  <li><strong>刷怪笼 SpawnData 白名单</strong>：与实体上传白名单共用同一套允许列表。</li>
+  <li><strong>未知模组 TE</strong>：NBT 默认通过，后续维护模组方块白名单，白名单内方块直接放行，后果由 OP/服主承担。</li>
+  <li><strong>展示框物品</strong>：检查物品 id 是否属于危险方块；是则丢弃 id；否则保留 id+Count，丢弃 tag。</li>
+  <li><strong>流体材料清单优化</strong>（实现时注意）：合并流体（大量水/岩浆方块 → 等量桶计入 materialList）；可配置过滤草花树叶等无意义方块不计入材料消耗；仅修改 materialList，不删除蓝图中的实际方块。</li>
+</ul>
+<hr>
+<h5>10. 已知 Bug</h5>
+<h6>BUG-01：创造模式玩家绕过领地保护检测</h6>
+<p><strong>文件</strong>：<code>BlueprintPlacementHandler.java</code> <strong>位置</strong>：L109、L162（修复后行号略有偏移） <strong>状态</strong>：✅ 已修复（2026-07-19）</p>
+<p><strong>描述</strong>： <code>startPlacement</code> 中的领地保护预检（<code>isEntityPlaceEventAllowed</code> 和 <code>isEntityBreakEventAllowed</code>） 均包裹在 <code>if (player != null &amp;&amp; !player.isCreative())</code> 条件内，导致创造模式玩家完全跳过 <code>BlockEvent.EntityPlaceEvent</code> 和 <code>BlockEvent.BreakEvent</code> 的投递，领地 mod 无法拦截创造玩家 通过本 mod 放置的方块。</p>
+<p><strong>修复方案</strong>：新增配置项 <code>denyCreativePlacementInProtectedArea</code>（默认 <code>false</code>）。 开启后，创造玩家也走领地检测，三处条件（放置检测、冲突检测、破坏检测）统一修改。</p>
+<hr>
+<h5>11. 待实现功能代办</h5>
+<p>以下功能记录在案，后续版本迭代时实现，<strong>当前版本不涉及</strong>。</p>
+<h6>11.1 取出经验系统重做</h6>
+<ul>
+  <li>移除现有取出经验逻辑，改为按<strong>方块数量</strong>分配经验消耗（比例写配置文件）</li>
+  <li>示例：20 级以下，每取出 200 个方块消耗 1 经验；30 级以上按另一比例消耗（均可配置）</li>
+  <li>移除"一键取出全部方块"（8 万方块一次性取出会卡死游戏）</li>
+  <li><strong>创造模式</strong>：新增"一键清理"，相当于取出全部方块，无消耗</li>
+  <li><strong>生存模式</strong>：每次最多取出背包容量上限数量的方块，按等级消耗经验</li>
+  <li>支持取出<strong>单个物品</strong>（点选某类方块单独取出，不强制一键全取）</li>
+</ul>
+<h6>11.2 ~~大型蓝图放置全服提示~~</h6>
+<p>✅ 已完成（2026-07-19）。</p>
+<ul>
+  <li>放置方块数 ≥ <code>largeBlueprintBroadcastThreshold</code> 时，<code>PlaceBlueprintMessage</code> 向全服广播</li>
+  <li>广播内容：玩家名、方块数、预计完成秒数；不暴露坐标或其他参数</li>
+  <li>配置项：<code>largeBlueprintBroadcastEnabled</code>（默认 true）、<code>largeBlueprintBroadcastThreshold</code>（默认 10 万）</li>
+</ul>
+<h6>11.3 ~~构建时间按方块数量自动调整~~</h6>
+<p>✅ 已完成（2026-07-19）。</p>
+<p><strong>实现内容：</strong></p>
+<ul>
+  <li>6 档自动匹配，默认阈值和时长如下：</li>
+</ul>
+<table>
+  <thead><tr><th>方块数量</th><th>默认构建时间</th></tr></thead>
+  <tbody>
+    <tr><td>1 万以下</td><td>8 秒</td></tr>
+    <tr><td>1–5 万</td><td>12 秒</td></tr>
+    <tr><td>5–8 万</td><td>16 秒</td></tr>
+    <tr><td>8–10 万</td><td>25 秒</td></tr>
+    <tr><td>10–20 万</td><td>30 秒</td></tr>
+    <tr><td>20 万以上</td><td>40 秒</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>全局 min/max 限制（<code>animationDurationMin</code> 默认 3s，<code>animationDurationMax</code> 默认 600s），所有人含 OP 和创造均受限</li>
+  <li>OP 玩家可在 PointSelectionScreen 手动修改时长；普通玩家只读</li>
+  <li>新增配置 <code>allowCreativeDurationEdit</code>：是否允许创造模式玩家手动修改（默认 false）</li>
+  <li>捕捉两点后自动填入计算值；OP 手动改过的值不被覆盖</li>
+  <li>服务端 CaptureAreaMessage：OP 发来的自定义时长会被采用（不低于 min）</li>
+  <li>应用范围：CaptureAreaMessage、C2S_CreateEngineeringBlueprintMessage、C2S_VoidRecaptureMessage、SchematicImporter</li>
+</ul>
+<h6>11.4 玩家上传蓝图数量限制</h6>
+<ul>
+  <li>每种蓝图类型单独限制（见第 8 节 <code>[upload_limits]</code>）</li>
+  <li>玩家主动删除蓝图后腾出名额，立即生效</li>
+  <li>玩家申请删除自己的蓝图 → 确认后删除 → 对应类型已用数量 -1</li>
+</ul>
+<h6>11.5 次元蓝图单个方块数上限</h6>
+<p>为次元蓝图单独设定最大可搬运方块数，超出拒绝放置并提示玩家。 配置项 <code>MAX_DIMENSIONAL_BLUEPRINT_BLOCKS</code> 独立于全局捕捉体积上限（见第 8 节）。</p>
+<h6>11.6 流体/材料清单优化</h6>
+<ul>
+  <li><strong>合并流体</strong>：水/岩浆方块 → 等量桶数计入 materialList（不要求玩家准备数千桶水）</li>
+  <li><strong>过滤无意义方块</strong>：可配置过滤草/花/树叶等，不计入材料消耗</li>
+  <li>仅修改 materialList 展示与消耗逻辑，不删除蓝图中的实际方块</li>
+</ul>
+<h6>11.7 ~~领地 Mod 拦截创造模式玩家（对应 BUG-01）~~</h6>
+<p>✅ 已完成（2026-07-19）。见第 10 节 BUG-01。</p>
+<h6>11.10 ~~CaptureAreaMessage 创建蓝图安全检测~~</h6>
+<p>✅ 已完成（2026-07-19）。</p>
+<ul>
+  <li>方块 NBT 危险内容检测：容器 <code>Items</code> 列表 + 告示牌文字（<code>front_text</code>/<code>back_text</code>/<code>Text1-4</code>）</li>
+  <li>展示框内物品过滤：物品 id 属于 <code>EXCLUDED_BLOCKS</code> 时丢弃</li>
+  <li>OP bypass 对话框：S2C_OpCaptureConfirmMessage → OpCaptureConfirmScreen → 二次确认后带 <code>opBypass=true</code> 重发</li>
+  <li>普通玩家：静默剥离危险内容继续创建</li>
+  <li>OP bypass 蓝图：<code>opBypassCapture=true</code> 写入 NBT，每次放置时静默输出日志</li>
+  <li>新增配置：<code>denyCreativePlacementInProtectedArea</code>（对应 BUG-01）</li>
+</ul>
+<h6>11.11 ~~蓝图库界面（BlueprintLibraryScreen）UI 重设计~~</h6>
+<p>✅ 已完成（2026-07-19）。</p>
+<ul>
+  <li>底部操作按钮行：18×18 原版方形按钮，左对齐，无选中时全部灰色不可点击</li>
+  <li>每个 tab 的按钮集独立（♦ OP 专属；✂/✦/☀ 按 tab 隐藏）</li>
+  <li>行选中模式：单击选中/取消选中，白色 1px 边框高亮</li>
+  <li>工程 Tab：已选中行再次点击 → SafeCoordScreen</li>
+  <li>日期改为右对齐，贴面板右边缘</li>
+  <li>搜索：<code>.dat</code> 结尾时精确匹配完整文件名</li>
+</ul>
+<h6>11.12 ~~次元蓝图材料清单 Bug 修复~~</h6>
+<p>✅ 已完成（2026-07-19）。</p>
+<ul>
+  <li><strong>Bug 9</strong>：<code>C2S_ApplyBlueprintMessage</code> 从库应用次元蓝图时，现在恢复满额 <code>depositedMaterials</code>（捕捉时方块已清除 = 材料已支付）</li>
+  <li><strong>Bug 10</strong>：<code>PlacementScreen.isSpatialOnly()</code> 改用 <code>instanceof</code>，次元蓝图不再被错误归入投影流程（不再要求存满材料才能放置）</li>
+  <li>影响：次元蓝图后续将支持存入服务器云端，玩家不会因丢失物品而永久丢失结构</li>
+</ul>
+<h6>11.8 投影源文件上传检测（C2S_UploadProjectionTemplateMessage）</h6>
+<p><code>C2S_UploadProjectionTemplateMessage</code> 是将本地 <code>.schematic</code> / <code>.nbt</code> 等格式的投影源文件 转化为投影模板并上传至服务器的入口。分阶段接入完整 <code>BlueprintSanitizer</code>：</p>
+<ul>
+  <li>[x] <strong>Phase 1（2026-07-20 完成）</strong>：文件大小限制 + NBT 深度扫描</li>
+  <li><code>BlueprintConfig.MAX_UPLOAD_FILE_BYTES</code>（默认 5MB）：反序列化前检测原始压缩字节数</li>
+  <li><code>BlueprintConfig.MAX_NBT_DEPTH</code>（默认 8）：新增 <code>BlueprintSanitizer.exceedsMaxDepth()</code>，</li>
+</ul>
+<p>    迭代 BFS（非递归）扫描反序列化后的 <code>CompoundTag</code></p>
+<ul>
+  <li>网络层 <code>decode()</code> 硬上限从写死的 4MB 改为 32MB（真正生效的限制交给上面的可配置项）</li>
+  <li>新增错误提示：<code>spatial_blueprint.error.upload_file_too_large</code> / <code>.nbt_too_deep</code></li>
+  <li>[x] <strong>Phase 2（2026-07-20 完成）</strong>：容器物品清空 + 实体白名单过滤 + 展示框内容净化</li>
+  <li>新建 <code>BlueprintSanitizer.stripContainerAndSignNbtInPlace()</code>：无条件清空所有 <code>Items</code>/<code>RecordItem</code>/告示牌文字（不判断"是否危险"，上传数据整体不可信）</li>
+  <li>新建 <code>BlueprintSanitizer.filterEntitiesInPlace()</code> + <code>isEntityAllowed()</code>：实体白名单只保留画/展示框/荧光展示框；<strong>同时交叉校验 NBT 内真正的 <code>id</code> 字段</strong>——放置时 <code>EntityType.create(nbt, level)</code> 是按 NBT 里的 <code>id</code> 召唤实体，不看 <code>entry.type</code>，只查 <code>entry.type</code> 会被绕过（把 <code>type</code> 填成 painting 骗过白名单，NBT <code>id</code> 却是别的实体）</li>
+  <li>新建 <code>BlueprintSanitizer.sanitizeItemFrameContentInPlace()</code>：危险物品丢弃 id；安全物品只保留 id+Count，丢弃 tag</li>
+  <li>顺带把 <code>CaptureAreaMessage</code> 里原本内联的 <code>hasDangerousBlockNbt</code>/<code>stripDangerousBlockNbt</code>/<code>isItemFrameItemDangerous</code> 三个私有方法迁移为 <code>BlueprintSanitizer</code> 的公共静态方法，两处调用方共用一套逻辑，不再重复</li>
+  <li>字段级校验（§4 字符串/数值/坐标）暂未接入，留待 Phase 3</li>
+  <li>[x] <strong>Phase 3（2026-07-20 完成）</strong>：字段级校验（§4）</li>
+  <li>坐标越界方块过滤：<code>BlueprintSanitizer.filterOutOfRangeBlocksInPlace()</code>，pos 超出 [0,2048) 直接丢弃该方块（不拒绝整个文件）</li>
+  <li>实体坐标/朝向范围并入 <code>isEntityAllowed()</code>：tileX/Y/Z ∈ [0,2048)，facing 画 [0,3]/展示框 [0,5]</li>
+  <li>画 NBT 净化：<code>sanitizePaintingNbt()</code> 只保留 <code>id</code>+<code>variant</code>（其余字段放置时会被覆盖，可安全丢弃）</li>
+  <li>名称净化：复用已有的 <code>BlueprintValidator.sanitizeName()</code>（长度截断 + 字符白名单，比文档要求更严格，无需新写）</li>
+  <li><code>enforceTemplateFieldRules()</code>：animDuration 超出 [0,300] 归 0；customWithdrawXp/Limit 非 OP 强制 -1、OP 截断到配置上限；工程蓝图专属字段（fixedDimension/fixedStartPos/fixedEndPos/maxDistance）投影模板用不到，一律清空</li>
+  <li><code>hasIllegalBlocks</code> 标记 + 服务器索引：<strong>推迟到 Phase 6</strong>（危险放置广播）再做——目前没有任何代码会读取这个标记，提前建好索引结构属于无消费者的预先设计，不如等 Phase 6 真正需要时再一起定设计</li>
+  <li>[x] <strong>§3.5 硬编码非法方块底线（2026-07-20 完成，提前于 Phase 4）</strong></li>
+  <li><code>BlueprintSanitizer.HARDCODED_ILLEGAL_BLOCKS</code>：13 个方块（命令方块系列/拼图/结构方块/结构空位/屏障/基岩/末地传送门系列/下界传送门/末地折跃门/移动活塞），无论 <code>EXCLUDED_BLOCKS</code> 配置怎么改都拒绝；<code>minecraft:command_block_minecart</code> 是实体不是方块，已被实体白名单挡住不用重复列；<code>minecraft:light</code> 复核后确认不是安全风险，已从列表移除（见 §3.5 表格下方说明）</li>
+  <li><code>isIllegalBlock(BlockState)</code> / <code>isIllegalBlockId(String)</code>：= 配置 <code>EXCLUDED_BLOCKS</code> OR 硬编码底线，接入四处：<code>C2S_UploadProjectionTemplateMessage</code>（上传）、<code>CaptureAreaMessage</code>（捕捉）、<code>C2S_EditMaterialMessage</code>（材料清单新增/修改）、<code>C2S_SaveMaterialListMessage</code>（⎙ 保存按钮）</li>
+  <li>刷怪笼 NBT 净化并入 <code>hasDangerousBlockNbt</code>/<code>stripDangerousBlockNbt</code>：清空 <code>SpawnData</code>/<code>SpawnPotentials</code>（生物生成数据不受实体白名单约束，是绕过"禁止生物"规则的另一条路），Delay/MinSpawnDelay/MaxSpawnDelay/SpawnCount 等纯数值字段保留</li>
+  <li>生物白名单复查：<code>ENTITY_WHITELIST</code> 目前只有画/展示框/荧光展示框，不含任何生物，符合文档"上传处默认过滤所有生物"的设计——这次没有改动，只是确认现状正确</li>
+  <li>[ ] Phase 4：自动净化 / 手动审核勾选分支（§2 UploadBlueprintScreen 选项）</li>
+  <li>[ ] Phase 5：ReviewQueue 审核队列（§5）</li>
+  <li>[ ] Phase 6：DangerousUploadLogger 日志模块 + 危险放置广播（§6/§7）</li>
+</ul>
+<h6>11.9 后续扩展备忘</h6>
+<ul>
+  <li>模组方块白名单：服主配置哪些模组 TE 方块的 NBT 默认放行（跳过未知 TE 保守过滤）</li>
+  <li>生物实体捕捉：上传白名单扩展，支持特定生物实体类型（届时与刷怪笼白名单统一）</li>
+  <li>手动审核持久化：当前为内存队列，可升级为磁盘持久化防止重启丢失申请</li>
+</ul>
+<h4>技术细节与更新记录（归档原文 · 2026-09-12）</h4>
+<h4>Spatial Blueprint Mod — 技术细节与更新记录</h4>
+<p>modid: <code>spatial_blueprint</code> | 平台: Minecraft Forge 1.20.1</p>
+<hr>
+<h5>目录</h5>
+<ul>
+  <li>1. [核心数据结构](#1-核心数据结构)</li>
+  <li>2. [物品体系](#2-物品体系)</li>
+  <li>3. [网络协议](#3-网络协议)</li>
+  <li>4. [GUI 界面](#4-gui-界面)</li>
+  <li>5. [蓝图存储](#5-蓝图存储)</li>
+  <li>6. [工具类与客户端系统](#6-工具类与客户端系统)</li>
+  <li>7. [配置项](#7-配置项)</li>
+  <li>8. [蓝图文件上传安全校验方案](#8-蓝图文件上传安全校验方案)</li>
+  <li>9. [已修复 Bug](#9-已修复-bug)</li>
+  <li>10. [待办事项](#10-待办事项)</li>
+  <li>11. [更新记录](#11-更新记录)</li>
+</ul>
+<hr>
+<h5>1. 核心数据结构</h5>
+<h6>BlueprintData</h6>
+<p><code>com.xioyim.spatialblueprint.util.BlueprintData</code></p>
+<p>蓝图的完整数据载体，服务端与客户端均使用同一对象。</p>
+<table>
+  <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>name</code></td><td><code>String</code></td><td>蓝图名称</td></tr>
+    <tr><td><code>category</code></td><td><code>String</code></td><td>分类：<code>"create"</code> / <code>"project"</code> / <code>"template"</code> / <code>"dimensional"</code> / <code>"engineering"</code></td></tr>
+    <tr><td><code>creatorName</code></td><td><code>String</code></td><td>创建者游戏名</td></tr>
+    <tr><td><code>sourceName</code></td><td><code>String</code></td><td>来源玩家游戏名（初始与 creatorName 相同；预留给未来"转让来源"场景独立赋值）</td></tr>
+    <tr><td><code>createdAt</code></td><td><code>long</code></td><td>创建时间戳（ms）</td></tr>
+    <tr><td><code>size</code></td><td><code>BlockPos</code></td><td>包围盒尺寸（W, H, L）</td></tr>
+    <tr><td><code>normalBlocks</code></td><td><code>List&lt;BlockEntry&gt;</code></td><td>普通方块（放置顺序打乱以产生随机动画）</td></tr>
+    <tr><td><code>dependentBlocks</code></td><td><code>List&lt;BlockEntry&gt;</code></td><td>依附方块（火把、按钮、门等，normalBlocks 后放）</td></tr>
+    <tr><td><code>lateBlocks</code></td><td><code>List&lt;BlockEntry&gt;</code></td><td>延迟方块（由 <code>BlueprintConfig.getLatePlaceBlocks()</code> 配置）</td></tr>
+    <tr><td><code>entities</code></td><td><code>List&lt;EntityEntry&gt;</code></td><td>画、展示框等装饰实体</td></tr>
+    <tr><td><code>materialList</code></td><td><code>MaterialList</code></td><td>材料清单（从方块数据派生）</td></tr>
+    <tr><td><code>animDuration</code></td><td><code>int</code></td><td>动画总耗时（秒）</td></tr>
+    <tr><td><code>customWithdrawXp</code></td><td><code>int</code></td><td>快捷取出所需经验等级（-1 = 使用配置默认值）</td></tr>
+    <tr><td><code>customWithdrawLimit</code></td><td><code>int</code></td><td>快捷取出次数上限（-1 = 使用配置默认值）</td></tr>
+    <tr><td><code>fixedDimension</code></td><td><code>String</code></td><td>工程蓝图：锁定维度 ResourceLocation</td></tr>
+    <tr><td><code>fixedStartPos</code></td><td><code>BlockPos</code></td><td>工程蓝图：锁定起点</td></tr>
+    <tr><td><code>fixedEndPos</code></td><td><code>BlockPos</code></td><td>工程蓝图：锁定终点</td></tr>
+    <tr><td><code>maxDistance</code></td><td><code>int</code></td><td>工程蓝图：最大触发距离（格）</td></tr>
+  </tbody>
+</table>
+<p><strong>BlockEntry</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+record BlockEntry(BlockPos pos, BlockState state, @Nullable CompoundTag nbt)</p>
+<p><code>pos</code> 为相对于蓝图原点的坐标。<code>nbt</code> 仅 TileEntity 非空。</p>
+<p><strong>EntityEntry</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+record EntityEntry(int tileX, int tileY, int tileZ, byte facing, String type, CompoundTag nbt)</p>
+<p><strong>isDependent(BlockState)</strong> 判断方块是否需要在载体方块放置后再放。凡是不能独立存在的方块（火把、按钮、告示牌、门、活板门、藤蔓等）均返回 true。</p>
+<hr>
+<h6>BlueprintStorage.BlueprintSummary</h6>
+<p>轻量摘要 record，用于蓝图列表 UI，不反序列化方块数据。</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+public record BlueprintSummary(
+    String id, String name, String category, int blockCount, int animDuration,
+    int customWithdrawXp, int customWithdrawLimit,
+    String creatorName, long createdAt,
+    BlockPos fixedStartPos, BlockPos fixedEndPos, int maxDistance,
+    String fixedDimension,
+    boolean safeCoordSet, int safeX, int safeY, int safeZ,
+    boolean safeAllowSurvival,
+    String sourceName)</p>
+<hr>
+<h5>2. 物品体系</h5>
+<h6>继承关系</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">SpatialBlueprintItem
+├── DimensionalBlueprintItem   （次元蓝图）
+└── EngineeringBlueprintItem   （工程蓝图）
+
+ProjectionBlueprintItem        （投影蓝图，独立）
+VoidDimensionalBlueprintItem   （空置次元空间蓝图，独立）</p>
+<h6>物品命名规范</h6>
+<table>
+  <thead><tr><th>物品</th><th>显示名格式</th></tr></thead>
+  <tbody>
+    <tr><td>空白蓝图</td><td><code>空白蓝图</code>（固定）</td></tr>
+    <tr><td>空间蓝图</td><td><code>空间蓝图 - [名字]</code></td></tr>
+    <tr><td>投影蓝图</td><td><code>投影蓝图 - [名字]</code></td></tr>
+    <tr><td>次元蓝图</td><td><code>次元蓝图 - [名字]</code></td></tr>
+    <tr><td>工程蓝图</td><td><code>工程蓝图 - [名字]</code></td></tr>
+    <tr><td>项目蓝图</td><td><code>项目蓝图 - [名字]</code></td></tr>
+    <tr><td>空置次元空间蓝图</td><td><code>[蓝图名字] - 空置次元空间蓝图</code></td></tr>
+  </tbody>
+</table>
+<p>次元蓝图 tooltip 永久显示两行：<code>蓝图主人：XXX</code> + <code>丢失蓝图后，将失去储存的结构！</code>（红色）。 空置次元空间蓝图 tooltip 显示：<code>蓝图主人：XXX</code>。</p>
+<h6>DimensionalBlueprintItem — 主人机制与存储</h6>
+<p><strong>创建时</strong>（<code>C2S_VoidRecaptureMessage</code>）：</p>
+<ul>
+  <li><code>data.creatorName</code>：保留原始创建者（从 <code>VoidDimensionalBlueprintItem</code> 读取），若无则取当前玩家</li>
+  <li><code>data.sourceName</code>：取当前重新储存的玩家（记录"来源"，与 creatorName 可不同）</li>
+  <li><code>BlueprintStorage.save(data)</code> → 生成 <code>.dat</code> 文件，返回 UUID</li>
+  <li>UUID 写入物品 NBT <code>blueprintId</code>；完整结构数据同时写入物品 NBT（<code>setBlueprintData</code>）</li>
+</ul>
+<p><strong>NBT 传递链：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">DimensionalBlueprintItem [creatorName, blueprintId]
+  → PlaceBlueprintMessage → BuildBlueprintItem [creatorName]
+    → BuildBlueprintItem.onServerTick() → VoidDimensionalBlueprintItem [creatorName]
+      → C2S_VoidRecaptureMessage → 新 DimensionalBlueprintItem [creatorName, sourceName, blueprintId]</p>
+<p><strong>放置权限</strong>（<code>PlaceBlueprintMessage</code>，<code>isDimensional=true</code>）： 非 OP（<code>player.hasPermissions(2)</code>）且非创建者 → 拒绝，返回错误消息 <code>dimensional_not_owner</code></p>
+<h6>EngineeringBlueprintItem</h6>
+<p>关键 NBT 键：</p>
+<table>
+  <thead><tr><th>NBT 键</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><code>blueprintId</code></td><td>UUID 字符串，对应 engineering/ 目录下的文件</td></tr>
+    <tr><td><code>engProjectId</code></td><td>绑定的工程 UUID（与 blueprintId 相同）</td></tr>
+    <tr><td><code>engProjectName</code></td><td>工程名称</td></tr>
+    <tr><td><code>engDimension</code></td><td>锁定维度</td></tr>
+    <tr><td><code>engStartX/Y/Z</code></td><td>锁定起点坐标</td></tr>
+    <tr><td><code>engEndX/Y/Z</code></td><td>锁定终点坐标</td></tr>
+    <tr><td><code>engMaxDistance</code></td><td>触发距离</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>3. 网络协议</h5>
+<p>所有包均通过 <code>BlueprintNetwork.CHANNEL</code>（SimpleChannel）注册。</p>
+<h6>C2S（客户端 → 服务端）</h6>
+<table>
+  <thead><tr><th>类名</th><th>触发时机</th><th>关键行为</th></tr></thead>
+  <tbody>
+    <tr><td><code>SetPointMessage</code></td><td>空白蓝图设置 P1/P2</td><td>写入服务端点位状态</td></tr>
+    <tr><td><code>ClearPointsMessage</code></td><td>清除选区</td><td>重置服务端点位</td></tr>
+    <tr><td><code>CaptureAreaMessage</code></td><td>空间/次元蓝图捕获</td><td>扫描区域，保存 <code>.dat</code>，发放物品</td></tr>
+    <tr><td><code>CaptureProjectionMessage</code></td><td>投影蓝图捕获</td><td>扫描区域，保存 <code>.dat</code>，发放物品</td></tr>
+    <tr><td><code>PlaceBlueprintMessage</code></td><td>放置蓝图</td><td>服务端校验 + 启动 BlueprintPlacementHandler 动画</td></tr>
+    <tr><td><code>UpdateOffsetMessage</code></td><td>调整偏移</td><td>更新服务端偏移缓存</td></tr>
+    <tr><td><code>UpdateSettingsMessage</code></td><td>调整旋转等设置</td><td>更新服务端设置缓存</td></tr>
+    <tr><td><code>SetBlueprintNameMessage</code></td><td>重命名</td><td>写入物品 NBT 并同步</td></tr>
+    <tr><td><code>ForceCancelMessage</code></td><td>玩家主动取消放置</td><td>清除服务端预览状态，触发冷却</td></tr>
+    <tr><td><code>CaptureProjectionMessage</code></td><td>投影蓝图圈选捕获</td><td>同 CaptureAreaMessage 流程</td></tr>
+    <tr><td><code>C2S_ApplyBlueprintMessage</code></td><td>蓝图库选取蓝图</td><td>加载蓝图，替换手中物品</td></tr>
+    <tr><td><code>C2S_EditMaterialMessage</code></td><td>编辑材料清单条目</td><td>修改服务端蓝图文件材料数据</td></tr>
+    <tr><td><code>C2S_VoidRecaptureMessage</code></td><td>重新储存次元空间</td><td>扫描、保存 <code>.dat</code>、更新物品</td></tr>
+    <tr><td><code>C2S_VoidResetMessage</code></td><td>重置次元空间</td><td>清除储存数据</td></tr>
+    <tr><td><code>C2S_MaterialDepositMessage</code></td><td>材料存入/取出</td><td>扣减/归还玩家背包物品</td></tr>
+    <tr><td><code>C2S_SetWithdrawPropertyMessage</code></td><td>设置取出经验/次数</td><td>更新 <code>.dat</code> 文件属性</td></tr>
+    <tr><td><code>C2S_CreateEngineeringBlueprintMessage</code></td><td>创建工程蓝图</td><td>保存 engineering 分类 <code>.dat</code>，替换主手物品</td></tr>
+    <tr><td><code>C2S_RequestBlueprintDataMessage</code></td><td>请求蓝图数据（多人）</td><td>服务端分块发送 S2C_BlueprintChunkMessage（500ms 请求冷却）</td></tr>
+    <tr><td><code>C2S_RequestLibraryMessage</code></td><td>请求蓝图列表</td><td>服务端返回 S2C_LibrarySyncMessage</td></tr>
+    <tr><td><code>C2S_RenameBlueprintMessage</code></td><td>重命名蓝图</td><td>更新 <code>.dat</code> 文件名字段</td></tr>
+    <tr><td><code>C2S_DeleteBlueprintMessage</code></td><td>删除蓝图</td><td>删除 <code>.dat</code> 文件</td></tr>
+    <tr><td><code>C2S_SafeCoordMessage</code></td><td>设置安全传送坐标</td><td>写入 SBSafeCoordData</td></tr>
+    <tr><td><code>C2S_EngineeringTeleportMessage</code></td><td>工程蓝图传送</td><td>传送玩家到安全坐标</td></tr>
+    <tr><td><code>C2S_VoidTeleportMessage</code></td><td>次元空间传送</td><td>传送玩家到原放置位置</td></tr>
+    <tr><td><code>C2S_UploadProjectionTemplateMessage</code></td><td>上传 schematic 转投影模板</td><td>服务端校验、保存、发放物品</td></tr>
+    <tr><td><code>C2S_PreviewUpdateMessage</code></td><td>上报本地预览位置</td><td>服务端广播给范围内其他玩家</td></tr>
+  </tbody>
+</table>
+<h6>S2C（服务端 → 客户端）</h6>
+<table>
+  <thead><tr><th>类名</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>S2C_OperationResult</code></td><td>返回操作成功/失败及本地化消息键</td></tr>
+    <tr><td><code>S2C_ConfigSyncMessage</code></td><td>同步服务端配置到客户端</td></tr>
+    <tr><td><code>S2C_BlueprintDataMessage</code></td><td>推送完整 BlueprintData（旧路径，现已被分块取代，保留兼容）</td></tr>
+    <tr><td><code>S2C_BlueprintChunkMessage</code></td><td>分块传输蓝图数据（512KB/块，GZIP 压缩），客户端在 ClientBlueprintCache 重组</td></tr>
+    <tr><td><code>S2C_BlueprintDataFailMessage</code></td><td>通知客户端下载失败及原因</td></tr>
+    <tr><td><code>S2C_LibrarySyncMessage</code></td><td>推送蓝图摘要列表到客户端 ClientLibraryCache</td></tr>
+    <tr><td><code>S2C_PreviewBroadcastMessage</code></td><td>广播其他玩家的蓝图预览位置给范围内客户端</td></tr>
+  </tbody>
+</table>
+<h6>分块下载流程</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">客户端                          服务端
+  │── C2S_RequestBlueprintDataMessage ──▶│
+  │                                      │ NbtIo.writeCompressed → byte[]
+  │                                      │ 按 512KB 分块
+  │◀── S2C_BlueprintChunkMessage (0/N) ──│
+  │◀── S2C_BlueprintChunkMessage (1/N) ──│
+  │◀── S2C_BlueprintChunkMessage (N/N) ──│
+  │ ClientBlueprintCache.receiveChunk()  │
+  │ 全部到齐 → NbtIo.readCompressed → BlueprintData</p>
+<hr>
+<h5>4. GUI 界面</h5>
+<p>全部界面均位于 <code>com.xioyim.spatialblueprint.gui</code> 包，全部标注 <code>@OnlyIn(Dist.CLIENT)</code>。所有写操作均通过 C2S 包路由到服务端，界面本身不直接读写文件或物品 NBT。</p>
+<h6>界面总览</h6>
+<table>
+  <thead><tr><th>类名</th><th>标题</th><th>打开方式</th><th>用途</th><th>描述</th></tr></thead>
+  <tbody>
+    <tr><td><code>PointSelectionScreen</code></td><td>蓝图设定</td><td>右键<strong>空白蓝图</strong></td><td>设置选区、查看方块数、捕获蓝图</td><td>蓝图创建的起点；P1/P2 坐标设定后方可捕获</td></tr>
+    <tr><td><code>CreateBlueprintScreen</code></td><td>创建蓝图</td><td>蓝图设定界面 → <strong>「创建」</strong> 按钮</td><td>选择蓝图类型</td><td>在捕获前选择生成空间蓝图还是投影蓝图</td></tr>
+    <tr><td><code>CoordinateEditScreen</code></td><td>坐标编辑</td><td>蓝图设定界面 → 点击任意<strong>坐标数值</strong></td><td>手动输入 P1/P2 的 XYZ</td><td>用于精确输入坐标，无需手动走到目标位置</td></tr>
+    <tr><td><code>PlacementScreen</code></td><td>蓝图放置</td><td>右键<strong>空间蓝图 / 投影蓝图</strong></td><td>对齐、偏移、旋转、材料、放置</td><td>蓝图主操作界面；含两排功能按钮与实时结构预览</td></tr>
+    <tr><td><code>BlueprintLibraryScreen</code></td><td>蓝图列表(私人) / 蓝图列表(服务器)</td><td>任意玩家：空间/投影蓝图右键 <strong>✚</strong>；空白蓝图「模板」按钮；工程蓝图 <strong>⌘</strong></td><td>分类浏览、重命名、删除、应用、设属性；投影源文件上传</td><td>两排 Tab（共 6 个）；默认私人模式仅显示自己的蓝图；OP 可切换为服务器模式查看全部</td></tr>
+    <tr><td><code>EngineeringBlueprintScreen</code></td><td>工程蓝图</td><td>右键<strong>工程蓝图</strong></td><td>材料、放置、蓝图库、传送</td><td>工程蓝图的专属操作界面；含工程菜单入口（⌘，全玩家可用）</td></tr>
+    <tr><td><code>CreateEngineeringProjectScreen</code></td><td>创建工程蓝图</td><td>蓝图放置界面 → <strong>⌘</strong> 按钮</td><td>填写名称与触发距离，创建工程蓝图</td><td>将当前放置预览转换为工程蓝图并写入配置</td></tr>
+    <tr><td><code>VoidDimensionalScreen</code></td><td>（无标题）</td><td>右键<strong>空置次元空间蓝图</strong></td><td>查看储存空间、传送、重新储存、重置</td><td>次元空间的管理界面；TP 按钮仅 OP 可用</td></tr>
+    <tr><td><code>SafeCoordScreen</code></td><td>设定安全坐标</td><td>蓝图列表（工程蓝图 Tab）→ 点击<strong>蓝图名称</strong></td><td>设置工程蓝图的安全传送目标坐标</td><td>仅 OP 可操作；设定后玩家可通过工程蓝图传送</td></tr>
+    <tr><td><code>MaterialItemPickerScreen</code></td><td>选择材料</td><td>蓝图放置 / 工程蓝图界面 → <strong>材料编辑</strong></td><td>从背包选取物品添加到材料清单</td><td>逐条设置蓝图所需材料，支持任意物品</td></tr>
+    <tr><td><code>OtherPlayerDownloadScreen</code></td><td>选择要下载的蓝图预览</td><td>执行 <strong><code>/sbp download</code></strong>（附近有 2+ 玩家时）</td><td>选择要下载完整预览数据的玩家</td><td>仅 1 个玩家时跳过此界面直接下载</td></tr>
+  </tbody>
+</table>
+<h6>BlueprintLibraryScreen — Tab 布局与模式</h6>
+<p><strong>两排 Tab（高度动态：创造模式 <code>getPanelH()=264</code>；生存模式 <code>getPanelH()=246</code>）：</strong></p>
+<p><strong>Row 1（仅创造模式显示，<code>panelY+18</code>）：</strong></p>
+<table>
+  <thead><tr><th>Tab</th><th>category</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>空间蓝图</td><td><code>create</code></td><td>服务端列表</td></tr>
+    <tr><td>工程蓝图</td><td><code>engineering</code></td><td>服务端列表</td></tr>
+    <tr><td>项目蓝图</td><td><code>projects</code></td><td>服务端列表（内容开发中）</td></tr>
+  </tbody>
+</table>
+<p><strong>Row 2（所有玩家；Y = <code>panelY+18</code>（生存）/ <code>panelY+36</code>（创造））：</strong></p>
+<table>
+  <thead><tr><th>Tab</th><th>category</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>投影蓝图</td><td><code>project</code></td><td>服务端列表</td></tr>
+    <tr><td>次元蓝图</td><td><code>dimensional</code></td><td>服务端列表</td></tr>
+    <tr><td>投影模板</td><td><code>template</code></td><td>仅显示自己的，不受模式影响</td></tr>
+  </tbody>
+</table>
+<p>生存玩家进入时若 <code>activeTab</code> 属于 Row 1（create/engineering/projects），自动重置为 null。</p>
+<p><strong>动态布局辅助方法（<code>getPanelH()</code> 等）：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+private int getPanelH()           { return isCreative() ? 264 : 246; }
+private int getLastTabRowBottom() { return isCreative() ? panelY + 52 : panelY + 34; }
+private int getSepY()             { return getLastTabRowBottom() + 3; }
+private int getSearchBoxY()       { return getSepY() + 3; }
+private int getListSepY()         { return getSearchBoxY() + 14 + 2; }
+private int getListTop()          { return getListSepY() + 1; }
+private int getListBottom()       { return panelY + getPanelH() - 26; }</p>
+<p><strong>私人 / 服务器模式：</strong></p>
+<ul>
+  <li>默认私人模式（<code>serverMode=false</code>）：标题"蓝图列表(私人)"（金色），所有服务端 Tab 仅显示 <code>creatorName == 自己</code> 的蓝图</li>
+  <li>OP 点击标题前缀（⎘/⎗）切换模式 + 立刻刷新，非 OP 不显示前缀</li>
+  <li>服务器模式（<code>serverMode=true</code>）：标题"蓝图列表(服务器)"（青色），显示全部蓝图</li>
+  <li><code>template</code> Tab 无论何种模式始终只显示自己的（投影模板为个人资产）</li>
+</ul>
+<p><strong>标题区三段渲染（OP 专属前缀）：</strong></p>
+<ul>
+  <li>私人模式：<code>⎘</code>（可点击）+ <code>#</code> + <code>蓝图列表(私人)</code> — ⎘ = 点击切换为服务器列表</li>
+  <li>服务器模式：<code>⎗</code>（可点击）+ <code>#</code> + <code>蓝图列表(服务器)</code> — ⎗ = 点击切换为私人列表</li>
+  <li>悬浮前缀：下划线 + tooltip；悬浮主标题：模式说明 tooltip</li>
+  <li>像素范围每帧计算：<code>titlePrefixX/W</code>、<code>titleMainX/W</code>、<code>titleY</code></li>
+</ul>
+<p><strong>底部按钮（右→左）：</strong> <code>[关闭]</code> <code>[刷新]</code> <code>[上传]</code>（全玩家可见，打开 <code>UploadBlueprintScreen</code>）</p>
+<p><strong>操作按钮权限（18×18 方形按钮，无选中时全灰）：</strong></p>
+<table>
+  <thead><tr><th>按钮</th><th>限制</th><th>Tooltip 说明</th></tr></thead>
+  <tbody>
+    <tr><td>✏ 重命名</td><td>需要选中行</td><td>无限制提示</td></tr>
+    <tr><td>♦ 复制文件名</td><td>OP 专属；需选中</td><td>按住 Shift 显示"仅OP可用"</td></tr>
+    <tr><td>✂ 设取出上限</td><td>OP 专属；需选中</td><td>按住 Shift 显示"仅OP可用"</td></tr>
+    <tr><td>✔ 应用到手</td><td>需要选中行</td><td>无限制提示</td></tr>
+    <tr><td>✖ 删除</td><td>需要选中行</td><td>无限制提示</td></tr>
+    <tr><td>✦ 改取出经验</td><td>OP 专属；需选中；project/dimensional/template tab 显示</td><td>按住 Shift 显示"仅OP可用"</td></tr>
+    <tr><td>☀ 改取出次数</td><td>OP 专属；需选中；同上</td><td>按住 Shift 显示"仅OP可用"</td></tr>
+  </tbody>
+</table>
+<p>OP-only 按钮使用 <code>@Nullable Button btnCopyRef / btnDurRef</code> 存引用，移除 <code>.tooltip()</code> 改为 <code>renderTooltips()</code> 中手动渲染（支持 <code>Screen.hasShiftDown()</code> 条件显示权限提示行）。</p>
+<p>Tab 按钮和刷新按钮均有 <code>.tooltip()</code> 说明行（lang key <code>spatial_blueprint.gui.library.tab.*.tip</code> 等）。</p>
+<p><strong>打开入口（全玩家任意模式可用）：</strong></p>
+<ul>
+  <li>空间蓝图 / 投影蓝图右键 → ✚ 按钮</li>
+  <li>空白蓝图右键 → 「模板」按钮</li>
+  <li>工程蓝图右键 → ⌘ 按钮</li>
+</ul>
+<hr>
+<h6>通用 Lang Key 规范</h6>
+<table>
+  <thead><tr><th>Key</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>spatial_blueprint.gui.btn.save_and_close</code></td><td>所有界面"关闭/保存并关闭"按钮的 tooltip，统一使用此 key，不再单独为每个界面建立 close tooltip key</td></tr>
+    <tr><td><code>spatial_blueprint.gui.tooltip.capture_limit</code></td><td>捕获方块数量上限说明，含 <code>%s %s</code> 占位符（生存/创造），用于 PointSelectionScreen 创建按钮和 CoordinateEditScreen 保存按钮 tooltip</td></tr>
+  </tbody>
+</table>
+<h6>UploadBlueprintScreen</h6>
+<ul>
+  <li>标题：上传本地蓝图</li>
+  <li>单排 3 Tab：<code>space</code>（空间蓝图）/ <code>projection</code>（投影蓝图）/ <code>source</code>（投影源文件，黄色）</li>
+  <li>投影源文件 Tab：完整从原 <code>BlueprintLibraryScreen</code> 移植的 Schematic 上传逻辑（<code>SchematicImporter.listSchematics()</code> + <code>C2S_UploadProjectionTemplateMessage</code>）</li>
+  <li>其余 Tab 暂为空壳（显示"先选择一个选项"占位）</li>
+  <li>底部按钮：<code>[关闭]</code> <code>[刷新]</code></li>
+</ul>
+<hr>
+<h6>ErrorToast — 通用错误提示浮层（<code>gui.ErrorToast</code>，2026-07-26 新增）</h6>
+<p><code>com.xioyim.spatialblueprint.gui.ErrorToast</code></p>
+<p><strong>问题背景</strong>：错误提示机制不统一——<code>displayClientMessage</code> 走聊天框、<code>NotifySound.clientError()</code> 只有音效无文字、<code>S2C_OperationResult</code> 无条件关界面。部分校验失败场景（坐标格式错误、文件解析失败）玩家只听到一声音效，完全不知道哪里出错。</p>
+<p><strong>实现</strong>：纯静态无状态工具类（一个方法），宿主 Screen 保留字段 + 三处调用，不引入任何新 Screen 类。</p>
+<table>
+  <thead><tr><th>方法</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>render(graphics, font, screenW, screenH, Component)</code></td><td>全宽横幅（左右各超出屏幕 24 px，纯色深背景 <code>#141414</code>）+ 横幅内白色消息文字居中 + 横幅上方灰色关闭提示</td></tr>
+  </tbody>
+</table>
+<p><strong>横幅高度</strong>：最小 56 px，文本换行超出时按 <code>TEXT_PAD_V(14)×2 + 总文本高</code> 自动撑高。文本换行宽度 = <code>screenW - TEXT_PAD_H(40)×2</code>。横幅位于屏幕垂直正中。</p>
+<p><strong>UI 隐藏机制</strong>：toast 出现时，宿主 Screen 的 <code>render()</code> 在 <code>renderBackground()</code> 之后立即 <code>return</code>，完全跳过 <code>super.render()</code> 和所有面板/widget 绘制，下层 UI 既不渲染也不响应交互。<code>keyPressed</code> 和 <code>mouseClicked</code> 的守卫同步消费所有输入，任意点击或 ESC 消除 toast 并恢复正常渲染。</p>
+<p><strong>宿主 Screen 接入模式（每个 Screen 只需 4 件事）：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 1. 字段（import javax.annotation.Nullable）
+@Nullable private Component errorToast;
+
+// 2. render() — renderBackground() 之后立即插入，toast 时直接 return
+if (errorToast != null) {
+    ErrorToast.render(graphics, font, this.width, this.height, errorToast);
+    return;
+}
+// 后续的 super.render() 和所有面板绘制保持不动
+
+// 3. keyPressed() 最开头
+if (errorToast != null) {
+    if (keyCode == 256) errorToast = null;  // ESC 消除
+    return true;  // 吃掉所有按键
+}
+
+// 4. mouseClicked() 最开头
+if (errorToast != null) {
+    errorToast = null;  // 任意点击消除
+    return true;
+}</p>
+<p><strong>已接入界面：</strong></p>
+<table>
+  <thead><tr><th>界面</th><th>错误场景</th><th>原机制</th><th>改后</th></tr></thead>
+  <tbody>
+    <tr><td><code>CoordinateEditScreen</code></td><td>P1/P2 坐标格式错误</td><td>纯音效</td><td>toast + 音效</td></tr>
+    <tr><td><code>CoordinateEditScreen</code></td><td>选区体积超出限额</td><td>聊天框 + 音效</td><td>toast + 音效</td></tr>
+    <tr><td><code>UploadBlueprintScreen</code></td><td>.schematic/.litematic 解析失败</td><td>纯音效</td><td>toast + 音效</td></tr>
+  </tbody>
+</table>
+<p><strong>尚未迁移（保留原机制）：</strong></p>
+<ul>
+  <li><code>PlacementScreen</code> 材料清单非法方块提示 → 仍用 <code>displayClientMessage</code>（聊天框）</li>
+  <li><code>S2C_OperationResult</code> 无条件关界面 → 见 §10</li>
+</ul>
+<p><strong>关闭提示 lang key</strong>：<code>spatial_blueprint.gui.error_toast.tip</code>（中文："按 ESC 或点击其他区域关闭"）</p>
+<hr>
+<h6>PlacementScreen 按钮布局（FancyMenu mid-centered 坐标）</h6>
+<p><strong>Row 1（cy+113）：</strong> ▲(-144,18) ↑(-122,18) ↓(-100,18) ←(-78,18) →(-56,18) 🔁(-34,18) Align(-12,86) ✚(+78,18) 关闭(+100,36)</p>
+<p><strong>Row 2（cy+135）：</strong> ▼(-144,18) 🔒(-122,18) ♻(-100,18) ⛒(-78,18) 流体(-56,18) 材料(-34,52) 构建(+22,52) ⌘(+78,18) 取消(+100,36)</p>
+<ul>
+  <li><code>closeBtnW = 42</code>（dW×2+6，关闭/取消按钮右侧延长 6px）</li>
+  <li>Align 按钮在无数据时变为下载状态（5态：正常/下载中/下载失败/待下载/无ID）</li>
+  <li><code>DownloadState</code> enum 防止每 tick 重建 widget 导致 tooltip 闪烁</li>
+  <li>下载中时 <code>buildDownloadLabel(pct)</code> 实时更新分块进度百分比</li>
+</ul>
+<h6>PlacementScreen 材料清单面板（renderMaterialPanel）</h6>
+<p><strong>布局常量：</strong></p>
+<table>
+  <thead><tr><th>常量</th><th>值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>MAT_PANEL_W</code></td><td>298</td><td>面板总宽</td></tr>
+    <tr><td><code>MAT_PAD</code></td><td>8</td><td>内边距</td></tr>
+    <tr><td><code>MAT_CONTENT_W</code></td><td>282</td><td>内容宽（= PANEL_W - PAD×2，无滚动条）</td></tr>
+    <tr><td><code>MAT_COLS</code></td><td>4</td><td>列数</td></tr>
+    <tr><td><code>MAT_CELL_W</code></td><td>70</td><td>单格宽（= 282/4）</td></tr>
+    <tr><td><code>MAT_CELL_H</code></td><td>17</td><td>单格高</td></tr>
+    <tr><td><code>MAT_VISIBLE</code></td><td>6</td><td>可见行数</td></tr>
+    <tr><td><code>MAT_SCALE</code></td><td>0.75f</td><td>内容缩放比</td></tr>
+    <tr><td><code>MAT_BOT_BTN_H</code></td><td>16</td><td>底部按钮行高（正方形边长）</td></tr>
+  </tbody>
+</table>
+<p><strong>panelH 计算（非空间蓝图时含底部按钮行）：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">panelH = MAT_PAD + MAT_HEADER_H + 1 + MAT_SEP_PAD + contentH
+       + (showBotRow ? MAT_SEP_PAD + MAT_BOT_BTN_H + MAT_PAD : MAT_PAD)</p>
+<p><strong>渲染顺序：</strong></p>
+<ul>
+  <li>1. 面板背景（<code>0xD0101010</code>）+ 边框</li>
+  <li>2. 标题（左）+ 计数小字（右）</li>
+  <li>3. 分割线：<code>panelX+PAD → panelX+PANEL_W-PAD</code>（全宽，无滚动条偏移）</li>
+  <li>4. 物品格子区深色背景（<code>0x801A1A1A</code>，50% 透明）</li>
+  <li>5. 格子内容（scissor + 0.75×缩放）</li>
+  <li>6. 底部按钮行（<code>Button.render()</code> 直接调用，不加入 renderables）</li>
+</ul>
+<p><strong>底部按钮行规则：</strong></p>
+<ul>
+  <li>仅 <code>!isSpatialOnly()</code> 时显示，左对齐，16×16 正方形，间距 3px</li>
+  <li>OP 玩家：✚ ✎ ♻（三个），其余玩家：仅 ✎</li>
+  <li>使用 <code>Button.builder().bounds().build()</code> 实例（字段 <code>matBtnAdd/matBtnDep/matBtnWd</code>），在 <code>renderMaterialPanel()</code> 内 <code>setX/setY</code> 后调用 <code>render()</code>——不经 <code>addRenderableWidget</code>，保证 z-order 正确（在面板背景之后渲染）</li>
+</ul>
+<p><strong>按钮权限：</strong></p>
+<ul>
+  <li>✚（新增材料）：<code>player.hasPermissions(2)</code> — 修改后同步保存至文件</li>
+  <li>✎（快捷存入）：所有玩家</li>
+  <li>♻（清空清单）：<code>player.hasPermissions(2)</code> — 发送 <code>OP_CLEAR_MATERIALS(4)</code> 操作码，<strong>不返还物品</strong></li>
+</ul>
+<p><strong>滚动条</strong>：已隐藏，滚轮/触控板仍可正常滚动（逻辑保留，仅不渲染）。</p>
+<hr>
+<h5>5. 蓝图存储</h5>
+<h6>服务端文件组织</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">config/spatial_blueprint/
+├── create/        ← 空间蓝图（category="create"）
+├── projections/   ← 投影蓝图（category="project"）
+├── templates/     ← 投影模板（category="template"）
+├── dimensional/   ← 次元蓝图（category="dimensional"）
+└── engineering/   ← 工程蓝图（category="engineering"）</p>
+<p><strong>文件格式（2026-07-20 起：Litematica 兼容 NBT，<code>.litematic</code> 后缀）</strong>：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">&lt;category&gt;_&lt;creatorName&gt;_&lt;uuid&gt;.litematic</p>
+<p>示例：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">create_steve_550e8400-e29b-41d4-a716-446655440000.litematic
+project_alex_pro_3f2504e0-4f89-11d3-9a0c-0305e82c3301.litematic
+dimensional_yim_7c9e6679-7425-40de-944b-e07fc1f90ae7.litematic
+engineering_admin_1b4e28ba-2fa1-11d3-a4b5-0800200c9a66.litematic</p>
+<ul>
+  <li><code>category</code> 取 <code>BlueprintData.category</code>，空字符串用 <code>unknown</code> 占位</li>
+  <li><code>creatorName</code> 经 <code>sanitizeForFilename()</code> 处理：只保留 <code>[A-Za-z0-9_]</code>（Minecraft 用户名合法字符集），去除首尾 <code>_</code></li>
+  <li>UUID 始终位于最后一段，<code>listSummaries()</code> 用 <code>stem.lastIndexOf('_')</code> 定位 UUID</li>
+  <li><code>BlueprintStorage.listSummaries()</code> 扫描全部子目录，返回轻量摘要列表（不解码方块状态数组）</li>
+  <li>所有蓝图类型（含次元蓝图）均有独立 <code>.litematic</code> 文件；次元蓝图物品同时在 NBT 内保留完整结构数据用于放置</li>
+</ul>
+<p><strong>⚠️ 旧 <code>.dat</code> 格式已于 2026-07-20 完全废弃，不做任何兼容或迁移</strong>（详见 §10 2026-07-20 记录）。当时判断依据是 mod 仍在开发阶段、只有开发者本人测试、服务器上没有需要保留的真实数据。<strong>如果这个前提以后变了（有真实玩家数据了），任何"改存储格式"的需求都必须先确认是否需要写迁移工具，不能再默认可以直接丢弃旧数据。</strong></p>
+<h6>蓝图文件的 NBT 结构（Litematica 兼容格式）</h6>
+<p><code>BlueprintData.serialize()</code>/<code>deserialize()</code>（见 <code>BlueprintData.java</code>）产出的文件是<strong>标准 Litematica <code>.litematic</code> 结构 + 一个自定义顶层键</strong>，因此可以被真正的 Litematica mod 正常打开（多出来的键会被忽略）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">{
+  Version: int,                    ← 目前写 7
+  MinecraftDataVersion: int,       ← 3465（对应 1.20.1）
+  Metadata: {
+    Name, Author, Description, RegionCount, TimeCreated, TimeModified,
+    TotalBlocks, TotalVolume, EnclosingSize: {x,y,z}
+  },
+  Regions: {
+    "Main": {                      ← 恒定单区域，Position 恒为 {0,0,0}，Size 恒为正
+      Position: {x,y,z}, Size: {x,y,z},
+      BlockStatePalette: [ {Name, Properties}, ... ],   ← 方块状态去重，索引0固定是空气
+      BlockStates: long[],         ← 位压缩索引数组，覆盖整个包围盒（含空气）
+      TileEntities: [ {x,y,z,...}, ... ],  ← 只存有 NBT 的方块（容器/告示牌等）
+      Entities: [ {...完整实体NBT...}, ... ]  ← 画/展示框，坐标已改写为蓝图相对坐标
+    }
+  },
+  SpatialBlueprintData: {           ← mod 自己的字段，真正的 Litematica 会忽略这个键
+    category, materialList, creatorName, sourceName, createdAt,
+    customWithdrawXp, customWithdrawLimit, opBypassCapture, animDuration,
+    fixedDimension, fixedStartPos, fixedEndPos, maxDistance
+  }
+}</p>
+<p><strong>位压缩编解码</strong>：<code>LitematicaCodec.java</code>（独立实现，非依赖 Litematica 代码或 jar，clean-room 实现同一套公开格式）</p>
+<ul>
+  <li><code>bitsPerEntry(paletteSize) = max(2, ceil(log2(paletteSize)))</code></li>
+  <li>条目允许跨越 long 边界（不同于 1.16+ 版本区块"从不跨边界"的打包方式），这是 Litematica 自己的 <code>LitematicaBitArray</code> 实现方式，必须原样复刻</li>
+  <li><code>getPackedValue</code>/<code>putPackedValue</code> 读写共用，<code>LitematicaImporter</code>（外部文件导入）也调用同一套，避免两处实现互相打架</li>
+</ul>
+<p><strong>已知限制</strong>：<code>deserialize()</code> 遍历的是<strong>整个包围盒</strong>（W×H×L 格，含空气），不再是"只遍历有方块的格子"——对稀疏但跨度大的结构，这个遍历量可能远超实际方块数（详见 §7 <code>maxBoundingVolume</code> 配置项）。</p>
+<h6>ClientBlueprintCache</h6>
+<p><code>com.xioyim.spatialblueprint.client.ClientBlueprintCache</code></p>
+<p>客户端内存缓存，管理多人模式下的蓝图数据下载。</p>
+<table>
+  <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>CACHE</code></td><td><code>Map&lt;String, BlueprintData&gt;</code></td><td>已完成下载的蓝图数据</td></tr>
+    <tr><td><code>PENDING_CHUNKS</code></td><td><code>Map&lt;String, byte[][]&gt;</code></td><td>分块接收槽（null 槽 = 未到达）</td></tr>
+    <tr><td><code>DOWNLOADING</code></td><td><code>Set&lt;String&gt;</code></td><td>正在请求中的 ID</td></tr>
+    <tr><td><code>FAILED</code></td><td><code>Map&lt;String, String&gt;</code></td><td>失败 ID → 原因 key</td></tr>
+    <tr><td><code>DOWNLOAD_START</code></td><td><code>Map&lt;String, Long&gt;</code></td><td>超时检测时间戳（默认 8s）</td></tr>
+  </tbody>
+</table>
+<p>主要方法：</p>
+<table>
+  <thead><tr><th>方法</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>get(id)</code></td><td>获取已缓存数据，未命中返回 null</td></tr>
+    <tr><td><code>put(id, data)</code></td><td>存入数据，同时通知 OtherPlayerDownloadListener</td></tr>
+    <tr><td><code>startDownload(id)</code></td><td>标记开始下载，清除失败状态</td></tr>
+    <tr><td><code>receiveChunk(id, idx, total, data)</code></td><td>接收一块，全部到齐后组装并反序列化</td></tr>
+    <tr><td><code>getDownloadProgress(id)</code></td><td>返回 0-100 下载进度（基于已收到分块数）</td></tr>
+    <tr><td><code>markFailed(id, reason)</code></td><td>标记失败（也被超时检测自动调用）</td></tr>
+    <tr><td><code>clearAll()</code></td><td>清除全部缓存（<code>/sbp clearcache</code> 使用）</td></tr>
+    <tr><td><code>remove(id)</code></td><td>清除单个条目（取消/重置时）</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>6. 工具类与客户端系统</h5>
+<h6>BlueprintPlacementHandler</h6>
+<p>Tick-based 动画方块放置器。</p>
+<ul>
+  <li><code>startPlacement()</code> 创建 <code>PendingPlacement</code>，对 <code>normalBlocks</code> 执行 <code>Collections.shuffle()</code>（产生随机散点动画）</li>
+  <li>放置顺序：<code>normalBlocks</code>（已打乱） → <code>dependentBlocks</code> → <code>lateBlocks</code> → 实体</li>
+  <li><code>filtered.sourceName = data.sourceName</code> 在过滤后保留来源玩家字段</li>
+</ul>
+<h6>BlueprintSelectionRenderer</h6>
+<p><code>com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer</code></p>
+<p>客户端渲染总控，负责：</p>
+<ul>
+  <li>1. 本地玩家蓝图预览（方块 VBO 渲染）</li>
+  <li>2. 其他玩家预览轮廓框渲染（<code>renderOtherPlayerPreviews</code>）</li>
+  <li>3. 预览位置周期性广播（<code>tickPreviewBroadcast</code>）</li>
+</ul>
+<p><strong>预览广播逻辑：</strong></p>
+<ul>
+  <li>已锁定：位置/旋转变化时立即发送 <code>C2S_PreviewUpdateMessage</code>（去重，相同位置不重发）</li>
+  <li>未锁定：每 <code>PREVIEW_BROADCAST_INTERVAL</code> 秒发一次当前视线目标位置</li>
+  <li>关闭界面/取消/走远时调用 <code>sendPreviewClear()</code> 发空包清除</li>
+</ul>
+<p><strong>轮廓框渲染：</strong></p>
+<ul>
+  <li>颜色：<code>R=0.25 G=0.75 B=1.0 A=0.9</code>（亮青色）</li>
+  <li>使用 <code>LevelRenderer.renderLineBox()</code> + <code>RenderType.lines()</code></li>
+  <li>根据 rotation 交换 X/Z 尺寸</li>
+</ul>
+<h6>ServerPreviewTracker</h6>
+<p><code>com.xioyim.spatialblueprint.server.ServerPreviewTracker</code></p>
+<p>服务端维护各玩家预览状态，处理广播。</p>
+<ul>
+  <li><code>update(player, origin, rotation, sx, sy, sz, blueprintId)</code> — 更新并广播</li>
+  <li>origin=null：清除该玩家条目，广播清除</li>
+  <li>去重：与上次相同则跳过</li>
+  <li><code>clear(player)</code> — 玩家登出时调用</li>
+  <li>广播范围：以 origin（或玩家位置）为圆心，<code>PREVIEW_BROADCAST_RADIUS</code> 格内的同维度玩家</li>
+</ul>
+<h6>ClientOtherPreviewCache</h6>
+<p><code>com.xioyim.spatialblueprint.client.ClientOtherPreviewCache</code></p>
+<p>存储其他玩家的预览数据，供渲染器使用。</p>
+<p>每个 <code>Entry</code> 包含：<code>playerUUID, playerName, blueprintId, origin, rotation, sizeX/Y/Z, fullData</code>。</p>
+<ul>
+  <li><code>receive(msg)</code>：收到广播后更新；<code>enabled=false</code> 或已屏蔽则丢弃</li>
+  <li><code>attachFullData(uuid, data)</code>：<code>/sbp download</code> 完成后附加完整方块数据</li>
+  <li>新位置到来时，<code>fullData</code> 保持（完整预览跟随新位置）；blueprintId 变化则清空 <code>fullData</code></li>
+</ul>
+<h6>ClientPreviewSettings</h6>
+<p><code>com.xioyim.spatialblueprint.client.ClientPreviewSettings</code></p>
+<p>持久化客户端预览开关和屏蔽列表。</p>
+<ul>
+  <li>存储路径：<code>.minecraft/config/spatial_blueprint_preview.json</code></li>
+  <li>字段：<code>enabled: boolean</code>、<code>blockedPlayers: Set&lt;String&gt;</code></li>
+  <li><code>setEnabled(false)</code> 同时清空 <code>ClientOtherPreviewCache</code></li>
+  <li><code>block(name)</code> 立即从 live cache 移除对应玩家的条目</li>
+</ul>
+<h6>OtherPlayerDownloadListener</h6>
+<p><code>com.xioyim.spatialblueprint.client.OtherPlayerDownloadListener</code></p>
+<p>桥接 <code>ClientBlueprintCache.put()</code> → <code>ClientOtherPreviewCache.attachFullData()</code>。</p>
+<p><code>/sbp download</code> 触发下载时调用 <code>register(blueprintId, playerUUID)</code>，数据到达后自动关联。</p>
+<h6>SchematicImporter</h6>
+<p>读取 MCEdit / Schematica <code>.schematic</code> 文件并转换为 <code>BlueprintData</code>（<code>category="template"</code>）。</p>
+<ul>
+  <li>格式：gzip 压缩 NBT，YZX 坐标顺序</li>
+  <li>静态映射表覆盖 1.12 全部常用方块（ID 0–252）</li>
+  <li>懒加载 <code>BlockState[]</code> 缓存</li>
+</ul>
+<h6>LitematicaImporter（2026-07-20 新增）</h6>
+<p>读取 Litematica MOD 的 <code>.litematic</code> 文件并转换为 <code>BlueprintData</code>（<code>category="template"</code>）。与 <code>SchematicImporter</code> 是完全独立的两套格式，不能共用解析逻辑：</p>
+<ul>
+  <li>方块状态直接以 <code>Name</code>+<code>Properties</code> 存在调色板里，与原版结构方块 NBT 格式一致，可直接用 <code>NbtUtils.readBlockState</code></li>
+  <li>支持多区域（Regions）合并，每个区域可有独立 Position/Size（Size 分量可为负，表示该轴反向延伸），计算整体包围盒</li>
+  <li>位压缩解码委托给 <code>LitematicaCodec</code></li>
+  <li>暂不支持实体（画/展示框）导入——外部文件的 Entities 结构差异较大，后续需要时再补（<code>BlueprintData</code> 自己的存储格式已经支持完整实体读写，仅此导入器为了控制范围暂不做）</li>
+  <li><strong>位压缩解码算法未经真实 Litematica 文件充分测试</strong>，如果发现导入结构错位/镜像，先查这里</li>
+</ul>
+<h6>LitematicaCodec（2026-07-20 新增）</h6>
+<p>Litematica 位压缩调色板编解码的唯一实现，<code>LitematicaImporter</code>（读）与 <code>BlueprintData</code>（读+写）共用，避免各写一份互相不一致。见上方"蓝图文件的 NBT 结构"小节。</p>
+<h6>BlueprintSanitizer（2026-07-20 新增）</h6>
+<p>上传净化管线，服务端处理不受信任的客户端上传数据（<code>C2S_UploadProjectionTemplateMessage</code>）。详见 §11 蓝图文件上传安全校验方案（实际实现，非早期设计稿）。</p>
+<h6>BlueprintValidator 上传限流（2026-07-20 新增）</h6>
+<p><code>checkAndUpdateUploadRateLimit(player)</code>：非 OP 玩家走冷却（<code>uploadCooldownSeconds</code>）+ 滚动 60 秒窗口次数上限（<code>uploadMaxPerMinute</code>）；OP 玩家只走更短的独立冷却（<code>uploadCooldownSecondsOp</code>），完全不受次数上限约束。玩家登出时 <code>clearUploadRateLimit()</code> 清理，防止 map 无限增长。</p>
+<hr>
+<h5>7. 配置项</h5>
+<p><code>config/spatial_blueprint/spatial_blueprint.toml</code></p>
+<h6>[general]</h6>
+<table>
+  <thead><tr><th>配置键</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>excludedBlocks</code></td><td>（见代码）</td><td>无法被蓝图捕获的方块列表</td></tr>
+    <tr><td><code>maxCaptureVolumeCreative</code></td><td>300000</td><td>创造模式最大捕获体积（绝对上限 <code>ABSOLUTE_MAX_CAPTURE_VOLUME</code>，硬编码 Java 常量，2026-07-20 起为 1,600,000，改这个值需要改源码重新构建）</td></tr>
+    <tr><td><code>maxCaptureVolumeSurvival</code></td><td>100000</td><td>生存模式最大捕获体积</td></tr>
+    <tr><td><code>previewDistance</code></td><td>64</td><td>蓝图预览/放置最大距离（格）</td></tr>
+    <tr><td><code>renderCancelMargin</code></td><td>64</td><td>自动取消预览的额外距离（格，叠加在包围盒半对角线上）</td></tr>
+    <tr><td><code>previewBroadcastRadius</code></td><td>256</td><td>其他玩家可见蓝图预览轮廓框的半径（格）</td></tr>
+    <tr><td><code>previewBroadcastInterval</code></td><td>3</td><td>未锁定预览的位置广播间隔（秒）</td></tr>
+    <tr><td><code>extraCooldownSeconds</code></td><td>—</td><td>强制取消后的额外冷却时间</td></tr>
+    <tr><td><code>maxUndoHistory</code></td><td>—</td><td>撤销历史记录最大条数</td></tr>
+  </tbody>
+</table>
+<h6>[materialList]</h6>
+<table>
+  <thead><tr><th>配置键</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>blockSubstitutions</code></td><td>方块替换映射（用于材料清单显示，如 <code>water=water_bucket</code>）</td></tr>
+    <tr><td><code>withdrawXpRatio</code></td><td>快捷取出经验计算比例</td></tr>
+    <tr><td><code>maxWithdrawXpCost</code></td><td>快捷取出最大经验上限</td></tr>
+    <tr><td><code>maxWithdrawCount</code></td><td>快捷取出次数上限</td></tr>
+  </tbody>
+</table>
+<h6>[animation]</h6>
+<table>
+  <thead><tr><th>配置键</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>animationSpeed</code></td><td>1</td><td>每 tick 放置方块数</td></tr>
+    <tr><td><code>animationDurationMin</code></td><td>3</td><td>动画时长全局下限（秒，所有玩家含 OP/创造）</td></tr>
+    <tr><td><code>animationDurationMax</code></td><td>600</td><td>动画时长全局上限（秒，所有玩家含 OP/创造）</td></tr>
+    <tr><td><code>allowCreativeDurationEdit</code></td><td>false</td><td>创造模式玩家是否可手动修改构建时长（同 OP 权限）</td></tr>
+  </tbody>
+</table>
+<h6>[build_time_tiers]</h6>
+<p>构建时长 6 档自动匹配，<code>getAutoDuration(blockCount)</code> 按序取第一个匹配的档位，tier6 为兜底。</p>
+<table>
+  <thead><tr><th>配置键</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>buildTimeTier1MaxBlocks</code></td><td>10000</td><td>&lt; 此值 → tier1 时长</td></tr>
+    <tr><td><code>buildTimeTier1Seconds</code></td><td>8</td><td>tier1 构建时长（秒）</td></tr>
+    <tr><td><code>buildTimeTier2MaxBlocks</code></td><td>50000</td><td>&lt; 此值 → tier2 时长</td></tr>
+    <tr><td><code>buildTimeTier2Seconds</code></td><td>12</td><td>tier2 构建时长（秒）</td></tr>
+    <tr><td><code>buildTimeTier3MaxBlocks</code></td><td>80000</td><td>&lt; 此值 → tier3 时长</td></tr>
+    <tr><td><code>buildTimeTier3Seconds</code></td><td>16</td><td>tier3 构建时长（秒）</td></tr>
+    <tr><td><code>buildTimeTier4MaxBlocks</code></td><td>100000</td><td>&lt; 此值 → tier4 时长</td></tr>
+    <tr><td><code>buildTimeTier4Seconds</code></td><td>25</td><td>tier4 构建时长（秒）</td></tr>
+    <tr><td><code>buildTimeTier5MaxBlocks</code></td><td>200000</td><td>&lt; 此值 → tier5 时长</td></tr>
+    <tr><td><code>buildTimeTier5Seconds</code></td><td>30</td><td>tier5 构建时长（秒）</td></tr>
+    <tr><td><code>buildTimeTier6Seconds</code></td><td>40</td><td>tier6 兜底时长（≥ tier5MaxBlocks 均使用）（秒）</td></tr>
+  </tbody>
+</table>
+<h6>[broadcast]</h6>
+<table>
+  <thead><tr><th>配置键</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>largeBlueprintBroadcastEnabled</code></td><td>true</td><td>是否开启大型蓝图放置全服播报</td></tr>
+    <tr><td><code>largeBlueprintBroadcastThreshold</code></td><td>100000</td><td>触发播报的方块数阈值</td></tr>
+  </tbody>
+</table>
+<h6>[upload_security]（2026-07-20 新增）</h6>
+<table>
+  <thead><tr><th>配置键</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>maxUploadFileBytes</code></td><td>20971520（20MB）</td><td>上传文件原始字节数上限，反序列化<strong>前</strong>检测（防内存炸弹）。原为 5MB，随方块上限一起调大</td></tr>
+    <tr><td><code>maxNbtDepth</code></td><td>8</td><td>NBT 嵌套深度上限，迭代 BFS 扫描（非递归），OP 也不能跳过</td></tr>
+    <tr><td><code>maxBoundingVolume</code></td><td>20000000</td><td>上传结构包围盒体积（W×H×L）上限，<strong>独立于</strong>方块数量上限——litematic 格式要给整个包围盒铺密集索引数组，稀疏结构的包围盒可能远大于实际方块数（实测：150万方块的结构包围盒达 940万格，填充率仅16%）</td></tr>
+    <tr><td><code>uploadCooldownSeconds</code></td><td>5</td><td>非 OP 玩家两次上传之间的最小间隔（秒）</td></tr>
+    <tr><td><code>uploadCooldownSecondsOp</code></td><td>1</td><td>OP 玩家的上传冷却（更短，且完全不受下面的每分钟上限约束）</td></tr>
+    <tr><td><code>uploadMaxPerMinute</code></td><td>10</td><td>非 OP 玩家滚动 60 秒窗口内最多上传次数；OP 不受此限制</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>8. 蓝图文件上传安全校验方案（实际实现，2026-07-20）</h5>
+<p>本节原为设计稿（伪代码），2026-07-20 已按 <code>BlueprintSanitizer</code> 实际实现替换。 完整威胁模型 / 分阶段设计见项目根目录《上传文件检测细节和方案计划.md》，本节只记录<strong>实际落地的代码</strong>。</p>
+<h6>校验链（<code>C2S_UploadProjectionTemplateMessage.handle()</code>，按执行顺序）</h6>
+<ul>
+  <li>1. <strong>仅创造模式</strong>可上传</li>
+  <li>2. <strong>上传限流</strong>：<code>BlueprintValidator.checkAndUpdateUploadRateLimit()</code>（见 §7 <code>[upload_security]</code>）</li>
+  <li>3. <strong>文件大小检测</strong>（<code>maxUploadFileBytes</code>）——反序列化<strong>前</strong>检测压缩字节数，防止高压缩比 NBT 展开成内存炸弹</li>
+  <li>4. <strong>NBT 嵌套深度检测</strong>（<code>BlueprintSanitizer.exceedsMaxDepth</code>，迭代 BFS，非递归，<code>maxNbtDepth</code>）</li>
+  <li>5. <code>BlueprintData.deserialize()</code> 反序列化</li>
+  <li>6. <strong>包围盒体积检测</strong>（<code>maxBoundingVolume</code>）——独立于方块数量，见 §7 说明</li>
+  <li>7. <strong>净化</strong>（均来自 <code>BlueprintSanitizer</code>，数据本身不可信，一律无条件处理）：</li>
+</ul>
+<ul>
+  <li><code>stripContainerAndSignNbtInPlace</code>：无条件清空容器 Items / 唱片机 RecordItem / 告示牌文字 / 刷怪笼 SpawnData+SpawnPotentials</li>
+  <li><code>filterOutOfRangeBlocksInPlace</code>：坐标越界（[0,2048) 之外）的方块直接丢弃</li>
+  <li><code>filterEntitiesInPlace</code> + <code>isEntityAllowed</code>：实体白名单（仅画/展示框/荧光展示框）。<strong>关键点</strong>：同时校验 <code>entry.type</code> 与 NBT 里真正的 <code>id</code> 字段——放置时 <code>EntityType.create(nbt,level)</code> 认的是 NBT 的 <code>id</code>，不是 <code>entry.type</code>，只查 <code>entry.type</code> 会被绕过（伪装成画，NBT <code>id</code> 填任意实体）</li>
+  <li>画只保留 <code>id</code>+<code>variant</code>；展示框危险物品丢弃 <code>id</code>，安全物品丢弃 <code>tag</code> 只留 <code>id</code>+<code>Count</code></li>
+  <li><code>BlueprintValidator.sanitizeName</code> 过滤名称非法字符</li>
+  <li><code>enforceTemplateFieldRules</code>：animDuration 越界归零；<code>customWithdrawXp</code>/<code>Limit</code> 非 OP 强制 -1、OP 截断到配置上限；工程蓝图专属字段（<code>fixedDimension</code> 等）一律清空</li>
+</ul>
+<ul>
+  <li>8. <strong>方块总数校验</strong>（<code>ABSOLUTE_MAX_CAPTURE_VOLUME</code>）</li>
+  <li>9. <strong>非法方块检测</strong>：<code>BlueprintSanitizer.isIllegalBlock()</code> = 配置 <code>EXCLUDED_BLOCKS</code> <strong>OR</strong> 硬编码底线 <code>HARDCODED_ILLEGAL_BLOCKS</code>（13 个：命令方块系列/拼图/结构方块/结构空位/屏障/基岩/传送门系列/移动活塞——<strong>不含</strong> <code>minecraft:light</code>，那只是正常可获取的隐形光源，不构成风险）</li>
+  <li>10. 强制覆盖 <code>category</code>/<code>creatorName</code>/<code>sourceName</code>/<code>createdAt</code>，服务端生成新 UUID 保存</li>
+</ul>
+<p>材料清单（✚新增 / ⎙保存）也复用了同一条 <code>isIllegalBlock</code>/<code>isIllegalBlockId</code> 检查，防止命令方块等被塞进材料清单。</p>
+<h6>尚未实现（见《上传文件检测细节和方案计划.md》§11.8）</h6>
+<ul>
+  <li>Phase 4：上传界面"自动净化 / 申请手动审核"勾选分支</li>
+  <li>Phase 5：ReviewQueue 人工审核队列</li>
+  <li>Phase 6：DangerousUploadLogger 日志 + 危险放置全服广播 + <code>hasIllegalBlocks</code> 服务器索引标记（目前没有消费者，故意推迟，避免预先设计无人使用的结构）</li>
+</ul>
+<hr>
+<h5>9. 已修复 Bug</h5>
+<h6>Bug 1 — 工程蓝图数据缺失（stale stack ref）</h6>
+<p><strong>症状</strong>：创建工程蓝图后，预览/部署按钮灰色，提示"下载数据"。</p>
+<p><strong>根因</strong>：<code>C2S_CreateEngineeringBlueprintMessage.handle()</code> 替换主手物品后，未调用 <code>EngineeringBlueprintItem.setBoundProject()</code>，也未发 <code>S2C_BlueprintDataMessage</code>。</p>
+<p><strong>修复</strong>：补充两步调用，参照 <code>C2S_ApplyBlueprintMessage</code> 的实现。</p>
+<hr>
+<h6>Bug 2 — 放置动画逐层出现</h6>
+<p><strong>症状</strong>：方块从底层到顶层依次出现，而非随机散点扩散。</p>
+<p><strong>根因</strong>：<code>normalBlocks</code> 按 Y→X→Z 捕获顺序排列，按序放置。</p>
+<p><strong>修复</strong>：<code>BlueprintPlacementHandler.startPlacement()</code> 中对 <code>normalBlocks</code> 执行 <code>Collections.shuffle()</code>。</p>
+<hr>
+<h6>Bug 3 — S2C_BlueprintDataMessage 包路径错误（编译错误）</h6>
+<p><strong>根因</strong>：<code>S2C_BlueprintDataMessage</code> 在 <code>network</code> 包，不在 <code>network.s2c</code> 子包。</p>
+<p><strong>修复</strong>：修正 import 路径。</p>
+<hr>
+<h6>Bug 4–6 — 投影模板系统相关</h6>
+<table>
+  <thead><tr><th>Bug</th><th>症状</th><th>修复</th></tr></thead>
+  <tbody>
+    <tr><td>BUG-4</td><td>schematic 转换不设 <code>category</code></td><td><code>SchematicImporter</code> 中强制设 <code>category="template"</code></td></tr>
+    <tr><td>BUG-5</td><td>fakeId 含冒号导致非法文件路径</td><td>彻底移除 fakeId 机制，所有物品持有真实 UUID</td></tr>
+    <tr><td>BUG-6</td><td>上传 479K 方块时 <code>readNbt()</code> 超 2MB 崩溃</td><td>改用手动 GZIP 压缩 byte[]，4MB 上限，绕过 <code>NbtAccounter</code></td></tr>
+  </tbody>
+</table>
+<hr>
+<h6>Bug 9 — 次元蓝图从库应用后材料清单显示为空（depositedMaterials 丢失）</h6>
+<p><strong>症状</strong>：从蓝图库 ✔ 应用次元蓝图到手中后，打开放置界面，材料清单全部显示 0/N，生存模式无法放置。</p>
+<p><strong>根因</strong>：<code>C2S_ApplyBlueprintMessage</code> 只写了 <code>blueprintName</code>、<code>blueprintId</code>、<code>animDuration</code> 三个基础字段，未写 <code>depositedMaterials</code>。次元蓝图捕捉时方块已从世界清除，材料理应视为已全额存入，但 apply 丢弃了这一状态。</p>
+<p><strong>修复</strong>：<code>C2S_ApplyBlueprintMessage</code> 中，若 <code>targetItem == DIMENSIONAL_BLUEPRINT</code>，从 <code>data.materialList</code> 生成满额 <code>depositedMaterials</code> 写入物品 NBT。</p>
+<hr>
+<h6>Bug 10 — <code>PlacementScreen.isSpatialOnly()</code> 对次元蓝图返回 false</h6>
+<p><strong>症状</strong>：Bug 9 修复后，次元蓝图材料已满额，但放置界面仍要求"存满材料"才能放置，按钮仍灰色。</p>
+<p><strong>根因</strong>：<code>isSpatialOnly()</code> 使用 <code>getClass() == SpatialBlueprintItem.class</code>（精确类型比较），<code>DimensionalBlueprintItem extends SpatialBlueprintItem</code> 返回 false，次元蓝图被错误归入投影蓝图流程（需存满才能放置）。</p>
+<p><strong>修复</strong>：改为 <code>stack.getItem() instanceof SpatialBlueprintItem</code>，次元蓝图正确返回 true（材料清单仅供查阅，无存取/放置限制）。</p>
+<hr>
+<h6>Bug 7 — 蓝图下载失败（Payload may not be larger than 1048576 bytes）</h6>
+<p><strong>症状</strong>：大型蓝图点击下载后报错，服务端日志显示包超出 1MB。</p>
+<p><strong>根因</strong>：Minecraft <code>ClientboundCustomPayloadPacket</code> 对自定义频道有 1MB 硬限制。</p>
+<p><strong>修复</strong>：实现分块传输（<code>S2C_BlueprintChunkMessage</code>，512KB/块），服务端分割，客户端 <code>ClientBlueprintCache.receiveChunk()</code> 重组。</p>
+<hr>
+<h6>Bug 8 — Tooltip 闪烁（下载失败时重试按钮每帧重建）</h6>
+<p><strong>症状</strong>：<code>PlacementScreen</code> 处于下载失败状态时，鼠标悬停在"重试下载"按钮上，tooltip 持续闪烁。</p>
+<p><strong>根因</strong>：<code>tick()</code> 每帧调用 <code>clearWidgets(); init()</code> 重建所有按钮，tooltip hover 状态在重建后丢失。</p>
+<p><strong>修复</strong>：引入 <code>DownloadState</code> enum，仅在状态变化时重建 widget；下载进度标签通过 <code>downloadingBtn.setMessage()</code> 原地更新，不触发重建。</p>
+<hr>
+<h5>10. 待办事项</h5>
+<p>见项目根目录 <code>待办事项.MD</code>（本文件不再单独维护）。</p>
+<hr>
+<h5>11. 更新记录</h5>
+<h6>2026-07-26</h6>
+<p><strong>ErrorToast — 通用错误提示横幅（首批接入）</strong></p>
+<p>新建 <code>com.xioyim.spatialblueprint.gui.ErrorToast</code>：纯静态无状态工具类，单方法 <code>render()</code>。设计经过两轮迭代（详见 §4 ErrorToast 小节），最终形态：</p>
+<ul>
+  <li>全宽横幅（左右各超出屏幕 24 px，纯色深背景 <code>#141414</code>），屏幕垂直正中</li>
+  <li>高度：最小 56 px，文本换行时自动撑高（<code>TEXT_PAD_V×2 + 总文本高</code>）</li>
+  <li>关闭提示在横幅<strong>上方</strong>（灰色），消息在横幅<strong>内部</strong>（白色，居中）</li>
+  <li>toast 出现时宿主 Screen 的 <code>render()</code> 在 <code>renderBackground()</code> 后立即 <code>return</code>，下层 UI 完全隐藏且不响应交互；任意点击或 ESC 消除</li>
+</ul>
+<p>接入的两个界面、三条错误路径：</p>
+<table>
+  <thead><tr><th>界面</th><th>错误</th><th>原机制</th></tr></thead>
+  <tbody>
+    <tr><td><code>CoordinateEditScreen</code></td><td>坐标格式错误</td><td>纯音效 → <strong>toast</strong></td></tr>
+    <tr><td><code>CoordinateEditScreen</code></td><td>选区体积超限</td><td>聊天框 → <strong>toast</strong>（删除 <code>sendSystemMessage</code> 调用）</td></tr>
+    <tr><td><code>UploadBlueprintScreen</code></td><td>文件解析失败</td><td>纯音效 → <strong>toast</strong></td></tr>
+  </tbody>
+</table>
+<p>新增 lang key（<code>zh_cn.json</code> + <code>en_us.json</code> 各 4 条）：<code>error_toast.tip</code> / <code>coord_edit.error.format</code> / <code>coord_edit.error.over_limit</code> / <code>upload.error.parse_failed</code>。</p>
+<p><strong>Bug 12 — S2C_OperationResult 失败时也关界面</strong></p>
+<p><code>handleClient()</code> 的关界面逻辑未判断 <code>msg.success</code>，导致 <code>PointSelectionScreen</code>/<code>PlacementScreen</code> 在服务端返回失败时也被关闭。修复：加 <code>msg.success &amp;&amp;</code> 条件守卫，失败时界面保留，消息/音效正常播放。</p>
+<p><strong>Bug 13 — CreateBlueprintScreen 遮挡 PointSelectionScreen 的 errorToast</strong></p>
+<p><strong>症状</strong>：在 <code>CreateBlueprintScreen</code>（选区操作界面）点击"创建空间蓝图"等按钮触发校验失败（未设置两点 / 未填写名称），错误提示不显示。</p>
+<p><strong>根因</strong>：<code>CreateBlueprintScreen</code> 的按钮调用 <code>parent.capture()</code> / <code>parent.captureProjection()</code> / <code>parent.captureAndStore()</code>，这些方法内部调用 <code>parent.prepareCapture()</code>，校验失败时把 <code>errorToast</code> 写在 <code>PointSelectionScreen</code>（<code>parent</code>）实例上。但当前活动屏幕是 <code>CreateBlueprintScreen</code>，<code>PointSelectionScreen</code> 不在渲染调用栈内，toast 永远不会渲染。</p>
+<p><strong>修复</strong>：<code>prepareCapture()</code> 的每个失败分支加 <code>Minecraft.getInstance().setScreen(this)</code> 切回 <code>PointSelectionScreen</code>。下一帧渲染时 toast 已就绪，用户看到正确的错误横幅。</p>
+<hr>
+<h6>2026-07-20</h6>
+<p><strong>存储格式改为 Litematica 兼容（重大变更，破坏性，无兼容）</strong></p>
+<ul>
+  <li><code>BlueprintData.serialize()</code>/<code>deserialize()</code> 从"每方块一条 NBT"改成调色板去重 + 位压缩（<code>BlockStatePalette</code>+<code>BlockStates</code>），单区域固定命名 <code>"Main"</code>；mod 专属字段收进自定义顶层键 <code>SpatialBlueprintData</code>，与标准 <code>Version</code>/<code>Metadata</code>/<code>Regions</code> 平级共存——文件依然是合法可打开的 <code>.litematic</code></li>
+  <li>新建 <code>LitematicaCodec.java</code>：位压缩编解码唯一实现（<code>bitsPerEntry</code>/<code>getPackedValue</code>/<code>putPackedValue</code>），<code>LitematicaImporter</code> 与 <code>BlueprintData</code> 共用，读写不再各写一份</li>
+  <li>画/展示框实体做了完整双向转换（之前 <code>LitematicaImporter</code> 只实现了读，现在 <code>BlueprintData</code> 自己的存储格式读写都支持）</li>
+  <li><strong>决定完全废弃旧 <code>.dat</code> 格式，不留任何兼容代码</strong>——理由：mod 仍在开发阶段，只有开发者本人测试，服务器上没有需要保留的真实数据。删除了已经是死代码的 <code>MaterialListStorage.java</code>（<code>_mat.dat</code> 回退路径，<code>save()</code> 早已没有调用方）</li>
+  <li><code>BlueprintStorage</code>/<code>ProjectStorage</code>（工程蓝图子文件）/<code>BlueprintLibraryScreen</code>（搜索、文件名重建）全部改用 <code>.litematic</code> 后缀</li>
+  <li><strong>重要提醒</strong>：这次决定的前提是"没有真实数据"，如果以后有玩家数据了，任何类似的格式变更都要先确认是否需要迁移工具，不能再默认可以直接丢弃</li>
+</ul>
+<p><strong>新增 LitematicaImporter（真正支持 .litematic 导入）</strong></p>
+<ul>
+  <li>此前 <code>UploadBlueprintScreen</code> 的 tooltip 号称"支持 Litematica 格式"，但实际只扫描 <code>.schematic</code> 后缀——纯粹的文案与实现不一致</li>
+  <li>新实现支持标准 Litematica 调色板+位压缩格式，多区域合并、负数 Size（反向延伸）都处理了</li>
+  <li><strong>位压缩解码未经真实游戏环境验证</strong>，如导入结构错位/镜像，先查 <code>LitematicaCodec</code></li>
+</ul>
+<p><strong>上传安全检测 BlueprintSanitizer（详见 §8）</strong></p>
+<ul>
+  <li>Phase 1-3：文件大小/NBT深度/包围盒体积检测，容器物品/告示牌/刷怪笼 SpawnData 清空，实体白名单（含 NBT <code>id</code> 交叉校验，防止绕过白名单伪装成画/展示框），坐标越界过滤，字段数值校验</li>
+  <li>硬编码非法方块底线 <code>HARDCODED_ILLEGAL_BLOCKS</code>（13 个，独立于 <code>EXCLUDED_BLOCKS</code> 配置，永远拒绝），<strong>不含 <code>minecraft:light</code></strong>（复核后确认它只是普通可获取的隐形光源，不是安全风险）</li>
+  <li>材料清单新增/保存（✚/⎙）接入同一套非法方块检查</li>
+</ul>
+<p><strong>上传限流</strong></p>
+<ul>
+  <li><code>uploadCooldownSeconds</code>(5)/<code>uploadMaxPerMinute</code>(10) 面向普通玩家；OP 玩家走独立更短的 <code>uploadCooldownSecondsOp</code>(1)，完全不受每分钟次数限制</li>
+</ul>
+<p><strong>方块数量上限调整（实验性，2026-07-20）</strong></p>
+<ul>
+  <li><code>ABSOLUTE_MAX_CAPTURE_VOLUME</code>：500,000 → 1,600,000（硬编码常量）</li>
+  <li><code>maxBoundingVolume</code> 与方块数量上限<strong>解绑</strong>，独立设为 2000万——实测发现同样受方块数限制约束的稀疏结构，包围盒体积可以远大于方块数（150万方块的实测文件包围盒达 940万格，填充率仅16%），两者必须分开调</li>
+  <li><code>maxUploadFileBytes</code>：5MB → 20MB</li>
+  <li>这次调整只是"能不能传上来"层面的实验；main-thread 净化处理耗时、实际放置耗时、内存占用都仍然是跟方块数量线性相关，<strong>不会</strong>因为新存储格式文件变小而减少，调大前后都需要实测验证服务器主线程是否卡顿</li>
+</ul>
+<p><strong>材料清单面板（PlacementScreen）</strong></p>
+<ul>
+  <li>✚ 新增 / ♻ 清空：从"OP 专属"收紧为"创造模式 + OP"，生存模式完全隐藏（含服务端权限同步收紧）</li>
+  <li>新增 ⎙ 保存按钮（橙色，创造+OP）：把当前材料清单整体覆盖保存到服务端文件，成功播放提示音，同样接入非法方块检查</li>
+</ul>
+<hr>
+<h6>2026-07-19</h6>
+<p><strong>蓝图库 UI 重设计（BlueprintLibraryScreen）</strong></p>
+<ul>
+  <li>底部操作按钮行：18×18 原版方形按钮，左对齐，无选中项时全部灰色</li>
+  <li>行选中模式：单击选中/再次点击取消，1px 白色边框高亮；切换 Tab 自动清空选中</li>
+  <li>工程 Tab：已选中行再次点击 → 打开 SafeCoordScreen（双击语义）</li>
+  <li>✦/☀ 按钮（改取出经验/次数）仅 project / dimensional / template Tab 显示</li>
+  <li>♦（复制文件名）按钮仅 OP 可见，搜索框支持完整文件名精确匹配（<code>.dat</code> 结尾）</li>
+  <li>日期列改为右对齐，贴面板右边缘；动态 tooltip 通过 <code>isMouseOver()</code> 渲染</li>
+  <li>每个 Tab 的按钮集独立定义（不可用按钮直接隐藏，不只是灰色）</li>
+</ul>
+<p><strong>构建时间自动调整（11.3 完整实现）</strong></p>
+<ul>
+  <li>删除 <code>animationDurationDefault</code> / <code>animationDurationMaxSurvival</code> 配置项</li>
+  <li>新增 6 档自动时长配置（默认：1w→8s / 5w→12s / 8w→16s / 10w→25s / 20w→30s / 以上→40s）</li>
+  <li>新增全局 <code>animationDurationMax</code>（默认 600s），所有人（含 OP/创造）均受限</li>
+  <li>新增 <code>allowCreativeDurationEdit</code>：创造模式玩家是否可手动修改（默认 false）</li>
+  <li><code>PointSelectionScreen</code>：捕捉两点后自动填入分档时长；OP 可编辑，手动改过则不覆盖；非可编辑玩家只读</li>
+  <li>服务端 <code>CaptureAreaMessage</code>：OP 发来的自定义时长直接采用（不低于 min）；普通玩家强制自动计算</li>
+  <li>应用范围：<code>CaptureAreaMessage</code>、<code>C2S_CreateEngineeringBlueprintMessage</code>、<code>C2S_VoidRecaptureMessage</code>、<code>SchematicImporter</code></li>
+</ul>
+<p><strong>大型蓝图放置全服播报（11.2）</strong></p>
+<ul>
+  <li>方块数 ≥ <code>largeBlueprintBroadcastThreshold</code> 时，<code>PlaceBlueprintMessage</code> 调用 <code>broadcastSystemMessage</code> 全服广播</li>
+  <li>广播内容：玩家名、方块数、预计完成时间；不暴露坐标</li>
+  <li>两个新配置项：<code>largeBlueprintBroadcastEnabled</code>（默认 true）、<code>largeBlueprintBroadcastThreshold</code>（默认 10 万）</li>
+</ul>
+<p><strong>PlacementScreen 材料清单按钮权限重构</strong></p>
+<ul>
+  <li>♻（快捷取出）改为 OP 专属：仅显示给 OP（红色），点击调用 <code>OP_CLEAR_MATERIALS</code> 清空全部 <code>depositedMaterials</code>，<strong>不返还物品</strong>；移除旧的 XP/次数限制逻辑</li>
+  <li>✚（新增材料）改为 OP 专属：<code>player.hasPermissions(2)</code> 判断，非 OP 不渲染；tooltip 扩展为三行</li>
+  <li><code>C2S_EditMaterialMessage</code> 服务端权限从 <code>isCreative()</code> 改为 <code>hasPermissions(2)</code>，生存 OP 也能写盘</li>
+  <li><code>C2S_MaterialDepositMessage</code> 新增 <code>OP_CLEAR_MATERIALS = 4</code> 操作码，服务端 OP 验证后调用 <code>AbstractBlueprintItem.clearDepositedMaterials()</code></li>
+  <li>右键材料图标的编辑/删除菜单（ctxBlockId）同走 <code>C2S_EditMaterialMessage</code>，同样受益于权限修复</li>
+</ul>
+<p><strong>Bug 修复</strong></p>
+<ul>
+  <li>Bug 9：次元蓝图从库 apply 时恢复满额 <code>depositedMaterials</code></li>
+  <li>Bug 10：<code>PlacementScreen.isSpatialOnly()</code> 改用 <code>instanceof</code>，次元蓝图不再被错误限制</li>
+  <li>Bug 11：生存模式玩家打开投影蓝图界面时被错误拦截（"没有投影数据"），根因是 <code>openPlacementScreen()</code> 有多余的 <code>data == null</code> 判断，PlacementScreen 内部已有完整下载状态机，不需要在入口处拦截</li>
+</ul>
+<p><strong>BlueprintLibraryScreen UI 深度调整（Tab 重排 + 动态布局 + 权限 Tooltip）</strong></p>
+<ul>
+  <li><strong>Tab 重排</strong>：</li>
+  <li>Row 1（仅创造模式）：空间蓝图 / 工程蓝图 / 项目蓝图</li>
+  <li>Row 2（全玩家）：投影蓝图 / 次元蓝图 / 投影模板</li>
+  <li><strong>动态面板高度</strong>：创造 264px / 生存 246px；相关辅助方法 <code>getPanelH()</code> / <code>getLastTabRowBottom()</code> / <code>getSepY()</code> 等</li>
+  <li><strong>生存玩家防护</strong>：进入时若 <code>activeTab</code> 为 Row1 ID 则自动重置为 null</li>
+  <li><strong>OP 专属按钮 Shift Tooltip</strong>：♦ ✂ ✦ ☀ 四个 OP 专属按钮移除 <code>.tooltip()</code>，改为在 <code>renderTooltips()</code> 中手动渲染；按住 Shift 追加"此按钮仅支持 OP 使用"说明行；✦ ☀ 仅在 project/dimensional/template tab 显示</li>
+  <li><strong>Tab / 刷新 Tooltip</strong>：所有 tab 和刷新按钮增加 <code>.tooltip()</code> 说明文字（lang key <code>spatial_blueprint.gui.library.tab.*.tip</code> / <code>refresh_tip</code>）</li>
+</ul>
+<p><strong>PlacementScreen 材料清单面板 UI 重设计</strong></p>
+<ul>
+  <li>滚动条隐藏（逻辑保留），<code>MAT_CONTENT_W</code> 276→282，<code>MAT_CELL_W</code> 69→70，标题行 + 分割线延伸至全宽</li>
+  <li>物品格子区添加 50% 透明深灰背景（<code>0x801A1A1A</code>）</li>
+  <li>底部新增按钮行（OP：✚ ✎ ♻；生存玩家：仅 ✎），16×16 正方形原版按钮风格（<code>Button.render()</code> 直接调用），左对齐</li>
+  <li>面板高度对非空间蓝图增加 <code>MAT_SEP_PAD + MAT_BOT_BTN_H + MAT_PAD</code>（26px）</li>
+</ul>
+<hr>
+<h6>2026-07-18（文件命名三段式）</h6>
+<p><strong>BlueprintStorage 文件命名格式升级</strong></p>
+<ul>
+  <li>文件名从 <code>&lt;creatorName&gt;_&lt;uuid&gt;.dat</code> 升级为 <code>&lt;category&gt;_&lt;creatorName&gt;_&lt;uuid&gt;.dat</code></li>
+  <li><code>sanitizeForFilename()</code> 调整：保留 <code>[A-Za-z0-9_]</code>，去掉原来对 <code>-</code> 的保留，允许玩家名中的 <code>_</code> 完整保留（如 <code>steve_pro</code> → <code>steve_pro</code>）</li>
+  <li><code>save()</code> 新增 <code>categoryPrefix</code> 前缀拼接逻辑，category 为空时用 <code>unknown</code> 占位</li>
+  <li><code>findFile()</code> 兼容三种历史格式（新三段式 → 旧两段式 → 最旧单段式），旧文件不做批量迁移</li>
+  <li><code>listSummaries()</code> 解析逻辑不变（<code>lastIndexOf('_')</code> 取 UUID），对所有历史格式均适用</li>
+</ul>
+<hr>
+<h6>2026-07-18</h6>
+<p><strong>BlueprintLibraryScreen 大重构（合并 ProjectionTemplateScreen）</strong></p>
+<ul>
+  <li>新增第二排 Tab（Row2）：工程蓝图 / 投影源文件 / 投影模板，与原有第一排（空间蓝图 / 投影蓝图 / 次元蓝图）共用同一 <code>activeTab</code> 字段</li>
+  <li>默认无 tab 激活，显示"先选择一个选项"提示</li>
+  <li><code>PANEL_H</code> 从 244 → 264（+20px 容纳第二排 tab）</li>
+  <li>删除 <code>ProjectionTemplateScreen</code>，其全部逻辑（源文件列表、上传 schematic、模板列表）内联至 <code>BlueprintLibraryScreen</code></li>
+  <li>移除 <code>engineeringOnly</code> / <code>engineeringApplyCallback</code> / <code>forEngineeringMenu</code> 所有相关代码</li>
+</ul>
+<p><strong>私人 / 服务器模式</strong></p>
+<ul>
+  <li>移除旧 <code>filterOwnOnly</code> 静态字段，改为 <code>serverMode</code> 实例字段（每次打开默认 <code>false</code>）</li>
+  <li>默认私人模式：除投影源文件外，所有 tab 仅显示自己的蓝图</li>
+  <li>大标题字段改为 <code>displayTitle</code>（<code>Screen.title</code> 是 final，无法重新赋值）</li>
+  <li>私人模式标题"蓝图列表(私人)"（黄色），服务器模式"蓝图列表(服务器)"（青色）</li>
+</ul>
+<p><strong>切换按钮（OP 专属）</strong></p>
+<ul>
+  <li>原"筛选自己的蓝图"按钮改为"切换为服务器列表" / "切换为私人列表"</li>
+  <li><code>player.hasPermissions(2)</code> 判断，非 OP 不创建此按钮（不只是灰色）</li>
+  <li>切换后刷新列表，更新标题颜色</li>
+</ul>
+<p><strong>入口权限全面开放</strong></p>
+<ul>
+  <li><code>PlacementScreen</code>（✚ 按钮）：移除 <code>libBtn.active = isCreative</code> 限制，所有玩家可点击</li>
+  <li><code>EngineeringBlueprintScreen</code>（⌘ 按钮）：移除 <code>menuBtn.active = isCreative</code> 限制，移除 <code>forEngineeringMenu</code> 回调，直接 <code>new BlueprintLibraryScreen(this)</code></li>
+  <li><code>PointSelectionScreen</code>（模板按钮）：从 <code>new ProjectionTemplateScreen(...)</code> 改为 <code>new BlueprintLibraryScreen(...)</code></li>
+</ul>
+<p><strong>新增 lang key</strong></p>
+<table>
+  <thead><tr><th>key</th><th>值</th></tr></thead>
+  <tbody>
+    <tr><td><code>spatial_blueprint.gui.library.tab.engineering</code></td><td>工程蓝图</td></tr>
+    <tr><td><code>spatial_blueprint.gui.library.select_hint</code></td><td>先选择一个选项</td></tr>
+    <tr><td><code>spatial_blueprint.gui.library.title.private</code></td><td>蓝图列表(私人)</td></tr>
+    <tr><td><code>spatial_blueprint.gui.library.title.server</code></td><td>蓝图列表(服务器)</td></tr>
+    <tr><td><code>spatial_blueprint.gui.library.btn.switch_to_server</code></td><td>切换为服务器列表</td></tr>
+    <tr><td><code>spatial_blueprint.gui.library.btn.switch_to_private</code></td><td>切换为私人列表</td></tr>
+  </tbody>
+</table>
+<hr>
+<h6>2026-07-17</h6>
+<p><strong>蓝图来源玩家字段</strong></p>
+<ul>
+  <li><code>BlueprintData</code> 新增 <code>sourceName</code> 字段（初始与 <code>creatorName</code> 相同；预留给未来"转让来源"场景独立赋值）</li>
+  <li>所有创建入口均写入：<code>CaptureAreaMessage</code>、<code>CaptureProjectionMessage</code>、<code>C2S_CreateEngineeringBlueprintMessage</code>（两处）、<code>C2S_UploadProjectionTemplateMessage</code>、<code>SchematicImporter</code></li>
+  <li><code>C2S_VoidRecaptureMessage</code>：<code>creatorName</code> 保留原始，<code>sourceName</code> 记录本次重新储存的玩家</li>
+  <li><code>BlueprintStorage.BlueprintSummary</code>、<code>S2C_LibrarySyncMessage</code>、<code>C2S_RequestLibraryMessage</code> 同步新增字段</li>
+  <li><code>BlueprintLibraryScreen</code> tooltip 新增"来源玩家"行（金色），始终显示</li>
+</ul>
+<p><strong>次元蓝图服务端存储</strong></p>
+<ul>
+  <li><code>C2S_VoidRecaptureMessage</code> 捕获后调用 <code>BlueprintStorage.save(data)</code> 生成 <code>.dat</code> 文件</li>
+  <li>UUID 写入物品 <code>blueprintId</code> NBT，与其他蓝图类型对齐</li>
+  <li>次元蓝图列表 UI 现在可正常显示次元蓝图条目</li>
+</ul>
+<p><strong>PlacementScreen 按钮布局重构（匹配 FancyMenu 布局）</strong></p>
+<ul>
+  <li>布局基准改为屏幕中心（<code>cy</code> 偏移），与 FancyMenu <code>mid-centered</code> 锚点一致</li>
+  <li>Row1 新增 ✚蓝图库按钮（cx+78），关闭移至 cx+100</li>
+  <li>Row2 重排为：▼ / 🔒 / ♻ / ⛒遮蔽 / 流体 / 材料 / 构建 / ⌘ / 取消</li>
+  <li><code>alignW</code> 扩展为 86px</li>
+</ul>
+<p><strong>其他玩家蓝图预览广播系统</strong></p>
+<ul>
+  <li>新包：<code>C2S_PreviewUpdateMessage</code>（上报位置）、<code>S2C_PreviewBroadcastMessage</code>（广播给附近玩家）</li>
+  <li>新服务端类：<code>ServerPreviewTracker</code>（维护状态、去重、半径广播）</li>
+  <li>新客户端类：<code>ClientOtherPreviewCache</code>、<code>ClientPreviewSettings</code>（持久化到 <code>config/spatial_blueprint_preview.json</code>）、<code>OtherPlayerDownloadListener</code></li>
+  <li><code>BlueprintSelectionRenderer</code>：加入周期广播逻辑 + 其他玩家预览轮廓框渲染（亮青色线框）</li>
+  <li>新配置项：<code>previewBroadcastRadius</code>（默认 256 格）、<code>previewBroadcastInterval</code>（默认 3 秒）</li>
+  <li>新 GUI：<code>OtherPlayerDownloadScreen</code>（2+ 玩家时下载选择界面）</li>
+</ul>
+<p><strong>客户端指令 <code>/sbp</code></strong></p>
+<table>
+  <thead><tr><th>指令</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>`/sbp preview on\</td><td>off`</td><td>开关其他玩家预览显示</td></tr>
+    <tr><td><code>/sbp block &lt;player&gt;</code></td><td>屏蔽某玩家预览</td></tr>
+    <tr><td><code>/sbp unblock &lt;player&gt;</code></td><td>解除屏蔽</td></tr>
+    <tr><td><code>/sbp blocklist</code></td><td>查看屏蔽列表</td></tr>
+    <tr><td><code>/sbp download</code></td><td>下载可见范围内蓝图完整数据（2+ 玩家时弹选择界面）</td></tr>
+    <tr><td><code>/sbp clearcache</code></td><td>清除本地全部蓝图数据缓存</td></tr>
+  </tbody>
+</table>
+<hr>
+<h6>2026-07-13</h6>
+<p><strong>次元蓝图主人机制 + 物品命名规范统一</strong></p>
+<ul>
+  <li><code>DimensionalBlueprintItem</code>：创建时把 <code>creatorName</code> 写入物品 NBT；tooltip 显示蓝图主人与警告</li>
+  <li><code>PlaceBlueprintMessage</code>：部署次元蓝图时服务端验证主人权限</li>
+  <li><code>BuildBlueprintItem</code>：冷却恢复时拷贝 <code>creatorName</code> 到返还的 <code>VoidDimensionalBlueprintItem</code></li>
+  <li><code>C2S_VoidRecaptureMessage</code>：重新储存时保留原始创建者</li>
+  <li>全部蓝图命名格式统一为 <code>XX蓝图 - [名字]</code></li>
+</ul>
+<p><strong>PlacementScreen 界面调整</strong></p>
+<ul>
+  <li>关闭/取消按钮文本区分；无数据时流体/遮蔽按钮灰色；遮蔽模式 tooltip 追加黄色提示</li>
+</ul>
+<p><strong>PointSelectionScreen 方块计数修复</strong></p>
+<ul>
+  <li><code>computeNonAirCount()</code> 应用当前 <code>fluidCaptureFilter</code>，切换过滤后计数立即更新</li>
+</ul>
+<hr>
+<h6>2026-07-12</h6>
+<p><strong>新增 SchematicImporter</strong></p>
+<ul>
+  <li>读取 MCEdit / Schematica <code>.schematic</code> 文件（gzip NBT，YZX 坐标顺序，遗留数字 ID）</li>
+  <li>静态映射表覆盖 1.12 全部常用方块（ID 0–252），懒加载 BlockState 缓存</li>
+  <li>返回可直接传入 <code>BlueprintStorage.save()</code> 的 <code>BlueprintData</code> 对象</li>
+</ul>
+<hr>
+<h6>2026-07-16（全服务器端改造）</h6>
+<ul>
+  <li><code>BlueprintLibraryScreen</code>：删除所有 <code>isMultiplayer()</code> 分支，一律走 C2S 包</li>
+  <li><code>SpatialBlueprintItem.getBlueprintData()</code>：客户端路径只访问 <code>ClientBlueprintCache</code>，不再读本地文件</li>
+  <li><code>PlaceBlueprintMessage</code>：生存模式下新增服务端等价校验（实体阻挡、方块碰撞、Y 边界）</li>
+  <li><code>ProjectionTemplateScreen</code>：✎✂✖✦☀ 按钮全部接入对应 C2S 包</li>
+  <li><code>ProjectionTemplateStorage.java</code>：废弃删除</li>
+</ul>
+<hr>
+<h6>2026-06-13</h6>
+<p><strong>Clear Mode 功能（▰/▱ 切换）</strong></p>
+<ul>
+  <li>工程蓝图新增清除模式切换按钮（true = 先清空区域再放置，false = 仅替换模式）</li>
+</ul>
+<hr>
+<h6>2026-05-26</h6>
+<p><strong>EngineeringBlueprintScreen 新增 currentValidation 字段</strong></p>
+<ul>
+  <li>避免每 tick 重复执行区域校验计算</li>
+</ul>
+<h4>报错提示 UI 接入方法（归档原文 · 2026-09-12）</h4>
+<h4>报错提示 UI 接入方法</h4>
+<p>modid: <code>spatial_blueprint</code> | Minecraft Forge 1.20.1</p>
+<p>本文档说明如何将 <code>ErrorToast</code>（游戏式错误横幅）接入 GUI 界面，替代旧的聊天栏 <code>displayClientMessage</code> / <code>sendSystemMessage</code> 方式。</p>
+<hr>
+<h5>一、系统组成</h5>
+<table>
+  <thead><tr><th>文件</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>gui/ErrorToast.java</code></td><td>无状态渲染工具类，单方法 <code>render()</code>，画横幅</td></tr>
+    <tr><td><code>gui/ErrorToastSupport.java</code></td><td>接口，<code>setErrorToast(Component)</code> 一个方法</td></tr>
+    <tr><td><code>network/s2c/S2C_OperationResult.java</code></td><td>服务端发失败结果时，自动调用 <code>setErrorToast()</code></td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>二、接入步骤（以一个 Screen 为例）</h5>
+<h6>第 1 步：实现接口，添加字段</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+import javax.annotation.Nullable;
+
+public class MyScreen extends Screen implements ErrorToastSupport {
+
+    @Nullable private Component errorToast;
+
+    @Override
+    public void setErrorToast(Component message) {
+        this.errorToast = message;
+    }</p>
+<h6>第 2 步：修改 <code>render()</code> — 早返回模式</h6>
+<p>toast 出现时完全隐藏下层 UI（不渲染、不可交互）：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+@Override
+public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    this.renderBackground(graphics);
+    if (errorToast != null) {
+        ErrorToast.render(graphics, this.font, this.width, this.height, errorToast);
+        return;                        // 提前返回，下层 UI 全部跳过
+    }
+    super.render(graphics, mouseX, mouseY, partialTick);
+    // ... 其余自定义绘制 ...
+}</p>
+<p><strong>注意</strong>：不要把 <code>ErrorToast.render()</code> 放在 <code>render()</code> 末尾——那样下层 UI 仍会渲染和响应交互。</p>
+<h6>第 3 步：拦截输入（ESC / 任意点击关闭）</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+@Override
+public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    if (errorToast != null) {
+        if (keyCode == 256) errorToast = null;  // ESC
+        return true;                             // 吃掉所有按键
+    }
+    return super.keyPressed(keyCode, scanCode, modifiers);
+}
+
+@Override
+public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    if (errorToast != null) {
+        errorToast = null;
+        return true;                             // 吃掉点击，同时关闭 toast
+    }
+    return super.mouseClicked(mouseX, mouseY, button);
+}</p>
+<hr>
+<h5>三、触发方式</h5>
+<h6>3.1 客户端本地校验（Screen 内部直接设置）</h6>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 把原来的：
+player.displayClientMessage(Component.translatable("xxx.error"), false);
+
+// 改成：
+errorToast = Component.translatable("xxx.error");
+NotifySound.clientError();</p>
+<h6>3.2 服务端返回失败结果（S2C_OperationResult）</h6>
+<p><code>S2C_OperationResult.handleClient()</code> 会自动检测当前屏幕是否实现 <code>ErrorToastSupport</code>：</p>
+<ul>
+  <li><strong>已实现</strong>：自动调用 <code>setErrorToast()</code>，不需要额外代码</li>
+  <li><strong>未实现</strong>：fallback 到聊天栏 <code>sendSystemMessage</code></li>
+</ul>
+<p>所以服务端这边只需要正常发 <code>S2C_OperationResult.failure("xxx.key")</code>，接收屏幕实现接口即可：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 服务端 handler 示例
+BlueprintNetwork.CHANNEL.sendTo(
+    S2C_OperationResult.failure("spatial_blueprint.error.xxx"),
+    player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);</p>
+<hr>
+<h5>四、特殊情况：子屏幕触发父屏幕的校验</h5>
+<p><strong>问题场景</strong>：子屏幕（如 <code>CreateBlueprintScreen</code>）调用父屏幕的方法，父屏幕的校验失败，把 <code>errorToast</code> 设在父屏幕实例上——但当前活动屏幕是子屏幕，父屏幕不在渲染调用栈内，toast 永远不显示。</p>
+<p><strong>修复方式</strong>：校验失败时，在设置 <code>errorToast</code> 之后，调用 <code>Minecraft.getInstance().setScreen(this)</code> 切回父屏幕：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 父屏幕中的校验方法
+private boolean prepareCapture() {
+    if (pointsMissing) {
+        errorToast = Component.translatable("xxx.missing_points");
+        Minecraft.getInstance().setScreen(this);   // ← 切回父屏幕，toast 才能渲染
+        return false;
+    }
+    // ...
+}</p>
+<hr>
+<h5>五、判断哪些消息需要改</h5>
+<h6>✅ 不需要改（保留聊天消息）</h6>
+<table>
+  <thead><tr><th>情形</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td><code>command/</code> 目录下的命令系统</td><td>无 GUI，聊天是唯一途径</td></tr>
+    <tr><td>异步放置 Handler（如 <code>BlueprintPlacementHandler</code>）</td><td>放置期间界面已关，无法弹 toast</td></tr>
+    <tr><td>内容是<strong>成功通知</strong>（completed、saved、created…）</td><td>toast 只用于错误，成功反馈走聊天</td></tr>
+    <tr><td>已有 <code>instanceof ErrorToastSupport</code> 检查，当前是 <code>else</code> 分支</td><td>已优先尝试 toast，这是合理 fallback</td></tr>
+  </tbody>
+</table>
+<h6>❌ 需要改成 ErrorToast</h6>
+<table>
+  <thead><tr><th>情形</th></tr></thead>
+  <tbody>
+    <tr><td><code>gui/</code> 目录下 Screen 类内部的错误分支</td></tr>
+    <tr><td>消息内容是<strong>拒绝 / 错误</strong>（format error、limit exceeded、parse failed…）</td></tr>
+    <tr><td>该 Screen 已实现（或可以实现）<code>ErrorToastSupport</code></td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>六、已接入 Screen 一览</h5>
+<table>
+  <thead><tr><th>Screen</th><th>错误来源</th></tr></thead>
+  <tbody>
+    <tr><td><code>CoordinateEditScreen</code></td><td>坐标格式错误、选区体积超限（本地校验）</td></tr>
+    <tr><td><code>UploadBlueprintScreen</code></td><td>文件解析失败（本地校验）</td></tr>
+    <tr><td><code>PointSelectionScreen</code></td><td>两点未设置、名称为空（本地校验）；服务端失败结果</td></tr>
+    <tr><td><code>PlacementScreen</code></td><td>服务端失败结果</td></tr>
+    <tr><td><code>BlueprintLibraryScreen</code></td><td>服务端失败结果</td></tr>
+    <tr><td><code>CreateEngineeringProjectScreen</code></td><td>服务端失败结果</td></tr>
+    <tr><td><code>EngineeringBlueprintScreen</code></td><td>服务端失败结果</td></tr>
+    <tr><td><code>SafeCoordScreen</code></td><td>服务端失败结果</td></tr>
+    <tr><td><code>VoidDimensionalScreen</code></td><td>服务端失败结果</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>七、lang key 命名规范</h5>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">spatial_blueprint.gui.&lt;screen_id&gt;.error.&lt;error_name&gt;   # GUI 本地校验错误
+spatial_blueprint.message.&lt;error_name&gt;                  # 通用/跨屏幕错误
+spatial_blueprint.gui.error_toast.tip                   # 固定：关闭提示文字（已存在）</p>
+<p>每个 key 需同时在 <code>zh_cn.json</code> 和 <code>en_us.json</code> 中添加。</p>
+<h4>项目蓝图构建思路（归档原文 · 2026-09-12）</h4>
+<h4>项目蓝图构建思路</h4>
+<p>状态：<strong>设计定稿，未开始实现</strong>（2026-08-26 修订） 关联：<code>最新开发日志.md</code>、<code>D:\XioYimData\下载\测试清单.txt</code></p>
+<hr>
+<h5>一、定位</h5>
+<p>项目蓝图<strong>本身不放置任何方块，也不保存进度</strong>，它只是一把钥匙 + 一个查看器：</p>
+<ul>
+  <li>显示项目边界与各子工程的区域线框</li>
+  <li>作为子工程蓝图的领取入口</li>
+  <li>携带一个 <code>taskSetId</code>，指向服务端的一份「任务集」</li>
+</ul>
+<p><strong>真正的状态全在服务端。</strong> 物品可丢、可复制、可补发，进度不跟着物品走。 这条是整个设计的支点 —— 它让补领、云存档、跨存档三件事同时成立。</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">项目蓝图物品（NBT 只有 taskSetId）
+   └── 指向服务端的一份「任务集」
+        ├── 公用项目：taskSetId 固定，全服共享一份进度
+        └── 私人项目：每人激活时各生成一个 taskSetId
+   任务集 → 引用一份不可变的 project.dat（坐标、旋转、子工程列表）
+   进度   → 服务端 SavedData，按 taskSetId 存</p>
+<hr>
+<h5>二、两个物品</h5>
+<table>
+  <thead><tr><th></th><th>公用项目蓝图</th><th>私人项目蓝图</th></tr></thead>
+  <tbody>
+    <tr><td>物品 id</td><td><code>public_project_blueprint</code></td><td><code>private_project_blueprint</code></td></tr>
+    <tr><td>附魔光效</td><td><strong>有</strong>（<code>isFoil()</code> 返回 true）</td><td>无</td></tr>
+    <tr><td>材质</td><td><code>textures/item/project_blueprint_1</code></td><td><code>textures/item/project_blueprint_2</code></td></tr>
+    <tr><td>激活者</td><td><strong>仅 OP 创造模式</strong></td><td>每个玩家自己</td></tr>
+    <tr><td>激活时机</td><td>上传<strong>之前</strong>（上传的副本带固定坐标）</td><td>分发后，玩家各自激活</td></tr>
+    <tr><td>进度</td><td>全服共享一份</td><td>每人一份</td></tr>
+  </tbody>
+</table>
+<p><strong>未激活的公用蓝图落到非 OP 手里 → 报「非法蓝图」。</strong> 判据是「非 OP 持有未激活的公用项目蓝图」，不能简单写成「未激活即非法」—— OP 制作过程中手上拿的就是未激活的。</p>
+<hr>
+<h5>三、激活</h5>
+<p><strong>激活是一个动作做三件事：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">生成 taskSetId  +  锁定坐标与旋转  +  在坐标占用表中登记</p>
+<p>公用项目由 OP 激活一次（所有副本共享同一个 id）；私人项目由每个玩家各自激活 （各生成一个 id、各占一块地）。这个统一让「复制物品不复制进度」自动成立 —— 进度按 taskSetId 存，而 id 是激活时才生的。</p>
+<p><strong>激活后坐标系不可再更改，任何人包括 OP 都不能改。</strong></p>
+<h6>激活前的校验（缺任一项拒绝并说明缺什么）</h6>
+<ul>
+  <li>1. 坐标已锁定</li>
+  <li>2. 维度已记录</li>
+  <li>3. 子工程数 ≥ 1</li>
+  <li>4. 每个子工程文件都在</li>
+  <li>5. 坐标占用表中无重叠（见 §八）</li>
+</ul>
+<hr>
+<h5>四、文件布局</h5>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">config/spatial_blueprint/
+  engineering/                      ← 独立完整工程蓝图（与项目无关）
+  projects/
+    {projectId}/
+      project.dat                   ← ProjectData：坐标、尺寸、旋转、子工程列表
+      {engUuid}.litematic           ← 子工程，按 UUID 绑定到本项目</p>
+<p>多个子工程绑定同一个主项目，互不冲突。</p>
+<p>⚠ 文件名<strong>只用 engUuid，不带 index</strong> —— index 存在 <code>EntryData</code> 里。 带 index 的话，删除条目后重新编号会让文件名和 index 对不上 （现有 <code>ProjectStorage.entryDatPath()</code> 就是按 index 拼路径的，是个还没绊到人的陷阱）。</p>
+<hr>
+<h5>五、创建流程与界面</h5>
+<h6>5.1 入口分流</h6>
+<p><strong>主手空白蓝图 + 副手拿什么</strong> 决定这次创建的是什么：</p>
+<table>
+  <thead><tr><th>副手</th><th>点 [创建] 之后</th><th>结果</th><th>存放位置</th></tr></thead>
+  <tbody>
+    <tr><td>空</td><td>「选择创建类型」页</td><td>按所选类型</td><td>各自分类目录</td></tr>
+    <tr><td>项目蓝图</td><td><strong>直接进「创建子工程蓝图」页</strong></td><td>该项目的子工程</td><td><code>projects/{projectId}/</code></td></tr>
+  </tbody>
+</table>
+<p>副手拿项目蓝图时不再经过选择类型页 —— 意图已经明确，再问一遍是多余的。</p>
+<p>前置条件已就绪：所有蓝图物品的 <code>use</code> / <code>useOn</code> 已限制为<strong>仅主手</strong> （2026-08-26 改动），副手的项目蓝图不会抢走右键交互。</p>
+<h6>5.2 「选择创建类型」页的改动</h6>
+<p><code>spatial_blueprint.gui.create_blueprint.title</code>（选择创建类型）：</p>
+<table>
+  <thead><tr><th>按钮</th><th>改动</th></tr></thead>
+  <tbody>
+    <tr><td>创建空间蓝图</td><td>不变</td></tr>
+    <tr><td>创建投影蓝图</td><td>不变</td></tr>
+    <tr><td>创建次元蓝图</td><td>不变</td></tr>
+    <tr><td><strong>创建独立工程蓝图</strong></td><td>文案改名（原「创建工程蓝图」），行为不变</td></tr>
+    <tr><td><strong>创建项目蓝图</strong></td><td><strong>新增</strong>，排在独立工程蓝图下面</td></tr>
+  </tbody>
+</table>
+<p>「创建项目蓝图」的特殊性：</p>
+<ul>
+  <li><strong>仅 OP 可点</strong>（非 OP 置灰 + 说明）</li>
+  <li><strong>跳过检测报告</strong>，直接创建 —— 项目蓝图一个方块都不捕获，</li>
+</ul>
+<p>  非法方块检测无从谈起。检测落在后续创建子工程时，那条路走的是既有的完整流程</p>
+<ul>
+  <li>上限按<strong>选区体积</strong>（<code>sx × sy × sz</code>）判定，<strong>不是</strong>非空气方块数</li>
+</ul>
+<p>这条必须单独写一个分支。现有 <code>addTypeButton</code> 拿 <code>getCachedBlockCount()</code> 比对上限，对项目蓝图会得出错误结论：一个 200×200×200（800 万体积）但内部 大多是空气的选区，方块数可能只有 3 万，会被误判为通过。</p>
+<h6>5.3 「创建子工程蓝图」页</h6>
+<p>与「选择创建类型」页同款 UI，标题改为<strong>创建子工程蓝图</strong>。</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">第一行   [名字输入框] [构建时长输入框] [序号输入框]
+下面     底部按钮行（与原页一致）</p>
+<p><strong>序号</strong>：</p>
+<ul>
+  <li>从 1 开始递增，<strong>不可与该项目已有条目重复</strong></li>
+  <li>打开页面时<strong>自动填入下一个可用序号</strong>（= 已有最大序号 + 1；无条目时为 1）</li>
+</ul>
+<p>不能用「已有条目数 + 1」：玩家可以手填任意序号，条目为 1/2/4 时 数量 3 + 1 = 4 会直接撞号。</p>
+<ul>
+  <li>玩家可手改，但<strong>改成已存在的序号必须被拒绝</strong></li>
+  <li><strong>客户端先拉一份该项目的条目清单</strong>（新增一对网络消息），用于自动填号与即时查重</li>
+  <li><strong>点创建时服务端再判一次</strong>，重复则拒绝并回横幅 —— 客户端那道是体验，服务端这道是底线</li>
+</ul>
+<p><strong>底部按钮行</strong>：与原页一致，只有一处不同 ——「蓝图列表」改成<strong>查看项目</strong>， 本阶段<strong>禁用不可点</strong>，tooltip 写「暂未实现」。</p>
+<p><strong>点击创建时的校验</strong>：</p>
+<ul>
+  <li>1. 序号合法且不重复</li>
+  <li>2. 子工程选区<strong>完全落在项目选区内</strong>（X / Y / Z <strong>三轴都要判</strong>，</li>
+</ul>
+<p>   Y 方向超出最容易漏，因为大多数建筑是平铺的）</p>
+<ul>
+  <li>3. <strong>不检查子工程体积上限</strong> —— 项目本身已被上限框住，子工程最大也只能等于项目</li>
+</ul>
+<p>以上第 2 条<strong>服务端必须再做一遍</strong>。只在客户端判的话，改包就能把子工程钉到项目边界 外面，领取时算出的绝对坐标会砸到毫不相干的建筑。</p>
+<p><strong>创建成功后</strong>：空白蓝图<strong>原样不动</strong>，只弹一条成功横幅。 不发放任何蓝图物品 —— 子工程是给玩家领取的，创建时就发一枚出来只会让 OP 手上攒一堆。 （本页是 OP 专用，不消耗空白蓝图不构成滥用面。）</p>
+<h6>5.4 分类 id 与上限</h6>
+<p>⚠ <strong>新分类绝对不能叫 <code>project</code></strong> —— 那个 id 已经被<strong>投影蓝图</strong>占用了：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+addTypeButton("project", "...btn.projection", ...)   // "project" = 投影蓝图
+BlueprintConfig.getMaxVolumeFor("project")           // 投影的体积上限
+dirFor("project") -&gt; projections/                    // 投影的存储目录</p>
+<p>也不要用 <code>projects</code>（复数）—— 与 <code>project</code> 只差一个字母，散落在 <code>maxVolumeFor</code> / <code>slotLimitFor</code> / <code>dirFor</code> / lang key 四处 switch 里，迟早看走眼。 蓝图库那个 tab 现在正是用的 <code>"projects"</code>，<strong>一并改掉</strong>（它目前指向空列表，改动零成本）。</p>
+<table>
+  <thead><tr><th>用途</th><th>分类 id</th><th>体积上限（新配置项）</th><th>槽位</th></tr></thead>
+  <tbody>
+    <tr><td>项目蓝图</td><td><code>projectset</code></td><td>默认 <strong>0 = 不限</strong>，落到硬编码上限 160 万；按<strong>选区体积</strong>判定</td><td>不占</td></tr>
+    <tr><td>子工程</td><td><code>subproject</code></td><td>默认 <strong>30 万</strong>，按<strong>非空气方块数</strong>判定（走正常捕获逻辑）</td><td><strong>不占</strong></td></tr>
+  </tbody>
+</table>
+<p>两者都需要<strong>独立的配置项</strong>，不能复用独立工程蓝图那一份。</p>
+<p>⚠ 实现时要审一遍所有 <code>switch</code> 到 <code>"engineering"</code> 的地方：子工程用的是 <code>subproject</code> 分类，但功能上仍是工程蓝图（同一个物品、同样的材料清单与固定坐标放置）。 物品类型映射、放置链路、材料校验三处都要认这个新分类。</p>
+<p>子工程的 <code>relP1</code> / <code>relP2</code> <strong>存旋转后的世界偏移</strong>，<code>rotation</code> 只作记录、领取时不再套用。</p>
+<h6>5.5 编辑期与冻结期</h6>
+<p><strong>完整流程（已定稿）：</strong></p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">建项目（未激活）→ 反复加子工程 → 全部加完 → 激活（锁坐标 + 冻结条目表）→ 分发</p>
+<p>因此判定方向是：</p>
+<table>
+  <thead><tr><th>项目状态</th><th>能否加子工程</th></tr></thead>
+  <tbody>
+    <tr><td><strong>未激活</strong>（编辑期）</td><td>✅ 可以，反复加</td></tr>
+    <tr><td><strong>已激活</strong>（冻结期）</td><td>❌ 拒绝 + 报错横幅</td></tr>
+  </tbody>
+</table>
+<p><strong>激活 = 定稿</strong>，与「激活后坐标系永久锁定」是同一套语义：条目表一旦冻结， 已领取的玩家看到的清单就不会中途变化。</p>
+<p>曾经把限制写成「未激活不能建子工程」，那会与 §三 激活校验第 3 条 （子工程数 ≥ 1）形成死锁 —— 没子工程不能激活、没激活不能建子工程， OP 永远走不到第一步。方向必须是上表这样。</p>
+<hr>
+<h5>六、领取</h5>
+<ul>
+  <li><strong>冷却：每个玩家的每个子工程单独计时，10 分钟一次</strong></li>
+  <li><strong>已完成的子工程仍可领取</strong>，只在领取时弹一次提示确认</li>
+</ul>
+<p>理由：已完成的工程要重建，必须先把原有方块全部拆完，且要自己出材料。 这个成本本身就是门槛，不属于蓝图该拦截的范畴。</p>
+<ul>
+  <li><strong>子工程蓝图不占工程蓝图槽位</strong> —— 否则一个 16 条目的项目能把玩家槽位吃光</li>
+  <li><strong>绝对坐标在领取时才算</strong>：<code>任务集 origin + relP1/relP2</code> → 写进物品的</li>
+</ul>
+<p>  <code>engStart</code> / <code>engEnd</code>。因为私人项目的 origin 是玩家激活时才定的，不能预先写死在 dat 里。</p>
+<hr>
+<h5>七、完成判定</h5>
+<p><strong>在放置成功的那一刻直接判定并记录，不挂在动画结束。</strong></p>
+<p>代码约束（已核实）：工程蓝图现在<strong>无论哪个模式都用后即焚</strong></p>
+<p>因此 <code>taskSetId</code> + <code>entryIndex</code> 必须在<strong>物品被清空之前</strong>从 stack 上读出来记账 —— 清空之后再想读就没有了。</p>
+<p>记账内容：<code>taskSetId × entryIndex → 完成</code>，写服务端 SavedData。</p>
+<h6>完成指令</h6>
+<p>模板占位符：<code>{player}</code> <code>{project_id}</code> <code>{entry_index}</code>，其中 <strong><code>{player}</code> 用玩家名</strong>。 由服务端 <code>CommandSourceStack</code> 执行（不以玩家身份）。</p>
+<hr>
+<h5>八、坐标占用表</h5>
+<p><strong>每个已激活的坐标系都登记到全局表，直到项目完成或被释放。</strong> 同一位置的后来者一律<strong>拒绝激活</strong>（先来后到）。</p>
+<table>
+  <thead><tr><th>项</th><th>定法</th></tr></thead>
+  <tbody>
+    <tr><td>判定粒度</td><td><strong>包围盒重叠</strong>，不是 origin 精确匹配 —— 否则错开一格就绕过去了</td></tr>
+    <tr><td>键</td><td><strong>带维度</strong> —— 主世界与下界的同一坐标不算冲突</td></tr>
+    <tr><td>持久化</td><td><code>SavedData</code>，重启后仍然有效</td></tr>
+    <tr><td>释放</td><td>① 项目完成自动释放 ② <strong>OP 站在项目范围内执行指令释放</strong> ③ 玩家主动放弃（UI，待办）</td></tr>
+  </tbody>
+</table>
+<hr>
+<h5>九、跨存档</h5>
+<p>项目蓝图与子工程都可跨存档使用：OP 在单人创造档做好建筑、设定好项目， 把 <code>projects/{projectId}/</code> 整个目录拖到服务器配置文件夹即可加载。</p>
+<h6>⚠ 子工程蓝图必须豁免 <code>WorldIdentity</code> 校验</h6>
+<p>工程蓝图现在是「外档右键直接销毁，OP 也不例外」。不豁免的话，玩家领到子工程蓝图 一右键就没了、再领再没，整个跨存档场景不成立 —— 属<strong>阻断项</strong>。</p>
+<p><strong>先澄清「销毁」的范围（已核实代码）</strong>：只把玩家手上那枚物品置空 （<code>C2S_DiscardForeignBlueprintMessage</code> 里的 <code>setItemInHand(hand, ItemStack.EMPTY)</code>）， <strong>磁盘上的 <code>.dat</code> 原封不动</strong> —— 那是另一个存档的资产，删了会把人家好端端的蓝图一起弄没。 所以损失只是一枚物品，不是数据；但玩家永远建不成，仍然必须豁免。</p>
+<p>现有链路（两处<strong>各自独立判断</strong>，因此两处都要改）：</p>
+<table>
+  <thead><tr><th>侧</th><th>位置</th><th>判据</th></tr></thead>
+  <tbody>
+    <tr><td>客户端</td><td><code>ForceBlueprintGuard.interceptForeignWorld()</code></td><td><code>category ∈ {engineering, dimensional}</code> 且 <code>!belongsToCurrentWorld(worldUuid)</code></td></tr>
+    <tr><td>服务端</td><td><code>C2S_DiscardForeignBlueprintMessage.isForeign()</code></td><td>同上（服务端复核，不信任客户端判断）</td></tr>
+  </tbody>
+</table>
+<p>服务端那道复核不能省：不校验的话，伪造一个包就能把玩家手上<strong>正常</strong>的蓝图洗掉。</p>
+<h6>豁免做法：给子工程一个标记</h6>
+<p><strong><code>BlueprintData</code> 新增 <code>parentProjectId</code>（String，空表示不属于任何项目）。</strong> 非空即豁免存档归属校验，两处判据都加同一条：</p>
+<p style="white-space:pre-wrap;font-family:Consolas,monospace;">java
+// 子工程的绝对坐标是从任务集 origin 算出来的，本来就不绑定存档 —— 豁免
+if (data.parentProjectId != null &amp;&amp; !data.parentProjectId.isEmpty()) return false;</p>
+<p>选这个而不是「在两处的条件里各写一遍排除逻辑」，是因为<strong>判据落在数据本身</strong>： 以后再多几个入口要判存档归属，只要读同一个字段就行，不会漏。</p>
+<p>配套：</p>
+<ul>
+  <li>该字段随 <code>SpatialBlueprintData</code> 一起序列化，在<strong>创建子工程时</strong>写入（§五 那条路径）</li>
+  <li><strong>独立完整工程蓝图仍然受存档约束</strong> —— 它绑定的是真实世界坐标，换档照样砸建筑</li>
+  <li>字段名<strong>不要叫 <code>projectId</code></strong>：<code>EngineeringBlueprintItem</code> 里已经有个 <code>engProjectId</code>，</li>
+</ul>
+<p>  存的是工程蓝图自己的 blueprintId，两者毫无关系（见 §十一「命名冲突」）</p>
+<hr>
+<h5>十、已确认的设计取舍（不是待办）</h5>
+<ul>
+  <li><strong>项目蓝图是纯查看/分发工具</strong>，自己不放置任何方块。</li>
+  <li><strong>进度与物品解耦</strong>：复制物品不复制进度；丢失物品不丢失进度。</li>
+  <li><strong>激活后坐标系永久锁定</strong>，OP 也不能改。</li>
+  <li><strong>不存在「子工程永久关闭」</strong>：已完成的仍可领取重建，成本由拆除+材料自然构成门槛。</li>
+  <li><strong><code>rel</code> 存旋转后的世界偏移</strong>，<code>rotation</code> 只作记录，领取时不再套用（否则会转两次）。</li>
+  <li><strong>子工程不占工程蓝图槽位。</strong></li>
+  <li><strong>工程蓝图无论哪个模式都用后即焚</strong>（2026-08-26 统一）。</li>
+</ul>
+<hr>
+<h5>十一、待办事项</h5>
+<p>未做的部分已集中到项目根目录 <code>待办事项.MD</code> 的 D 节（2026-09-12 移出）； 其余（<code>parentProjectId</code>、<code>requiresEntry</code>、projectset/subproject 配置、创建项目 / 子工程页、 条目清单纯包、16 色调色板）已于 DS-101~104 实现。</p>
+<h3>B · 精简前的 注意事项_分类.md（全文，2026-09-14 SB-002 版）</h3>
+<h4>Spatial_Blueprint · 注意事项</h4>
+<p>本文件由原《代码约束.md》《踩坑记录.md》与 <code>注意事项\</code> 各卡合并迁入，并按条目类型重新分类。  分类顺序固定为：<strong>铁律 → 坑 → 参考</strong>。  编号规则：<code>T1/T2...</code> = 铁律，<code>K1/K2...</code> = 坑，<code>C1/C2...</code> = 参考。  每条写清：编号、标题；正文只记现状与结论，经过与历史写开发日志。  行号总表见同目录 <code>注意事项_目录.md</code>（改动本文件后重新生成）。</p>
+<h5>铁律</h5>
+<p>改代码前整读。违反会直接出 bug（崩溃、静默丢数据、不同步）的硬约束，<strong>不许改回去</strong>（改之前先问用户）。</p>
+<p>新增铁律：在本节末尾加 <code>### T&lt;N&gt; · 标题</code>（N 取当前最大 +1），再刷新目录。</p>
+<p>代码约束 · Spatial_Blueprint —— 改代码必须遵守的硬约束，长期有效。 改代码前整读 · 更新 2026-09-14  改代码必须遵守的硬约束，长期有效。当前状态在 待办事项.md；每条的理由 / 原理在 记忆与注意事项\注意事项\ 对应编号的卡文件。 全部条目摘自 CURRENT.md「关键约定」（2026-09-14 迁移，措辞未改）与记忆导出。</p>
+<h6>T1 · 这是什么</h6>
+<ul>
+  <li>Spatial Blueprint —— Minecraft 1.20.1 / Forge 模组，modid <code>spatial_blueprint</code>，源码 198 个 <code>.java</code>。</li>
+  <li>工程 Forge 版本 <code>forge_version=47.4.10</code>（<code>gradle.properties</code>）；实机测试服务端 <code>XioYim_Server</code> 为 Forge 47.4.16。</li>
+  <li><strong>协议版本 = mod 版本</strong>；当前部署 <strong>2.6.8</strong>（<code>spatial_blueprint-2.6.8.jar</code> = 1,068,911 字节 / SHA256 <code>C3B6F7B9</code>…，双端）。</li>
+</ul>
+<h6>T2 · 构建与警告基线</h6>
+<ul>
+  <li>验编译：<code>.\gradlew.bat compileJava --offline --rerun</code> → 要 <code>BUILD SUCCESSFUL</code>（增量 <code>classes</code> 会 UP-TO-DATE，一条不打印，验收一律带 <code>--rerun</code>）。</li>
+  <li><strong>警告基线 21 条</strong>（2026-09-14 实测，<code>BUILD SUCCESSFUL</code>；按 <code>\.java:\d+:</code> 计数 —— 这台机器 javac 输出中文，按 <code>warning</code> 数恒为 0）。</li>
+  <li>构建：<code>.\gradlew build --offline</code> → <code>build\libs\spatial_blueprint-&lt;版本&gt;.jar</code>；离线证书问题加 <code>-Dnet.minecraftforge.gradle.check.certs=false</code>。</li>
+</ul>
+<h6>T3 · 网络协议与发版</h6>
+<ul>
+  <li><strong>发版必须 bump mod_version</strong>：2.4.0 这个号下曾经存在两个不同产物（718KB 有 bug / 1024KB 已修），线上出问题时光看版本号根本分辨不出手上是哪份。</li>
+  <li><strong>新增消息必须走 <code>BlueprintNetwork.c2s()</code> / <code>s2c()</code>，且只能追加在 <code>register()</code> 末尾。</strong> 注册顺序就是线上的消息序号，插队 / 删除 / 改方向都必须 bump mod_version 并同时更新双端。 方向标反的后果是玩家一发那条消息就被踢下线（「Illegal packet received」），不是静默失败。</li>
+  <li>新增 S2C 字段：encode/decode 对称、客户端缓存整份替换、wire 变了 bump mod_version。</li>
+</ul>
+<h6>T4 · 客户端 / 服务端边界</h6>
+<ul>
+  <li><strong>上传判定用服务端配置</strong>，勿用 <code>S2C_ConfigSyncMessage.slotLimitFor</code> 客户端镜像。</li>
+  <li><strong>服务端读蓝图数据一律用 <code>getBlueprintDataServer</code> / <code>getMaterialListServer</code>。</strong> <code>FMLEnvironment.dist</code> 是物理端，单人与局域网主机上它等于 CLIENT， 拿它当逻辑端用就是 H3 那个坑。tooltip 是唯一可以按物理端分派的场景 （<code>getMaterialListForTooltip</code>），别照抄到别处。</li>
+  <li>客户端会话缓存新增时，<strong>必须挂 <code>ClientPlayerNetworkEvent.LoggingOut</code> 复位</strong>， 否则上个服的状态会带进下个服。例外只有 <code>ClientPreviewSettings</code>（本地 json 持久化设置）。</li>
+  <li><strong>改完主类或任何非 client 包的类，验产物不验源码</strong>： <code>javap -p -c SpatialBlueprintMod.class | grep net/minecraft/client</code> 必须 0 命中。 编译通过不是证据 —— 内联 lambda 会把 <code>Screen</code> 带进主类的 synthetic 方法签名， FML 在 CONSTRUCT 阶段解析描述符时就会让专服起不来，任何运行时 dist 判断都来不及。 客户端类型只能出现在 <code>client/</code>、<code>gui/</code> 包，或带 <code>@OnlyIn(Dist.CLIENT)</code> 的成员上。 （注：<code>javap -v</code> 的<strong>类级注解在输出末尾</strong>，别用 <code>head</code>/<code>tail -20</code> 去取，会误判。）</li>
+</ul>
+<h6>T5 · 权限与归属</h6>
+<ul>
+  <li><strong>归属判断一律用 <code>ownerUuid</code>，不要用 <code>creatorName</code></strong> —— 后者是捕获当时的玩家名， 改名就对不上。唯一例外是无主旧数据（<code>ownerUuid</code> 为空）的<strong>可见性</strong>回退， 见 <code>BlueprintLibraryScreen.isMineForListing</code>；<strong>权限判断不许放宽</strong>，无主一律判否。</li>
+  <li><strong>会写别人蓝图文件的操作一律走 <code>BlueprintValidator.canManageBlueprint</code></strong>（主人或 OP； 无主蓝图只有 OP 能碰）。<code>isCreative()</code> 只表示「这是蓝图库管理场景」，不等于有权动这一份， 两道都要过。次元蓝图删除另有自己那套三段式判定，别用本入口顶掉它。</li>
+  <li>WorldOwn 归属判定禁逐条 INFO（高频）。</li>
+</ul>
+<h6>T6 · 世界改动 / 捕获与净化</h6>
+<ul>
+  <li><strong>任何会改动世界方块的路径，创造模式是否受领地检查一律看 <code>DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA</code></strong>（默认 true），不要硬编码 <code>!isCreative()</code>。 已接入：放置两处 + 次元捕获 + 虚空重捕获。新增这类路径时照抄这个判定。 例外是放置侧的「结构冲突预检」（挡道方块），那个跟领地无关，只看游戏模式是对的。</li>
+  <li>三种超限语义不同：单体体积/深度 → 清 NBT 保留方块；体积总量 → 拒收。捕获路径刻意无限制。</li>
+  <li><strong>两个 strip 方法分工别搞混</strong>：<code>stripDangerousBlockNbt</code> 无条件倒容器（上传净化、 <code>effectiveNbtBytes</code> 用它）；<code>stripDangerousBlockNbtKeepContents</code> 保留容器（次元蓝图捕获用）。 安全项两者都做，共用 <code>applySafetyStripInPlace</code>。给次元蓝图加容器清理 = 回归。</li>
+  <li><strong>次元蓝图只有 SAFE 一条路，任何人一样，OP 不豁免</strong>（2026-09-12 用户拍板）：服务端 <code>CaptureAreaMessage</code> 对 <code>clearAfterCapture &amp;&amp; effMode != SAFE</code> 直接拒；非法方块 / 方块实体 <code>hasDangerousBlockNbt</code> / 实体 <code>findEntityWithIllegalItems</code> 三道预扫任一命中整单拒，都在清世界之前。<strong>捕获预扫与扫描报告 <code>C2S_RequestIllegalBlocksMessage</code> 必须用同一组判定</strong>（<code>entityHasIllegalItems</code> 等），报告标危险的服务端必拒、 报告没标的必放，否则玩家没法自己清理。给次元蓝图加任何净化 / OP 放行 = 回归。</li>
+  <li>FORCE 模式对次元蓝图不可达：<code>BlueprintReportScreen</code> 的 OP 按钮会把 category 强制覆盖成 <code>create</code>/<code>reward</code>。别再设计依赖「次元 + FORCE」的方案。</li>
+  <li>深 JSON 靠体积检测封顶（<code>maxBlockEntityNbtBytes</code>），不是靠 65535 —— 两个阈值同时是两套防线， fail-closed 修法已完成（TASK-007 PASS）。<code>catch(Throwable)</code> 保持（收窄会让 OOM 冒泡到网络线程被静默吞）。</li>
+</ul>
+<h6>T7 · Create 胶水与盒型实体</h6>
+<ul>
+  <li><strong>Create 胶水的 <code>From</code>/<code>To</code> 是相对 <code>Pos</code> 的偏移，不是世界坐标</strong>（存盘 <code>bb.move(-pos)</code>， 读盘 <code>+pos</code>，<code>Pos</code> = 盒底中心）。捕获几何一律取 <code>entity.getBoundingBox()</code>；放置写回 <code>Pos=(cx, minY, cz)</code>、<code>From=lo−Pos</code>、<code>To=hi−Pos</code>。把 From/To 当世界坐标就是 2.6.0~2.6.3 那个「一个胶水都捕不到」的坑。</li>
+  <li><strong>盒型实体（From/To 角点）的坐标变换走 <code>BlueprintTransform.cornerX/cornerZ</code>，公式不带 <code>-1</code>。</strong> 方块索引跑 0..size-1，角点跑 0..size，两套公式不能混用 —— 混用的表现是整个盒子偏一格。 旋转后 From/To 会对调，<strong>必须重新按 min/max 规范化</strong>，否则写出反向 AABB。 新增这类实体只要往 <code>BOX_ENTITIES</code> 配置里加 ID，不要在代码里引用对方 mod 的类。</li>
+</ul>
+<h6>T8 · 配置与界面</h6>
+<ul>
+  <li>配置界面一律走 <code>ConfigAccess</code>（服务端镜像 + 提交），不直写本地 toml；列表/数字快照刷新按 <code>ClientConfigMirror.snapshotVersion</code>。</li>
+  <li>BuildTime 档位仅客户端显示估算（PointSelectionScreen），服务端权威，属可接受显示不一致，暂不投影。</li>
+  <li><strong>查 <code>ValueSpec</code>（范围/默认）用 <code>SPEC.getSpec().get(path)</code>，不是 <code>getValues()</code></strong> —— 后者那张表放的是 <code>ConfigValue</code>，<code>instanceof ValueSpec</code> 永远不中，兜底分支会静默放行。 只要默认值，直接 <code>value.getDefault()</code>，不用查表。</li>
+</ul>
+<h6>T9 · 文本与提示</h6>
+<ul>
+  <li><strong>lang 占位符一律 <code>%s</code> / <code>%1$s</code></strong>，原版 <code>TranslatableContents</code> 不认 <code>{0}</code>，会原样画出来。</li>
+  <li>Spatial Blueprint 的<strong>所有报错提示一律用 ErrorToast 横幅</strong>，不要用 <code>player.displayClientMessage()</code> / <code>sendSystemMessage()</code> 发到聊天栏。 有宿主界面时：Screen 实现 <code>ErrorToastSupport</code>，在 <code>render()</code> 开头用早返回模式渲染； <strong>没有宿主界面时</strong>（如在世界中右键物品触发的报错）： <code>Minecraft.getInstance().setScreen(new ErrorToastScreen(message))</code> —— <code>ErrorToastScreen</code> 是专为这种场景写的独立横幅界面，任意点击或 ESC 关闭，不暂停游戏。 服务端发 <code>S2C_OperationResult(false, key)</code> 时，客户端若有 <code>ErrorToastSupport</code> 界面会自动转成横幅；但那条路径在无界面时仍会回落到聊天栏，需要横幅就自己开 <code>ErrorToastScreen</code>。成功类通知可以走聊天栏，但注意 <code>S2C_OperationResult</code> 的成功分支会<strong>关闭</strong> <code>PointSelectionScreen</code> / <code>PlacementScreen</code>，不想关界面就别用它。 接入方法见 注意事项「常项参考：报错横幅（ErrorToast）接入」卡（原文已归档）。 用户 2026-08-13 明确要求以后所有报错都走横幅。 <strong>Why:</strong> 聊天栏提示太容易被玩家忽略，尤其在世界中操作物品时视线不在聊天区。</li>
+</ul>
+<h6>T10 · 推送与 NBT 规则</h6>
+<ul>
+  <li><strong>服务端把蓝图发给客户端，只能走 <code>BlueprintNetwork.sendBlueprintTo</code></strong>（TASK-006，2026-09-03）。 它序列化一次、压缩一次、按 <code>S2C_BlueprintChunkMessage.CHUNK_SIZE</code> 切片，<strong>一个 chunk 也分片，没有 size 分支</strong>；超 <code>MAX_TOTAL_CHUNKS</code>(256) 只记 warn 不发。 <code>S2C_BlueprintDataMessage</code> <strong>故意保留</strong>（类 + 注册 + 范围校验都在），但它是整包发送，超过 1 MB 会在 decode 被拒。 看到 <code>new S2C_BlueprintDataMessage(</code> 出现在发送位置就是回归。 <strong>Why:</strong> 曾经有六处服务端主动推送直接 new 这个整包消息 —— 大蓝图捕获成功、文件已落盘，推送却被拒，玩家看到的是空预览，得重开蓝图库下载一次才有（拉取路径一直是分片的）。类没删是因为删除超出当时的任务范围，不是因为还该用。</li>
+  <li>NBT 预算规则句：三种超限语义、两个 strip 方法分工见上面「世界改动 / 捕获与净化」；原理与理由见 注意事项「NBT 预算语义与 strip 分工（原理）」卡。</li>
+</ul>
+<h5>坑</h5>
+<p>本机环境、协作方法、运维事实、工具用法。动手前扫一眼；踩到新坑记下来。</p>
+<p>新增坑：在本节末尾加 <code>### K&lt;N&gt; · 标题</code>（N 取当前最大 +1），再刷新目录。K1 建议放"报警行"：一屏能看完的要点列表，每行指到对应节。</p>
+<p>踩坑记录 · Spatial_Blueprint —— 本机环境 / 协作方法 / 运维事实 / 工具 —— 动手前扫报警行。 动手前扫报警行 · 更新 2026-09-14  本机环境 / 协作方法 / 运维事实 / 工具 —— 不该进代码库、但主辅 AI 都得知道的。开头一屏是报警行。</p>
+<h6>K1 · 报警行（先看这一屏，细节在对应节）</h6>
+<ul>
+  <li><strong>UTF-8 文本禁用 PowerShell <code>Set-Content</code> / <code>Add-Content</code> / <code>(Get-Content -Raw) -replace ... | Set-Content</code></strong>（会破坏编码）—— §一</li>
+  <li><strong>本机 <code>python</code> / <code>python3</code> 是 Windows Store 存根，静默失败；改用 <code>node</code></strong> —— §一</li>
+  <li><strong>含 Windows 路径 / 反斜杠的脚本：<code>node -e</code> 与 quoted heredoc 都吞反斜杠，一律 Write 落成 <code>.js</code> 再 <code>node &lt;file&gt;</code></strong> —— §一</li>
+  <li><strong>Bash 工具 heredoc 遇未配对单引号会断</strong>；纯追加长文本用 <code>cat &gt;&gt; file &lt;&lt;'EOF'</code> 才行 —— §一</li>
+  <li><strong>这个工作区有多个写入方，mtime 不能用于归因</strong> —— §一</li>
+  <li><strong>TASK 必须执行方中立</strong>，不引用协作指南、不出现执行方名字 —— §二</li>
+  <li><strong>不要追问「谁来执行」</strong>；小任务直接做，大任务直接写 TASK 文件给出路径 —— §二</li>
+  <li><strong>备份保留多份、勿删、最新在上</strong>；覆盖型改动前先跑 <code>备份.ps1</code> —— §三</li>
+  <li><strong>协议版本 = mod 版本，双端必须一起换</strong>；部署认 SHA256，不认版本号（同一版本号下出现过两个产物）—— §三</li>
+  <li><strong>旧 jar 归档到 <code>D:\Mods\项目备份\替换出的旧jar\&lt;时间戳&gt;\</code></strong> —— §三</li>
+  <li>本机通用陷阱（PS 5.1 行为、javac 输出中文、hook 从 stdin 读 payload 必须按 UTF-8 等）见 <code>D:\Mods\Healthy_Diets\#Healthy_Diets\记忆与注意事项\踩坑记录.md</code> §一</li>
+</ul>
+<h6>K2 · 一、本机环境</h6>
+<h6>改 UTF-8 文本不要用 PowerShell</h6>
+<p><strong>禁止</strong>用 <code>Set-Content</code> / <code>Add-Content</code> / <code>(Get-Content -Raw) -replace ... | Set-Content</code> 处理 lang / json / md / py 等 UTF-8 文本 —— 会破坏编码。</p>
+<h6>⚠ 本机 python 是个不可用的存根，用 node 代替（2026-09-09 核实）</h6>
+<p><code>python</code> / <code>python3</code> 解析到 <code>C:\Users\Yim\AppData\Local\Microsoft\WindowsApps\python.exe</code>， 那是 Windows Store 的占位符：<strong><code>python --version</code> 输出空字符串，脚本静默失败、无报错</strong>。 本会话照旧记忆写了个 <code>python - &lt;&lt;'PY'</code> 改文件，命令"成功"返回但文件一个字没动， grep 验证才发现。</p>
+<p><strong>改用 <code>node</code>（v24 可用）：</strong> <code>fs.readFileSync(p, "utf8")</code> / <code>fs.writeFileSync(p, s, "utf8")</code> （Node 的 "utf8" 不带 BOM，正是要的）。</p>
+<h6>node 的坑：Windows 路径反斜杠会被吞</h6>
+<p>shell 单引号里写 <code>node -e '...D:\\Mods\\x...'</code>， 经 shell 传给 node 后 <code>\M</code> 是无效转义 → 被吃成 <code>M</code>，路径变成 <code>D:Modsx</code>， <code>replace</code> 静默不命中。本会话踩了两次。 <strong>含 Windows 路径的脚本一律用 Write 工具写成 <code>.js</code> 文件再 <code>node &lt;file&gt;</code> 执行</strong>， 不要走 <code>node -e</code>。写文件后 grep 验证结果，别只看 "OK"。</p>
+<h6>⚠ <code>node - &lt;&lt;'EOF'</code> 也吞反斜杠（2026-09-12 核实）</h6>
+<p>不只是 <code>node -e</code>。Bash 工具的 quoted heredoc 把脚本喂给 <code>node -</code> 时，脚本源码里的 <code>\s</code>、<code>\.</code>、<code>\n</code> 全被吃掉一层：正则 <code>^(\s*)"key"</code> 到 node 里成了 <code>^(s*)"key"</code>， 静默不命中。<strong>改 JSON / 需要正则或转义字符的 node 脚本，一律不写任何反斜杠</strong>： 换行用 <code>String.fromCharCode(10)</code>，找行用 <code>indexOf</code>，不用正则； 或者按上面说的用 Write 工具落成 <code>.js</code> 再 <code>node &lt;file&gt;</code>。 纯字符串 <code>includes</code> / <code>replace(字面串)</code> 的脚本没问题，只要字面串里没反斜杠。</p>
+<h6>Bash 工具的 heredoc 会被未配对单引号打断</h6>
+<p><code>cat &gt; x.py &lt;&lt;'EOF'</code> 里只要内容含未配对的 <code>'</code>（英文撇号，如 <code>entity's</code>、<code>task's</code>）， 就报 <code>unexpected EOF while looking for matching</code>。</p>
+<p><strong>How to apply:</strong> 含中文或撇号的长文本，一律用 Write 工具写成脚本文件（<code>.js</code>）再执行， 不走 heredoc、也不走 <code>node -e</code>。</p>
+<p>例外：<strong>纯追加</strong>长文本到 md（写日志那种）用 <code>cat &gt;&gt; file &lt;&lt;'EOF'</code> 是稳的， 本会话用了多次没出问题 —— 前提是内容里没有未配对的英文撇号。</p>
+<h6>这个工作区有多个写入方</h6>
+<p>用户会同时用别的 agent / 编辑器改同一个仓库。<strong>mtime 不能用于归因</strong>： 本会话见过「我一次性顺序写的两个文件时间戳差 2 分钟」「没碰过的文件出现在改动窗口内」。 大动作前先按安全手册做带时间戳的备份（<code>D:\Mods\项目备份</code>）。</p>
+<p><strong>Why:</strong> 2026-09-02 出过一次编码事故，已写进协作指南「事故教训」一节。 <strong>How to apply:</strong> 编码类操作先小样本探测（写 1 行 → 读回验证）再整文件处理。 改完 JSON 一定用解析器验一遍：本会话就因为一个 <code>.replace</code> 多加了个逗号， 把 <code>zh_cn.json</code> 变成非法 JSON，整个中文语言包加载失败。</p>
+<h6>K3 · 二、协作方法</h6>
+<h6>协作指南与安全手册的位置（2026-09-09 核实）</h6>
+<p>协作指南：<code>D:\Mods\项目工具\Claude_AI_协作指南.md</code> 安全手册：<code>D:\Mods\项目工具\安全手册.MD</code></p>
+<p>⚠ 2026-09-09 核实：两份文件都已移到 <code>D:\Mods\项目工具\</code> 下。 旧路径 <code>D:\Mods\Claude_AI_协作指南.md</code> 与 <code>D:\mod\安全手册.MD</code> <strong>都已不存在</strong>，别再去找。 安全手册里的备份改成跑脚本： <code>D:\Mods\项目工具\备份.ps1 -Project &lt;项目目录&gt; -Note "覆盖到哪一步"</code>。</p>
+<h6>TASK 必须执行方中立</h6>
+<p>用户不一定把 TASK 拍给 DeepSeek —— 可能是 mini、Codex 或别的 agent，也可能自己做。</p>
+<p><strong>Why:</strong> TASK 里写「你是 DS，要遵守协作指南第 N 节」，换个执行方就完全失效； 文件名带 DS 也会让别的 agent 困惑。 <strong>How to apply:</strong> TASK 只写「要做什么」加必要的背景事实，完全自包含 —— 不引用协作指南、不出现 DS 字样、不假设执行方了解项目历史。 新建 TASK 命名用 <code>TASK_00N_描述.md</code>。</p>
+<h6>不要追问「谁来执行」</h6>
+<p><strong>Why:</strong> 每轮问「要我直接做还是写成 TASK」是纯噪音。判断任务规模是 Claude 自己的职责， 不是需要用户拍板的设计决策 —— 用户拿到产出后自己会决定拍给谁。 <strong>How to apply:</strong> 判断完规模直接产出。小任务（≤3 个文件、不跨模块）自己做完再汇报； 大任务直接写成 TASK 文件、给出路径。做完再说，不要先问。</p>
+<h6>核心原则</h6>
+<ul>
+  <li>1. 不默认大范围探索 —— 从最小范围开始，证据不足才扩大。</li>
+  <li>2. 昂贵调查在开始前就委派，不要自己查完才写 TASK。</li>
+  <li>3. 原始日志、grep 全量结果不要污染主上下文。</li>
+  <li>4. 验收交付物时逐条 grep 核实主张，但命令要合并；不重复执行方已完成的调查。</li>
+  <li>5. 达到验收标准立即停止，不顺便优化无关内容。</li>
+  <li>6. 只做用户要求的最小修改，不做无关重构。</li>
+  <li>7. 重要 API / 函数 / 行为必须基于实际项目验证，不凭记忆假设。</li>
+  <li>8. 已读取且未变化的文件不要重复读全文。</li>
+  <li>9. 大型 / 破坏性操作前按安全手册备份。</li>
+  <li>10. 持久记忆只保存稳定、未来有用的信息。</li>
+</ul>
+<h6>任务规模阈值（参考，非硬限制）</h6>
+<p><strong>委派</strong>：读取 &gt;8 个文件、分析 &gt;500 行日志、修改 &gt;5 个文件、大范围调用链调查、批量机械操作。 <strong>自己做</strong>：1~3 个明确文件、少量代码、单函数或配置调整、明显低风险的小 Bug。</p>
+<h6>必须使用中文回复用户</h6>
+<h6>日志更新习惯（2026-08-11 记忆）</h6>
+<p>用户已指定日志文件，大型操作完成后直接更新，无需每次询问。 完成大型功能/修复/迁移后直接追加日志；小型操作可追加 1~2 句话；无修改的讨论不记录。 （原文指向的 <code>D:\Mods\Spatial_Blueprint\最新开发日志.md</code> 已归档，现行入口是 <code>开发日志.md</code>。）</p>
+<h6>K4 · 三、运维事实</h6>
+<h6>双端部署</h6>
+<ul>
+  <li>服务端：<code>D:\Mods\项目工具\XioYim_Server\mods\</code>（Forge 47.4.16）</li>
+  <li>客户端：<code>D:\XioYimGame\Minecraft\Yuani Stellar Chef\.minecraft\versions\1.20.1 Forge\mods\</code></li>
+  <li><strong>协议版本 = mod 版本，两端必须一起换</strong>；部署认 SHA256（三份哈希一致：源文件 + 两端），jar 内 <code>mods.toml</code> 版本号也要验一遍（认版本号不够）。</li>
+  <li>旧 jar 归档目录：<code>D:\Mods\项目备份\替换出的旧jar\&lt;时间戳&gt;\</code>（server / client 各一份，可回滚）。</li>
+  <li>FTB Chunks 已装双端（<code>ftb-chunks-forge-2001.3.8.jar</code> / SHA256 <code>783F7AA4…</code>），供领地校验测试（36~41 / 88~92）。</li>
+</ul>
+<h6>备份（保留多份，勿删；最新在上）</h6>
+<ul>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260911_214710</code>（OP 超额放行 + 配置 ♻ 修复改前； 53.7 MB / 930 条目；SHA256 <code>2BFB660C</code>…；备份脚本已做读取测试；排除 run/.gradle/build/.idea）</li>
+  <li><code>D:Mods项目备份Spatial_Blueprint_20260910_124332</code>（本次捕获领地校验改前； 31.3 MB / 684 条目；SHA256 <code>EF0E94A1</code>…；备份脚本已做读取测试）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260909_001634</code>（胶水兼容改前；64.5 MB / 1351 条目； SHA256 <code>4822D3C9</code>…；备份脚本已做读取测试）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260907_214938</code>（M1/M2 改前，tar.gz 已验证解压 + 5 个待改文件逐字哈希一致，445 文件；SHA256 CE3E90FB…B51D；排除 build/.gradle/run*/.idea/*.zip）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260905_233128</code>（更早，tar.gz 已验证解压 + 关键文件哈希一致； SHA256 6795250C…6AB6；排除 build/.gradle/run*/src.zip/.idea）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260903_222910</code>（/sb config 改前；ConfigRegistry.java SHA256 E95B5A6A…89493）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260903_191248</code>（TASK-007 前，SHA256 34cc63b0…5b16）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260903_152436</code>（含 14 修复，SHA256 7677…999A）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260903_124821</code>（730 文件）</li>
+  <li><code>D:\Mods\项目备份\Spatial_Blueprint_20260903_021437</code>（641 文件/2.43MB）</li>
+  <li>备份命令：<code>D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint -Note "覆盖到哪一步"</code>（打印的表格行插进 待办事项.md 备份表最上面）。</li>
+</ul>
+<h6>工作区注意</h6>
+<p>多个写入方，mtime 不可用于归因。UTF-8 禁 PowerShell Set-Content（用 edit/write 或 .NET UTF8 无 BOM 追加）。</p>
+<h5>参考</h5>
+<p>设计决策、取证结论、排查手册、指令与计时器表。任务涉及某子系统时按目录里「读的时机」只读对应的一段。</p>
+<p>新增参考：在本节末尾加 <code>### C&lt;N&gt; · 标题</code>（N 取当前最大 +1），再刷新目录。</p>
+<h6>C1 · 常项参考：报错横幅（ErrorToast）接入（按现状订正）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 5. 常项参考：报错横幅（ErrorToast）接入（按现状订正）  一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14  原 <code>报错提示UI接入方法.md</code> 已归档（<code>日志归档\报错提示UI接入方法_20260912.md</code>）；以下是按现状订正过的常驻参考。</p>
+<p><strong>组成</strong></p>
+<ul>
+  <li><code>gui/ErrorToast.java</code> —— 无状态渲染工具，单方法 <code>render()</code></li>
+  <li><code>gui/ErrorToastSupport.java</code> —— 接口，<code>setErrorToast(Component)</code></li>
+  <li><code>gui/ErrorToastScreen.java</code> —— 无宿主界面时的独立横幅（关闭后回原界面 / 游戏）</li>
+  <li><code>network/s2c/S2C_OperationResult.java</code> —— 服务端失败结果<strong>自动</strong>调 <code>setErrorToast</code></li>
+</ul>
+<p><strong>接入一个 Screen</strong></p>
+<ul>
+  <li>1. <code>implements ErrorToastSupport</code> + <code>@Nullable private Component errorToast;</code>，实现 <code>setErrorToast</code></li>
+  <li>2. <code>render()</code> 开头：<code>renderBackground</code> → 若 <code>errorToast != null</code> 则 <code>ErrorToast.render(...)</code> 并 <strong><code>return</code></strong>（早返回，下层 UI 不渲染不交互）</li>
+  <li>3. <code>keyPressed</code> / <code>mouseClicked</code> 里：<code>errorToast != null</code> 时 ESC / 点击清空并 <code>return true</code>（吃掉输入）</li>
+</ul>
+<p><strong>触发</strong></p>
+<ul>
+  <li>本地校验：<code>errorToast = Component.translatable("..."); NotifySound.clientError();</code></li>
+  <li>服务端失败：正常发 <code>S2C_OperationResult</code>（<code>failure(key)</code> 等）即可。<strong>发送统一用</strong> <code>CHANNEL.send(PacketDistributor.PLAYER.with(() -&gt; player), new S2C_OperationResult(...))</code> —— 旧文档里的 <code>CHANNEL.sendTo(..., NetworkDirection.PLAY_TO_CLIENT)</code> 已不用。</li>
+</ul>
+<p><strong>现状口径（与旧文档不同，以这段为准）</strong></p>
+<ul>
+  <li><strong>失败一律横幅，没有聊天栏 fallback</strong>：未实现接口的界面 / 无界面时由 <code>ErrorToastScreen</code> 顶上（<code>S2C_OperationResult.java:114-131</code>）。</li>
+  <li>失败横幅还会把「停在 loading 的上传报告页」先退回父屏，避免卡死。</li>
+  <li><strong>成功仍走聊天</strong>（<code>displayClientMessage</code>），只有<strong>上传成功</strong>走横幅。</li>
+</ul>
+<p><strong>子屏幕触发父屏幕校验</strong>：校验失败设完 <code>errorToast</code> 后要 <code>Minecraft.getInstance().setScreen(this)</code> 切回父屏，否则父屏不在渲染栈、toast 不显示。</p>
+<p><strong>哪些不用改</strong>：<code>command/</code> 命令系统、异步放置 Handler（界面已关）、成功通知、已有 <code>instanceof ErrorToastSupport</code> 的 else 兜底。</p>
+<p><strong>lang 命名</strong>：<code>spatial_blueprint.gui.&lt;screen_id&gt;.error.&lt;name&gt;</code> / <code>spatial_blueprint.message.&lt;name&gt;</code>；中英各一份。</p>
+<p><strong>已接入 Screen</strong>：<code>CoordinateEditScreen</code>、<code>UploadBlueprintScreen</code>、<code>PointSelectionScreen</code>、<code>PlacementScreen</code>、<code>BlueprintLibraryScreen</code>、<code>CreateEngineeringProjectScreen</code>、<code>EngineeringBlueprintScreen</code>、<code>SafeCoordScreen</code>、<code>VoidDimensionalScreen</code>、<code>BlockSubstitutionsScreen</code>、<code>BulkConversionScreen</code>、<code>ErrorToastScreen</code>。</p>
+<h6>C2 · NBT 预算语义与 strip 分工（原理）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 8. NBT 预算语义与 strip 分工（原理）  一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<h6>三种超限，后果各不相同（最容易搞混）</h6>
+<table>
+  <thead><tr><th>检测</th><th>超限后果</th></tr></thead>
+  <tbody>
+    <tr><td>单体 NBT <strong>体积</strong></td><td>净化时清该方块的 NBT，保留方块，上传成功</td></tr>
+    <tr><td>单体 NBT <strong>深度</strong></td><td>同上</td></tr>
+    <tr><td>NBT 体积<strong>总量</strong></td><td><strong>拒收整个文件</strong></td></tr>
+  </tbody>
+</table>
+<p>只有总量拒收 —— 它没法靠清理单个方块解决。写测试清单、改文案、答疑时不要混。</p>
+<h6>捕获路径刻意没有任何体积/深度限制</h6>
+<p><strong>Why:</strong> 用户 2026-09-01 定的规则 —— OP 强制蓝图必须能原样带走全部 NBT； 次元蓝图是把结构从世界搬走，内容跟着走天经地义。这两类恰恰是无差别预算首先误伤的。 更本质的是：捕获的内容来自玩家本来就能访问的世界，真正的攻击面是上传进来的外部文件。</p>
+<p><strong>How to apply:</strong> 任何"给捕获加限制"的想法先停下。曾经加过一次，全部拆除了。 测试清单里有一项专门防这个回归。</p>
+<h6>两个 stripDangerousBlockNbt 的分工（2026-09-05 拆分，别搞混）</h6>
+<table>
+  <thead><tr><th>方法</th><th>容器策略</th><th>用在</th></tr></thead>
+  <tbody>
+    <tr><td><code>stripDangerousBlockNbt</code></td><td><strong>无条件</strong>倒空一切容器</td><td>上传净化 <code>stripListInPlace</code>、<code>effectiveNbtBytes</code></td></tr>
+    <tr><td><code>stripDangerousBlockNbtKeepContents</code></td><td>仅 <code>containsIllegalItemDeep</code> 命中才整体倒</td><td>次元蓝图捕获（<code>clearAfterCapture</code>）</td></tr>
+  </tbody>
+</table>
+<p>安全项（告示牌 clickEvent / 含命令的讲台书 / 刷怪笼 SpawnData）两者都做， 共用 private 的 <code>applySafetyStripInPlace</code>。</p>
+<p><strong>Why:</strong> 拆分前这一个方法把「清能执行命令的东西」和「倒容器防复制」焊死了。 <code>CaptureAreaMessage</code> 的 <code>stripContents</code> 虽然为次元蓝图放行了容器，安全线却照倒 —— 「次元蓝图箱内物品跟着走」那条规则实际只对 OP 生效，非 OP 搬一次家销毁一次财产。</p>
+<p><strong>How to apply:</strong> 给次元蓝图捕获加容器清理 = 回归。反过来，让上传路径走 KeepContents 版本也是回归 —— 上传的蓝图能反复放置，留着容器内容就是复制机。</p>
+<p>顺带：<strong>FORCE 模式对次元蓝图不可达</strong>，<code>BlueprintReportScreen</code> 的两个 OP 按钮会把 category 强制覆盖成 <code>create</code>/<code>reward</code>。别再设计依赖「次元 + FORCE」的方案。</p>
+<h6>预算测量必须在净化【之后】</h6>
+<p>容器内容在<strong>上传</strong>净化路径上必被 <code>stripDangerousBlockNbt</code> 清空。先称重等于拿注定要删的 字节定罪 —— 一个改名的满箱子会被判超限、连自定义名一起清掉。</p>
+<p>统一口径的入口是 <code>BlueprintSanitizer.effectiveNbtBytes</code>， <strong>扫描报告 / 总量判定 / 实际清理三处必须都走它</strong>，否则报告和实际行为会对不上。 净化顺序：清容器 → 清超大 → 清超深 → 过滤实体，不能反。</p>
+<h6>改 <code>S2C_UploadReportMessage</code> 前先看这条</h6>
+<p>它有 <strong>28 个字段</strong>（TASK-006 追加 category + volumeLimit，验收后又追加 <code>nbtPerEntryLimit</code> + <code>nbtTotalLimit</code>）。新字段的 decode 局部变量<strong>不要与既有变量同名</strong> —— 曾经把上限叫 <code>nbtTotal</code>，撞上了表示总字节数的 <code>nbtTotal</code>，编译器报错才发现； 换个名字就会安静地把两个 long 塞错位置。构造器 / encode / decode 三处顺序必须一致， 其中三个 list 读取字面完全相同、返回类型也相同 —— <strong>错一位后面全串，编译器完全不报错</strong>。 decode 里已经改成具名局部变量，新字段一律追加在末尾，保持这个模式。</p>
+<p>相关：[[project_context]]</p>
+<h6>C3 · 上传文件检测细节与方案计划（归档原文 · 2026-09-12）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 2. 上传文件检测细节与方案计划（归档原文 · 2026-09-12）—— 一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<p>原文在 <code>已归档开发日志\上传文件检测细节和方案计划_20260912.md</code>。 读的时机：改上传检测 / 净化管线 / 上传限流 / 危险放置广播之前。</p>
+<h6>C4 · 技术细节与更新记录（归档原文 · 2026-09-12）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 3. 技术细节与更新记录（归档原文 · 2026-09-12）—— 一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<p>原文在 <code>已归档开发日志\技术细节与更新记录_20260912.md</code>。 读的时机：查数据结构 / 网络协议 / GUI / 配置项总览时。</p>
+<h6>C5 · 报错提示 UI 接入方法（归档原文 · 2026-09-12）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 4. 报错提示 UI 接入方法（归档原文 · 2026-09-12）—— 一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<p>原文在 <code>已归档开发日志\报错提示UI接入方法_20260912.md</code>。 读的时机：接 ErrorToast 之前读 —— 但先看 C1 的现状订正。</p>
+<h6>C6 · 项目蓝图构建思路（归档原文 · 2026-09-12）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 6. 项目蓝图构建思路（归档原文 · 2026-09-12）—— 一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<p>原文在 <code>已归档开发日志\项目蓝图构建思路_20260912.md</code>。 读的时机：动项目蓝图 / 子工程之前。</p>
+<h6>C7 · 如何生成测试文件（测试工具原文）</h6>
+<p>原卡：注意事项 · Spatial_Blueprint · 7. 如何生成测试文件（测试工具原文）—— 一卡一文件 · [目录](00_目录.md) · 原文档：注意事项 · Spatial_Blueprint · 按卡读 · 更新 2026-09-14</p>
+<p>原文在 <code>测试工具\如何生成测试文件.txt</code>。 读的时机：要造 .litematic / .nbt / .schem / .schematic 测试文件时。</p>
+    </div>
+  </details>
+
+  <footer>
+    Spatial_Blueprint<span class="sep">·</span>已归档开发日志<span class="sep">·</span>2026-09-15
+  </footer>
+
+</div>
+</body>
+</html>

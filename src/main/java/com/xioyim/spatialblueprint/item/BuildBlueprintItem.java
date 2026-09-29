@@ -33,15 +33,14 @@ public class BuildBlueprintItem extends Item {
 
     @Override
     public Component getName(ItemStack stack) {
-        if (isForceCancelled(stack)) {
-            return Component.translatable("item.spatial_blueprint.build_blueprint_cancelled");
-        }
         String customName = getBlueprintName(stack);
         if (!customName.isEmpty()) {
-            return Component.translatable("item.spatial_blueprint.build_blueprint")
-                    .append(Component.translatable("spatial_blueprint.item.build_blueprint.name_separator", customName));
+            return SpatialBlueprintItem.applySaveModeColor(stack,
+                    Component.translatable("item.spatial_blueprint.build_blueprint")
+                            .append(Component.translatable(
+                                    "spatial_blueprint.item.build_blueprint.name_separator", customName)));
         }
-        return super.getName(stack);
+        return SpatialBlueprintItem.applySaveModeColor(stack, super.getName(stack));
     }
 
     @Override
@@ -85,10 +84,6 @@ public class BuildBlueprintItem extends Item {
                 ? stack.getTag().getString("blueprintName") : "";
     }
 
-    public static boolean isForceCancelled(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().getBoolean("forceCancelled");
-    }
-
     // --- Server tick: replace expired build blueprints with spatial blueprints ---
 
     /** Counts server ticks; inventory scan runs every {@link #TICK_INTERVAL} ticks (M5/M7). */
@@ -129,6 +124,9 @@ public class BuildBlueprintItem extends Item {
                     CompoundTag src = stack.getTag();
                     CompoundTag nbt = new CompoundTag();
                     if (src.contains("blueprintName")) nbt.putString("blueprintName", src.getString("blueprintName"));
+                    if (src.contains("saveMode"))      nbt.putInt("saveMode", src.getInt("saveMode"));
+                    // 保留蓝图文件引用：「重新储存」要靠它覆盖写回原文件并清除已放置标记
+                    if (src.contains("blueprintId"))   nbt.putString("blueprintId", src.getString("blueprintId"));
                     if (src.contains("captureMin"))    nbt.put("captureMin", src.getCompound("captureMin").copy());
                     if (src.contains("captureMax"))    nbt.put("captureMax", src.getCompound("captureMax").copy());
                     if (src.contains("tpX"))           nbt.putDouble("tpX", src.getDouble("tpX"));
@@ -136,6 +134,8 @@ public class BuildBlueprintItem extends Item {
                     if (src.contains("tpZ"))           nbt.putDouble("tpZ", src.getDouble("tpZ"));
                     if (src.contains("tpDimension"))   nbt.putString("tpDimension", src.getString("tpDimension"));
                     if (src.contains("creatorName"))   nbt.putString("creatorName", src.getString("creatorName"));
+                    if (src.contains("worldUuid"))     nbt.putString("worldUuid", src.getString("worldUuid"));
+                    if (src.contains("worldName"))     nbt.putString("worldName", src.getString("worldName"));
                     restored.setTag(nbt);
                 } else if (!"blank".equals(sourceType) && !"engineering".equals(sourceType) && stack.hasTag()) {
                     CompoundTag nbt = stack.getTag().copy();

@@ -1,6 +1,7 @@
 package com.xioyim.spatialblueprint.gui;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.client.ConfigAccess;
 import com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer;
 import com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer.AlignMode;
 import com.xioyim.spatialblueprint.client.ClientBlueprintCache;
@@ -9,7 +10,6 @@ import com.xioyim.spatialblueprint.client.PlacementPreValidator;
 import com.xioyim.spatialblueprint.item.ProjectionBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
 import com.xioyim.spatialblueprint.network.BlueprintNetwork;
-import com.xioyim.spatialblueprint.network.C2S_EditMaterialMessage;
 import com.xioyim.spatialblueprint.network.C2S_MaterialDepositMessage;
 import com.xioyim.spatialblueprint.network.C2S_SaveMaterialListMessage;
 import com.xioyim.spatialblueprint.network.PlaceBlueprintMessage;
@@ -24,13 +24,10 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -94,8 +91,10 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     private static final int MAT_BOT_BTN_H = 16; // 底部正方形按钮边长
     private static final int MAT_CELL_H    = 17;
     private static final int MAT_VISIBLE   = 6;
+    /** 数量文字的缩放（图标不缩放，见 renderMaterialPanel）。 */
     private static final float MAT_SCALE   = 0.75f;
-    private static final int MAT_ICON_SCR  = 12; // (int)(16 * MAT_SCALE)
+    /** 图标屏幕尺寸：与 /sb space 一致的原生 16×16，不再随 MAT_SCALE 缩小。 */
+    private static final int MAT_ICON_SCR  = 16;
 
     /** Whether the material list panel is currently visible. */
     private boolean showMaterials = false;
@@ -111,8 +110,12 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     private int matAddBtnX, matAddBtnY, matAddBtnW = 0, matAddBtnH;
     /** Bounds of the ⎙ save-to-file button in screen space; W=0 when not rendered. */
     private int matSaveBtnX, matSaveBtnY, matSaveBtnW = 0, matSaveBtnH;
-    /** 底部按钮行 Button 实例（手动调用 render，不加入 renderables）*/
-    @Nullable private Button matBtnAdd, matBtnDep, matBtnWd, matBtnSave;
+    /** Bounds of the ✎ 提取并载入材料 button（奖励蓝图专属）；W=0 when not rendered. */
+    private int matGenBtnX, matGenBtnY, matGenBtnW = 0, matGenBtnH;
+    /** Bounds of the ✖ 清空全部材料 button（奖励蓝图专属）；W=0 when not rendered. */
+    private int matClearBtnX, matClearBtnY, matClearBtnW = 0, matClearBtnH;
+    /** 底部按钮行 Button 实例（手动调用 render，不加入 renderables）；null = 当前不可用 */
+    @Nullable private Button matBtnAdd, matBtnDep, matBtnSave, matBtnGen, matBtnClear;
 
     // ── Material context menu state ──────────────────────────────────────────
     @Nullable private String ctxBlockId   = null;
@@ -123,19 +126,45 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     private final StringBuilder    editInput   = new StringBuilder();
     // ── Delete confirm overlay state ─────────────────────────────────────────
     @Nullable private String deleteBlockId = null;
+    // ── Clear-all confirm overlay state（奖励蓝图 ✖ 清空全部材料）────────────
+    private boolean confirmClearAll = false;
+    /** 对话框按钮（原版 Button 样式；手动渲染在 overlay 之上，见 {@link #syncDialogButtons}）。 */
+    @Nullable private Button editOkBtn, editCancelBtn, deleteOkBtn, deleteCancelBtn, clearOkBtn, clearCancelBtn;
 
     private Component errorToast;
 
-    // ── Deposit / Withdraw overlay state ─────────────────────────────────────
-    @Nullable private String       depositBlockId   = null;
-    @Nullable private String       depositBlockName = null;
-    private boolean                depositMode      = true;  // true=存入, false=取出
-    private final StringBuilder    depositInput     = new StringBuilder();
-
-    /** 客户端乐观跟踪的已存入材料（blockId → count）。 */
+    /**
+     * 客户端乐观跟踪的已存入材料（材料复合键 → 数量）。
+     * 权威数据在服务端的材料空间，这里只在发包后先行更新以避免界面延迟；
+     * 服务端同步包到达后由 {@link #refreshDepositedFromSpace()} 覆盖。
+     */
     private final Map<String, Integer> localDeposited = new LinkedHashMap<>();
-    /** 客户端乐观跟踪的已取出次数（不等待服务端同步，避免UI延迟）。 */
-    private int localWithdrawCount = 0;
+
+    /** 上次同步到的材料空间版本号；与缓存版本不一致时用权威值刷新。 */
+    private int spaceVersion = -1;
+
+    /**
+     * 本地暂存的材料清单 —— {@code null} 表示尚未编辑，直接用 {@code data.materialList}。
+     *
+     * <p>✚ 新增 / ✎ 改数量 / 右键删除都只改这份副本，必须点 ⎙ 才写入服务端文件。
+     * 不保存就关界面的话，下次打开会重新向服务端拉取，未保存的改动随之消失。</p>
+     */
+    @Nullable private MaterialList localMats = null;
+
+    /** 界面打开时刻，用于材料空间同步的超时兜底。 */
+    private final long openedAt = System.currentTimeMillis();
+
+    /**
+     * 本次打开后是否已收到材料空间同步。首个同步包到达前 {@link #localDeposited} 必然为空，
+     * 此时不能下「材料不足」的结论 —— 否则每次右键打开都会先误报一次。
+     */
+    private boolean spaceSynced = false;
+
+    /** FORCE / 归属的延迟拦截是否已执行过 —— tick 每帧都跑，必须去重，否则闪屏。 */
+    private boolean lateGuardChecked = false;
+
+    /** 上次同步到的蓝图数据版本号；服务端回推新数据时用它替换本地 data 引用。 */
+    private int blueprintVersion = -1;
 
     /**
      * Snapshot of {@code data.materialList.blockCounts.entrySet()} — rebuilt by
@@ -144,9 +173,8 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
      */
     private List<Map.Entry<String, Integer>> cachedMatEntries = List.of();
 
-    // ── Header quick-deposit/withdraw button bounds ───────────────────────────
+    // ── Quick-deposit button bounds ───────────────────────────────────────────
     private int matQuickDepBtnX, matQuickDepBtnY, matQuickDepBtnW = 0, matQuickDepBtnH;
-    private int matQuickWdBtnX,  matQuickWdBtnY,  matQuickWdBtnW  = 0, matQuickWdBtnH;
 
     // ── Deploy button text colors ─────────────────────────────────────────
     /** White — survival OK / blocked inactive text (MC handles gray via active=false) */
@@ -168,42 +196,164 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         this.locked      = SpatialBlueprintItem.isLocked(stack);
         this.lockedPos   = SpatialBlueprintItem.getLockedPos(stack);
         this.clearFirst  = SpatialBlueprintItem.getClearFirst(stack);
-        // 从物品 NBT 初始化客户端存入记录
-        this.localDeposited.putAll(ProjectionBlueprintItem.getDepositedMaterials(stack));
-        // 从物品 NBT 初始化取出次数（后续乐观递增，无需等服务端同步）
-        this.localWithdrawCount = ProjectionBlueprintItem.getWithdrawCount(stack);
+        // 已存入数量来自世界级材料空间（服务端权威），不再存于物品 NBT。
+        // 先用缓存填一次避免闪烁，同时向服务端拉取最新值。
+        // 记录发请求前的版本号：缓存是全局静态的，之前的界面可能已经把它推到 >0，
+        // 只有版本再次变化才说明本次请求的响应真正到达（见 spaceSynced）。
+        this.spaceVersion = com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache.version();
+        refreshDepositedFromSpace();
+        BlueprintNetwork.CHANNEL.sendToServer(
+                new com.xioyim.spatialblueprint.network.C2S_RequestMaterialSpaceMessage());
+        // 材料清单同样以服务端为准：打开界面时拉一次最新的蓝图数据，
+        // 避免显示上一次会话残留的、或被服务端拒绝过的条目
+        String reqId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+        if (!reqId.isEmpty()) {
+            BlueprintNetwork.CHANNEL.sendToServer(new C2S_RequestBlueprintDataMessage(reqId));
+        }
         buildMatEntries(); // M9: pre-build entry snapshot so renderMaterialPanel needs no per-frame alloc
     }
 
     /** Rebuilds {@link #cachedMatEntries} from the live material map, or clears it when absent. */
     private void buildMatEntries() {
-        if (data != null && data.materialList != null) {
-            cachedMatEntries = new ArrayList<>(data.materialList.blockCounts.entrySet());
+        MaterialList ml = mats();
+        if (ml != null) {
+            cachedMatEntries = new ArrayList<>(ml.blockCounts.entrySet());
         } else {
             cachedMatEntries = List.of();
         }
     }
 
-    /** 当前是否有可展示/编辑的材料清单（动态计算，反映客户端侧删除操作）。 */
-    private boolean isProjection() {
-        return data != null && data.materialList != null && !data.materialList.blockCounts.isEmpty();
+    /**
+     * 当前生效的材料清单：有本地未保存编辑时用副本，否则用服务端权威数据。
+     */
+    @Nullable
+    private MaterialList mats() {
+        if (localMats != null) return localMats;
+        return (data != null) ? data.materialList : null;
     }
 
-    /** 是否为空间/次元蓝图（材料清单仅供查阅，无存取/放置限制）。 */
+    /**
+     * 进入本地编辑：把清单换成一份独立副本。
+     *
+     * <p>{@link #data} 是 {@link ClientBlueprintCache} 里的共享实例，直接改它的
+     * {@code blockCounts} 会污染缓存、波及蓝图列表等其他界面。</p>
+     */
+    private void beginLocalEdit() {
+        if (localMats != null) return;
+        MaterialList src = (data != null) ? data.materialList : null;
+        localMats = (src != null) ? src.copy() : new MaterialList();
+    }
+
+    /**
+     * 是否<b>存在</b>材料清单对象（允许为空清单）。
+     *
+     * <p>与 {@link #isProjection()} 的区别：那个要求清单<b>非空</b>，用于材料校验；
+     * 本方法只问「有没有这份清单」，用于决定材料面板要不要显示 ——
+     * OP 把最后一条材料删光后，面板必须继续开着，否则他没机会点 ⎙ 保存这份空清单。</p>
+     */
+    private boolean hasMaterialList() {
+        return mats() != null;
+    }
+
+    /** 当前是否有可展示/编辑的材料清单（动态计算，反映客户端侧删除操作）。 */
+    private boolean isProjection() {
+        MaterialList ml = mats();
+        return ml != null && !ml.blockCounts.isEmpty();
+    }
+
+    /**
+     * 是否为强制捕获（{@link com.xioyim.spatialblueprint.util.CaptureMode#FORCE}）的蓝图。
+     *
+     * <p>这类蓝图只有 OP + 创造模式能使用，材料清单底部的全部按钮一律隐藏 ——
+     * 它既不需要提交材料，也不该在这条路径上被编辑。</p>
+     */
+    private boolean isForceBlueprint() {
+        return data != null && (data.saveMode == com.xioyim.spatialblueprint.util.CaptureMode.FORCE
+                || data.uploadMode == 2);
+    }
+
+    private boolean isRewardBlueprint() {
+        return stack.getItem() instanceof com.xioyim.spatialblueprint.item.RewardBlueprintItem;
+    }
+
+    /** 是否允许编辑材料清单（✚ 新增 / ✎ 改数量 / 删除条目 / ⎙ 保存）：仅创造模式 OP。
+     * 奖励蓝图虽为 FORCE 捕获，但允许 OP 事后自定义耗材。 */
+    private boolean canEditMaterials() {
+        return player.isCreative() && player.hasPermissions(2)
+                && (!isForceBlueprint() || isRewardBlueprint());
+    }
+
+    /**
+     * 是否需要玩家提交材料 —— 只有<b>投影 / 工程</b>蓝图需要，且必须是生存模式。
+     *
+     * <p>创造模式放置不消耗材料，OP 也不例外（权限不改变游戏模式的规则）；
+     * 次元蓝图的材料在捕获时已自动入次元袋，玩家无从手动提交。</p>
+     */
+    private boolean needsMaterialSubmit() {
+        if (player.isCreative()) return false;
+        return stack.getItem() instanceof ProjectionBlueprintItem
+                || stack.getItem() instanceof com.xioyim.spatialblueprint.item.EngineeringBlueprintItem;
+    }
+
+    /**
+     * 是否为「材料清单仅供查阅」的蓝图 —— 只有<b>空间蓝图</b>属于此类。
+     *
+     * <p>注意 {@code DimensionalBlueprintItem extends SpatialBlueprintItem}，
+     * 单用 {@code instanceof SpatialBlueprintItem} 会把次元蓝图也算进来，
+     * 导致次元蓝图不显示「已存入/需要」、材料不足也不拦截 —— 等于永远免费放置。
+     * 因此必须显式排除次元蓝图。</p>
+     */
     private boolean isSpatialOnly() {
-        return stack.getItem() instanceof SpatialBlueprintItem;
+        return stack.getItem() instanceof SpatialBlueprintItem
+                && !(stack.getItem() instanceof com.xioyim.spatialblueprint.item.DimensionalBlueprintItem);
     }
 
     @Override
     protected void init() {
         super.init();
 
+        // 对话框按钮（原版 Button，手动 render / 命中，不加入 renderables —— 与底部材料按钮同一套做法）
+        editOkBtn = Button.builder(Component.translatable("spatial_blueprint.gui.common.confirm"),
+                        b -> confirmEditCount())
+                .bounds(0, 0, 60, 20).build();
+        editCancelBtn = Button.builder(Component.translatable("spatial_blueprint.gui.common.cancel"),
+                        b -> { editBlockId = null; editInput.setLength(0); })
+                .bounds(0, 0, 60, 20).build();
+        deleteOkBtn = Button.builder(Component.translatable("spatial_blueprint.gui.common.confirm"),
+                        b -> confirmDeleteMaterial())
+                .bounds(0, 0, 60, 20).build();
+        deleteCancelBtn = Button.builder(Component.translatable("spatial_blueprint.gui.common.cancel"),
+                        b -> deleteBlockId = null)
+                .bounds(0, 0, 60, 20).build();
+        clearOkBtn = Button.builder(
+                        Component.translatable("spatial_blueprint.gui.placement.confirm_clear_all.btn"),
+                        b -> confirmClearAllMaterials())
+                .bounds(0, 0, 60, 20).build();
+        clearCancelBtn = Button.builder(Component.translatable("spatial_blueprint.gui.common.cancel"),
+                        b -> confirmClearAll = false)
+                .bounds(0, 0, 60, 20).build();
+
         // 材料面板底部按钮（手动 render，不加入 renderables 以保证 z 顺序正确）
         int sz = MAT_BOT_BTN_H;
-        matBtnAdd  = Button.builder(Component.literal("✚"), b -> {}).bounds(0, 0, sz, sz).build();
-        matBtnDep  = Button.builder(Component.literal("✎"), b -> {}).bounds(0, 0, sz, sz).build();
-        matBtnWd   = Button.builder(Component.literal("♻"), b -> {}).bounds(0, 0, sz, sz).build();
-        matBtnSave = Button.builder(Component.literal("⎙").withStyle(ChatFormatting.GOLD), b -> {}).bounds(0, 0, sz, sz).build();
+        // ✚ 新增 / ⎙ 保存：仅创造模式 OP；✎ 快捷存入：仅生存模式的投影 / 工程蓝图。
+        // 三者对强制捕获的蓝图一律不显示（见 canEditMaterials / showBotRow）。
+        matBtnAdd  = canEditMaterials()
+                ? Button.builder(Component.literal("✚"), b -> {}).bounds(0, 0, sz, sz).build()
+                : null;
+        matBtnDep  = needsMaterialSubmit()
+                ? Button.builder(Component.literal("✎"), b -> {}).bounds(0, 0, sz, sz).build()
+                : null;
+        matBtnSave = canEditMaterials()
+                ? Button.builder(Component.literal("⎙").withStyle(ChatFormatting.GOLD), b -> {}).bounds(0, 0, sz, sz).build()
+                : null;
+        // ✎ 提取并载入材料 / ✖ 清空全部材料：奖励蓝图专属（创造 OP；FORCE 捕获只有奖励蓝图能编辑）
+        boolean rewardOps = isRewardBlueprint() && canEditMaterials();
+        matBtnGen = rewardOps
+                ? Button.builder(Component.literal("✎"), b -> {}).bounds(0, 0, sz, sz).build()
+                : null;
+        matBtnClear = rewardOps
+                ? Button.builder(Component.literal("✖").withStyle(ChatFormatting.RED), b -> {}).bounds(0, 0, sz, sz).build()
+                : null;
 
         // ── Measurements ────────────────────────────────────────────────
         int dW    = 18;
@@ -231,7 +381,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         // 准星是否有合法预览目标（已锁定时视为有目标；否则做射线检测）
         boolean hasTarget = locked || BlueprintSelectionRenderer.getPreviewTarget(
-                Minecraft.getInstance(), BlueprintConfig.PREVIEW_DISTANCE.get()) != null;
+                Minecraft.getInstance(), ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE)) != null;
 
         // ── 刷新客户端预校验结果（data 为 null 时跳过校验，按钮保持禁用）────
         currentValidation = null;
@@ -286,7 +436,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
             // When OFF and no valid target: disable with out-of-range tooltip
             boolean alignNeedsTarget = curAlign == AlignMode.OFF;
             boolean alignHasTarget = !alignNeedsTarget || hasTarget;
-            int margin = BlueprintConfig.RENDER_CANCEL_MARGIN.get();
+            int margin = ConfigAccess.get(BlueprintConfig.RENDER_CANCEL_MARGIN);
             Component alignTip = alignHasTarget
                     ? Component.translatable("spatial_blueprint.gui.placement.tooltip.align.line1")
                             .append(Component.literal("\n"))
@@ -406,7 +556,9 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         })
                 .bounds(rx, row2Y, dW, botH)
                 .tooltip(Tooltip.create(Component.translatable(modeTipKey)
-                        .append(Component.literal("\n仅视觉关闭，不会影响最终构建！")
+                        .append(Component.literal("\n"))
+                        .append(Component.translatable(
+                                "spatial_blueprint.gui.placement.tooltip.hidemode.visual_only")
                                 .withStyle(net.minecraft.ChatFormatting.YELLOW))))
                 .build());
         hideBtn.active = data != null;
@@ -443,7 +595,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                 .bounds(rx, row2Y, botW, botH)
                 .tooltip(Tooltip.create(Component.translatable("spatial_blueprint.gui.placement.tooltip.toggle_materials")))
                 .build());
-        matBtn.active = isProjection();
+        matBtn.active = hasMaterialList() || canEditMaterials();
         rx += botW + pGap;  // cx + 22
 
         // ── Deploy 按钮（52px）— 颜色与文字随校验状态变化 ───────────────
@@ -468,9 +620,23 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
             String dimStr = (level != null)
                     ? level.dimension().location().toString()
                     : "minecraft:overworld";
-            Minecraft.getInstance().setScreen(
-                    new CreateEngineeringProjectScreen(
-                            PlacementScreen.this, bpId, data.name, dimStr, previewMin, previewMax));
+            // 先开「加载中」报告页再发包（回包到达时 handleClient 才能找到加载页），
+            // 报告确认后直接发创建消息（模式由报告页决定：净化 / OP 强制）；名字 / 备注 / 时长
+            // 沿用源蓝图，想改名去蓝图库 —— 不再多一页创建页。
+            final BlueprintData srcData = data;
+            java.util.function.Consumer<com.xioyim.spatialblueprint.util.CaptureMode> modeCallback = mode -> {
+                BlueprintNetwork.CHANNEL.sendToServer(
+                        new com.xioyim.spatialblueprint.network.C2S_CreateEngineeringBlueprintMessage(
+                                bpId, srcData.name, dimStr, previewMin, previewMax, mode,
+                                srcData.animDuration,
+                                srcData.noteShort == null ? "" : srcData.noteShort,
+                                srcData.noteLong == null ? "" : srcData.noteLong));
+                Minecraft.getInstance().setScreen(null);
+            };
+            Minecraft.getInstance().setScreen(new UploadReportScreen(
+                    PlacementScreen.this, "engineering", data.name, "", 0L, false, modeCallback));
+            BlueprintNetwork.CHANNEL.sendToServer(
+                    new com.xioyim.spatialblueprint.network.C2S_RequestEngineeringReportMessage(bpId));
         })
                 .bounds(rx, row2Y, dW, dH)
                 .tooltip(Tooltip.create(engTip))
@@ -504,6 +670,35 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         if (mcInst.player != this.player) {
             mcInst.setScreen(null);
             return;
+        }
+
+        // ── 材料空间同步的超时兜底 ────────────────────────────────────────
+        // C2S_RequestMaterialSpaceMessage 在服务端读不到清单等情况下不会回包，
+        // 不兜底的话按钮会永远卡在「同步中」而无法构建。超时后退回按本地数据判定。
+        if (!spaceSynced && System.currentTimeMillis() - openedAt > 1500L) {
+            spaceSynced = true;
+            rebuildWidgets();
+        }
+
+        // ── FORCE / 归属 的补充拦截（只做一次）─────────────────────────────
+        // 右键那一刻数据可能还没从服务端到达，saveMode 与 ownerUuid 都无从判断，
+        // 界面就照常打开了。数据到位后在这里补判一次。
+        //
+        // ⚠ 必须用标志去重：tick 每帧都跑，不去重的话非 OP 持 FORCE 蓝图时
+        // 每帧都会弹一次横幅、发一个销毁包，表现就是疯狂闪屏。
+        if (!lateGuardChecked && data != null) {
+            lateGuardChecked = true;
+            if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard
+                    .intercept(player, stack, data)) return;
+            if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard
+                    .interceptNotOwner(player, stack, data)) return;
+            if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard
+                    .interceptForeignWorld(player, stack, data)) return;
+            // 已放置的次元蓝图：数据迟到时早期入口判不了，补判并连界面一起关掉
+            if (data.placed) {
+                SpatialBlueprintItem.discardInvalidBlueprint(stack);
+                return;
+            }
         }
 
         // ── 检测下载完成 / 失败 / 超时：每帧轮询 ClientBlueprintCache ─────
@@ -582,7 +777,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     /** 发起蓝图数据下载请求，立刻刷新按钮为"下载中"状态。 */
     private static Component buildDownloadLabel(int pct) {
         return pct > 0
-                ? Component.literal("下载中 " + pct + "%...")
+                ? Component.translatable("spatial_blueprint.gui.placement.btn.downloading_progress", pct)
                 : Component.translatable("spatial_blueprint.gui.placement.btn.downloading");
     }
 
@@ -604,11 +799,18 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         // 生存模式投影/次元蓝图：材料不足时显示专用禁用按钮（空间蓝图无此限制）
         if (!player.isCreative() && isProjection() && !isSpatialOnly() && !hasSufficientLocalMaterials()) {
+            // 材料空间是异步同步的：首个同步包到达前 localDeposited 必然为空，
+            // 这时下「材料不足」的结论是误报（池里可能早就存够了）。
+            // 同步未到达就先显示中性的「构建蓝图」+ 同步中提示，到达后由 render() 重建控件修正。
+            boolean syncing = !spaceSynced;
             ColoredButton btn = new ColoredButton(x, y, w, h,
-                    Component.translatable("spatial_blueprint.gui.placement.deploy.no_materials"),
+                    Component.translatable(syncing
+                            ? "spatial_blueprint.gui.placement.deploy"
+                            : "spatial_blueprint.gui.placement.deploy.no_materials"),
                     b -> {},
-                    Tooltip.create(Component.translatable(
-                            "spatial_blueprint.gui.placement.tooltip.deploy.no_materials")),
+                    Tooltip.create(Component.translatable(syncing
+                            ? "spatial_blueprint.gui.placement.tooltip.deploy.syncing"
+                            : "spatial_blueprint.gui.placement.tooltip.deploy.no_materials")),
                     COLOR_WHITE);
             btn.active = false;
             return btn;
@@ -685,11 +887,30 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         Minecraft mc = Minecraft.getInstance();
         BlockPos targetBase = (locked && lockedPos != null)
                 ? lockedPos
-                : BlueprintSelectionRenderer.getPreviewTarget(mc, BlueprintConfig.PREVIEW_DISTANCE.get());
+                : BlueprintSelectionRenderer.getPreviewTarget(mc, ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE));
         if (targetBase == null) return null;
-        int alignOffX = BlueprintSelectionRenderer.getAlignOffsetX(data.size, rotation, mode);
-        int alignOffZ = BlueprintSelectionRenderer.getAlignOffsetZ(data.size, rotation, mode);
+        int[] bb = computeRelBBox();
+        int alignOffX = BlueprintSelectionRenderer.alignOffsetFromMinMax(bb[0], bb[1], mode);
+        int alignOffZ = BlueprintSelectionRenderer.alignOffsetFromMinMax(bb[2], bb[3], mode);
         return targetBase.above().offset(xOffset + alignOffX, yOffset, zOffset + alignOffZ);
+    }
+
+    /** 结构相对 bbox：返回 {minX, maxX, minZ, maxZ}（旋转后实际方块范围）。 */
+    private int[] computeRelBBox() {
+        int minX = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        if (data != null) {
+            for (BlueprintData.BlockEntry entry : data.allBlocks()) {
+                int tx = com.xioyim.spatialblueprint.util.BlueprintTransform.x(entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), data.size, rotation);
+                int tz = com.xioyim.spatialblueprint.util.BlueprintTransform.z(entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), data.size, rotation);
+                if (tx < minX) minX = tx;
+                if (tx > maxX) maxX = tx;
+                if (tz < minZ) minZ = tz;
+                if (tz > maxZ) maxZ = tz;
+            }
+        }
+        if (minX == Integer.MAX_VALUE) { minX = 0; maxX = 0; minZ = 0; maxZ = 0; }
+        return new int[]{minX, maxX, minZ, maxZ};
     }
 
     // ── Logic ──────────────────────────────────────────────────────────────
@@ -710,7 +931,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         locked = !locked;
         if (locked) {
             Minecraft mc = Minecraft.getInstance();
-            lockedPos = BlueprintSelectionRenderer.getPreviewTarget(mc, BlueprintConfig.PREVIEW_DISTANCE.get());
+            lockedPos = BlueprintSelectionRenderer.getPreviewTarget(mc, ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE));
         } else {
             lockedPos = null;
         }
@@ -774,13 +995,31 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         Minecraft mc = Minecraft.getInstance();
         BlockPos targetBase = (locked && lockedPos != null)
                 ? lockedPos
-                : BlueprintSelectionRenderer.getPreviewTarget(mc, BlueprintConfig.PREVIEW_DISTANCE.get());
+                : BlueprintSelectionRenderer.getPreviewTarget(mc, ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE));
         if (targetBase == null) return;
 
         AlignMode mode = BlueprintSelectionRenderer.getAlignMode(stack);
-        int alignOffX = BlueprintSelectionRenderer.getAlignOffsetX(data.size, rotation, mode);
-        int alignOffZ = BlueprintSelectionRenderer.getAlignOffsetZ(data.size, rotation, mode);
+        int[] bb = computeRelBBox();
+        int alignOffX = BlueprintSelectionRenderer.alignOffsetFromMinMax(bb[0], bb[1], mode);
+        int alignOffZ = BlueprintSelectionRenderer.alignOffsetFromMinMax(bb[2], bb[3], mode);
         BlockPos finalOrigin = targetBase.above().offset(xOffset + alignOffX, yOffset, zOffset + alignOffZ);
+
+        // 启动放置加载动画（从底部往上填充的 ghost box，颜色按蓝图类型）
+        int animDuration = data.animDuration > 0 ? data.animDuration : 8;
+        int animColor;
+        if (stack.getItem() instanceof com.xioyim.spatialblueprint.item.DimensionalBlueprintItem) {
+            animColor = 0xFC9274;
+        } else if (stack.getItem() instanceof com.xioyim.spatialblueprint.item.EngineeringBlueprintItem) {
+            animColor = 0x7C6FBD;
+        } else if (stack.getItem() instanceof com.xioyim.spatialblueprint.item.ProjectionBlueprintItem) {
+            animColor = 0x73DA9A;
+        } else {
+            animColor = 0x6886C5; // 空间蓝图
+        }
+        BlockPos animSize = (rotation == Rotation.CLOCKWISE_90 || rotation == Rotation.COUNTERCLOCKWISE_90)
+                ? new BlockPos(data.size.getZ(), data.size.getY(), data.size.getX())
+                : data.size;
+        BlueprintSelectionRenderer.startPlacementAnimation(finalOrigin, animSize, animDuration, animColor);
 
         // 发送放置请求（rotation 已打包进 finalOrigin，偏移传 0）
         BlueprintNetwork.CHANNEL.sendToServer(
@@ -826,9 +1065,9 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     private void updateHiddenTopBlocks() {
         BlueprintSelectionRenderer.hiddenTopBlocks.clear();
         int n = BlueprintSelectionRenderer.hideTopN;
-        if (n == 0 || data == null || data.materialList == null
-                || data.materialList.blockCounts.isEmpty()) return;
-        data.materialList.blockCounts.entrySet().stream()
+        MaterialList ml = mats();
+        if (n == 0 || ml == null || ml.blockCounts.isEmpty()) return;
+        ml.blockCounts.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
                 .limit(n)
                 .forEach(e -> BlueprintSelectionRenderer.hiddenTopBlocks.add(e.getKey()));
@@ -836,7 +1075,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (showMaterials && isProjection() && matMaxScrollRow > 0
+        if (showMaterials && hasMaterialList() && matMaxScrollRow > 0
                 && mouseX >= matPanelX && mouseX < matPanelX + matPanelW
                 && mouseY >= matPanelY && mouseY < matPanelY + matPanelH) {
             matScrollRow = Math.max(0, Math.min(matScrollRow - (int) Math.signum(delta), matMaxScrollRow));
@@ -847,18 +1086,34 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 服务端推来新的蓝图数据时（材料清单被增删改后会回推），用权威版本替换本地引用
+        int bv = ClientBlueprintCache.version();
+        if (bv != blueprintVersion) {
+            blueprintVersion = bv;
+            refreshDataFromCache();
+        }
+        // 服务端推来新的材料空间数据时，用权威值覆盖乐观更新
+        int v = com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache.version();
+        if (v != spaceVersion) {
+            spaceVersion = v;
+            spaceSynced  = true;
+            refreshDepositedFromSpace();
+            // 放置按钮的「材料不足 / 可构建」是在 init() 里算好的，不重建控件的话
+            // 同步到达后按钮会一直停在旧状态（这正是「材料够却显示材料不足」的成因）。
+            rebuildWidgets();
+        }
         this.renderBackground(graphics);
         if (errorToast != null) {
             ErrorToast.render(graphics, this.font, this.width, this.height, errorToast);
             return;
         }
         super.render(graphics, mouseX, mouseY, partialTick);
-        if (showMaterials && isProjection()) {
+        if (showMaterials && hasMaterialList()) {
             renderMaterialPanel(graphics, mouseX, mouseY);
         }
-        // ── 悬浮 overlay（每次只显示一个，按优先级：存取 > 删除确认 > 数量编辑 > 右键菜单）
-        if (depositBlockId != null) {
-            renderDepositPanel(graphics, mouseX, mouseY);
+        // ── 悬浮 overlay（每次只显示一个，按优先级：清空确认 > 删除确认 > 数量编辑 > 右键菜单）
+        if (confirmClearAll) {
+            renderConfirmClearAllPanel(graphics, mouseX, mouseY);
         } else if (deleteBlockId != null) {
             renderDeleteMaterialPanel(graphics, mouseX, mouseY);
         } else if (editBlockId != null) {
@@ -875,13 +1130,11 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
      */
     private void renderMaterialPanel(GuiGraphics graphics, int mouseX, int mouseY) {
         // ── 优先使用内存中的材料清单（反映客户端侧编辑），其次从物品/文件加载 ──
-        MaterialList ml;
-        if (data != null && data.materialList != null) {
-            ml = data.materialList;
-        } else {
-            ml = ProjectionBlueprintItem.getMaterialList(stack);
+        MaterialList ml = mats();
+        if (ml == null) {
+            ml = ProjectionBlueprintItem.getMaterialListClient(stack);
             if (ml == null) {
-                BlueprintData bd = ProjectionBlueprintItem.getBlueprintData(stack);
+                BlueprintData bd = ProjectionBlueprintItem.getBlueprintDataClient(stack);
                 if (bd != null) ml = MaterialList.fromBlueprintData(bd);
             }
         }
@@ -889,19 +1142,30 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         int panelX = this.width / 2 - 149;  // MAT_PANEL_W/2 = 298/2
         int row1Y  = this.height - 45 - 18 - 4;
 
-        // ── 无数据提示 ────────────────────────────────────────────────────
-        if (ml == null || ml.blockCounts.isEmpty()) {
-            matContentY = -1;
-            int msgH = MAT_PAD + MAT_HEADER_H + MAT_PAD;
-            int msgY = Math.max(4, row1Y - msgH - 4);
-            matPanelX = panelX; matPanelY = msgY; matPanelW = MAT_PANEL_W; matPanelH = msgH;
-            graphics.fill(panelX, msgY, panelX + MAT_PANEL_W, msgY + msgH, 0xD0101010);
-            drawBorder(graphics, panelX, msgY, MAT_PANEL_W, msgH);
-            graphics.drawString(font,
-                    Component.translatable("spatial_blueprint.gui.placement.material_list").getString(),
-                    panelX + MAT_PAD, msgY + MAT_PAD, 0x888888, false);
-            return;
+        // ── 完全没有清单对象 ──────────────────────────────────────────────
+        if (ml == null) {
+            if (canEditMaterials()) {
+                // 奖励蓝图由 OP 开编：初始化一份空的本地清单以展示底部按钮行
+                beginLocalEdit();
+                ml = localMats;
+            } else {
+                // 其他情况：只显示一行占位，没有可操作内容
+                matContentY = -1;
+                int msgH = MAT_PAD + MAT_HEADER_H + MAT_PAD;
+                int msgY = Math.max(4, row1Y - msgH - 4);
+                matPanelX = panelX; matPanelY = msgY; matPanelW = MAT_PANEL_W; matPanelH = msgH;
+                graphics.fill(panelX, msgY, panelX + MAT_PANEL_W, msgY + msgH, 0xD0101010);
+                drawBorder(graphics, panelX, msgY, MAT_PANEL_W, msgH);
+                graphics.drawString(font,
+                        Component.translatable("spatial_blueprint.gui.placement.material_list").getString(),
+                        panelX + MAT_PAD, msgY + MAT_PAD, 0x888888, false);
+                return;
+            }
         }
+
+        // 注意：清单存在但为空时【不能】在这里 return —— 面板要照常画出来（含底部按钮行），
+        // 否则 OP 删掉最后一条材料后面板立刻消失，他就没机会点 ⎙ 把这份空清单存下去，
+        // 也就做不出「构建不消耗任何材料」的免费蓝图。空清单的提示见下方内容区。
 
         // ── 布局计算 ──────────────────────────────────────────────────────
         List<Map.Entry<String, Integer>> entries = cachedMatEntries; // M9: use pre-built snapshot
@@ -910,7 +1174,10 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         matScrollRow    = Math.max(0, Math.min(matScrollRow, matMaxScrollRow));
 
         int contentH = MAT_VISIBLE * MAT_CELL_H;
-        boolean showBotRow = !isSpatialOnly();
+        // 空间蓝图的清单仅供查阅；强制捕获的蓝图（除奖励蓝图外）只有 OP 创造模式能用，
+        // 既不提交材料也不在这里编辑 —— 两者都不显示底部按钮行。
+        boolean showBotRow = !isSpatialOnly() && (!isForceBlueprint() || isRewardBlueprint())
+                && (matBtnAdd != null || matBtnDep != null || matBtnSave != null);
         int panelH = MAT_PAD + MAT_HEADER_H + 1 + MAT_SEP_PAD + contentH
                    + (showBotRow ? MAT_SEP_PAD + MAT_BOT_BTN_H + MAT_PAD : MAT_PAD);
         int panelY   = Math.max(4, Math.min(this.height / 2 - panelH / 2 - 20, row1Y - panelH - 4));
@@ -936,8 +1203,8 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         // 按钮移至底部行，header 区域仅保留标题。悬浮状态在底部行处设置
         boolean addBtnHovered = false;
-        boolean depHov = false, wdHov = false, saveHov = false;
-        matAddBtnW = 0; matQuickDepBtnW = 0; matQuickWdBtnW = 0; matSaveBtnW = 0;
+        boolean depHov = false, saveHov = false, genHov = false, clearHov = false;
+        matAddBtnW = 0; matQuickDepBtnW = 0; matSaveBtnW = 0; matGenBtnW = 0; matClearBtnW = 0;
 
         // 分割线（全宽至内容右边缘）
         int sepY = panelY + MAT_PAD + MAT_HEADER_H;
@@ -950,13 +1217,23 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         graphics.fill(panelX + MAT_PAD, contentY,
                 panelX + MAT_PAD + MAT_CONTENT_W, contentY + contentH, 0x801A1A1A);
 
-        // ── 内容格子（带裁剪 + 缩放）─────────────────────────────────────
+        // ── 内容格子（带裁剪）───────────────────────────────────────────
+        // 图标按 16×16 原生尺寸渲染，不套 pose scale —— 缩放后的物品模型会失真，
+        // 与 /sb space 的图标看起来是两种东西。数量文字仍缩小，以免撑破格宽。
         graphics.enableScissor(panelX + MAT_PAD, contentY,
                 panelX + MAT_PAD + MAT_CONTENT_W, contentY + contentH);
-        graphics.pose().pushPose();
-        graphics.pose().scale(MAT_SCALE, MAT_SCALE, 1f);
 
-        String hoveredName = null;
+        ItemStack hoveredStack = ItemStack.EMPTY;
+
+        // 空清单：内容区居中给一句说明。这不是错误状态 ——
+        // OP 可以有意存一份不消耗任何材料的「免费蓝图」。
+        if (entries.isEmpty()) {
+            Component freeMsg = Component.translatable("spatial_blueprint.gui.placement.material_list.free");
+            graphics.drawString(font, freeMsg,
+                    panelX + MAT_PAD + (MAT_CONTENT_W - font.width(freeMsg)) / 2,
+                    contentY + (contentH - font.lineHeight) / 2,
+                    0x88DD88, false);
+        }
 
         for (int i = 0; i < entries.size(); i++) {
             int row = i / MAT_COLS;
@@ -967,68 +1244,49 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
             if (screenY + MAT_CELL_H <= contentY || screenY >= contentY + contentH) continue;
 
-            int ux = Math.round(screenX / MAT_SCALE);
-            int uy = Math.round(screenY / MAT_SCALE);
-
             Map.Entry<String, Integer> entry = entries.get(i);
-            ResourceLocation rl = ResourceLocation.tryParse(entry.getKey());
-            if (rl == null) continue;
 
-            // ── 优先作为方块查找，其次直接作为物品查找 ───────────────────
-            var blockOpt = BuiltInRegistries.BLOCK.getOptional(rl);
-            var itemOpt  = BuiltInRegistries.ITEM.getOptional(rl);
-
-            // 显示名：方块名 > 物品名 > 注册名原文
-            String entryName;
-            if (blockOpt.isPresent()) {
-                entryName = blockOpt.get().getName().getString();
-            } else if (itemOpt.isPresent()) {
-                entryName = new ItemStack(itemOpt.get()).getHoverName().getString();
-            } else {
-                entryName = entry.getKey();
-            }
+            // 构建带 NBT 的显示 ItemStack（含附魔光效和完整 tooltip）
+            ItemStack displayStack = ml.getDisplayStack(entry.getKey());
 
             // ── 图标（overlay z=300 > renderItem z=232，overlay 始终遮盖图标）──
-            net.minecraft.world.item.Item displayItem = Items.AIR;
-            if (blockOpt.isPresent()) {
-                displayItem = blockOpt.get().asItem();
-            } else if (itemOpt.isPresent()) {
-                displayItem = itemOpt.get();
-            }
-            if (displayItem != Items.AIR) {
-                graphics.renderItem(new ItemStack(displayItem), ux, uy);
-            }
+            // 与 /sb space 使用同一套安全渲染：崩溃隔离 + PoseStack 修正 + GL 状态还原
+            int iconY = screenY + (MAT_CELL_H - MAT_ICON_SCR) / 2;
+            SafeItemRenderer.render(graphics, displayStack, screenX, iconY);
 
             // ── 数量：空间蓝图仅显示总量，其余显示已存入/需要 ──────────
             int depCount  = localDeposited.getOrDefault(entry.getKey(), 0);
             int needCount = entry.getValue();
             String countStr   = isSpatialOnly() ? String.valueOf(needCount) : (depCount + "/" + needCount);
             int    countColor = isSpatialOnly() ? 0xAAAAAA : (depCount >= needCount ? 0x55FF55 : 0xFFAA00);
-            int textY = uy + (16 - font.lineHeight) / 2 + 1;
-            graphics.drawString(font, countStr, ux + 17, textY, countColor, false);
 
-            // 鼠标悬浮于图标上：记录名称供 tooltip 使用
-            if (hoveredName == null
+            graphics.pose().pushPose();
+            graphics.pose().scale(MAT_SCALE, MAT_SCALE, 1f);
+            int tx = Math.round((screenX + MAT_ICON_SCR + 2) / MAT_SCALE);
+            int ty = Math.round((screenY + (MAT_CELL_H - font.lineHeight * MAT_SCALE) / 2f) / MAT_SCALE);
+            graphics.drawString(font, countStr, tx, ty, countColor, false);
+            graphics.pose().popPose();
+
+            // 鼠标悬浮于图标上：记录 ItemStack 供 tooltip 使用（含附魔等完整 NBT）
+            if (hoveredStack.isEmpty()
                     && mouseX >= screenX && mouseX < screenX + MAT_ICON_SCR
-                    && mouseY >= screenY && mouseY < screenY + MAT_ICON_SCR
+                    && mouseY >= iconY && mouseY < iconY + MAT_ICON_SCR
                     && screenY >= contentY && screenY < contentY + contentH) {
-                hoveredName = entryName;
+                hoveredStack = displayStack;
             }
         }
 
-        graphics.pose().popPose();
         graphics.disableScissor();
 
         // ── 底部按钮行（非空间蓝图，正方形原版风格，左对齐）────────────
-        if (showBotRow && matBtnDep != null) {
+        if (showBotRow) {
             int botY  = panelY + panelH - MAT_PAD - MAT_BOT_BTN_H;
             int sz    = MAT_BOT_BTN_H;
             int gap   = 3;
-            boolean isOp = player.hasPermissions(2) && player.isCreative();
             int bx = panelX + MAT_PAD;
 
             // ✚ 新增（创造模式 + OP 专属）
-            if (isOp && matBtnAdd != null) {
+            if (matBtnAdd != null) {
                 matAddBtnX = bx; matAddBtnY = botY; matAddBtnW = sz; matAddBtnH = sz;
                 addBtnHovered = mouseX >= bx && mouseX < bx + sz
                              && mouseY >= botY && mouseY < botY + sz;
@@ -1037,26 +1295,38 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                 bx += sz + gap;
             }
 
-            // ✎ 快捷存入（所有玩家）
-            matQuickDepBtnX = bx; matQuickDepBtnY = botY; matQuickDepBtnW = sz; matQuickDepBtnH = sz;
-            depHov = mouseX >= bx && mouseX < bx + sz
-                  && mouseY >= botY && mouseY < botY + sz;
-            matBtnDep.setX(bx); matBtnDep.setY(botY);
-            matBtnDep.render(graphics, mouseX, mouseY, 0f);
-            bx += sz + gap;
+            // ✎ 快捷存入（仅生存模式的投影 / 工程蓝图）
+            if (matBtnDep != null) {
+                matQuickDepBtnX = bx; matQuickDepBtnY = botY; matQuickDepBtnW = sz; matQuickDepBtnH = sz;
+                depHov = mouseX >= bx && mouseX < bx + sz
+                      && mouseY >= botY && mouseY < botY + sz;
+                matBtnDep.setX(bx); matBtnDep.setY(botY);
+                matBtnDep.render(graphics, mouseX, mouseY, 0f);
+                bx += sz + gap;
+            }
 
-            // ♻ 一键清空（创造模式 + OP 专属）
-            if (isOp && matBtnWd != null) {
-                matQuickWdBtnX = bx; matQuickWdBtnY = botY; matQuickWdBtnW = sz; matQuickWdBtnH = sz;
-                wdHov = mouseX >= bx && mouseX < bx + sz
-                     && mouseY >= botY && mouseY < botY + sz;
-                matBtnWd.setX(bx); matBtnWd.setY(botY);
-                matBtnWd.render(graphics, mouseX, mouseY, 0f);
+            // ✎ 提取并载入材料（奖励蓝图专属：按结构生成 + 剔非法方块 + 直接写盘）
+            if (matBtnGen != null) {
+                matGenBtnX = bx; matGenBtnY = botY; matGenBtnW = sz; matGenBtnH = sz;
+                genHov = mouseX >= bx && mouseX < bx + sz
+                      && mouseY >= botY && mouseY < botY + sz;
+                matBtnGen.setX(bx); matBtnGen.setY(botY);
+                matBtnGen.render(graphics, mouseX, mouseY, 0f);
+                bx += sz + gap;
+            }
+
+            // ✖ 清空全部材料（奖励蓝图专属：确认后直接写盘）
+            if (matBtnClear != null) {
+                matClearBtnX = bx; matClearBtnY = botY; matClearBtnW = sz; matClearBtnH = sz;
+                clearHov = mouseX >= bx && mouseX < bx + sz
+                        && mouseY >= botY && mouseY < botY + sz;
+                matBtnClear.setX(bx); matBtnClear.setY(botY);
+                matBtnClear.render(graphics, mouseX, mouseY, 0f);
                 bx += sz + gap;
             }
 
             // ⎙ 保存至服务器文件（创造模式 + OP 专属）
-            if (isOp && matBtnSave != null) {
+            if (matBtnSave != null) {
                 matSaveBtnX = bx; matSaveBtnY = botY; matSaveBtnW = sz; matSaveBtnH = sz;
                 saveHov = mouseX >= bx && mouseX < bx + sz
                        && mouseY >= botY && mouseY < botY + sz;
@@ -1067,7 +1337,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         // ── Tooltip（有 overlay 时不显示，避免遮挡）─────────────────────
         boolean anyOverlay = ctxBlockId != null || editBlockId != null
-                          || deleteBlockId != null || depositBlockId != null;
+                          || deleteBlockId != null || confirmClearAll;
         if (!anyOverlay) {
             if (addBtnHovered) {
                 java.util.List<net.minecraft.util.FormattedCharSequence> addLines = java.util.List.of(
@@ -1090,20 +1360,30 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                                     .withStyle(ChatFormatting.GRAY).getVisualOrderText(),
                             Component.translatable("spatial_blueprint.gui.placement.tooltip.quick_deposit.line3")
                                     .withStyle(ChatFormatting.GRAY).getVisualOrderText(),
-                            Component.translatable("spatial_blueprint.gui.placement.tooltip.quick_deposit.line4")
-                                    .withStyle(ChatFormatting.GREEN).getVisualOrderText(),
                             Component.translatable("spatial_blueprint.gui.placement.tooltip.quick_deposit.line5")
-                                    .withStyle(ChatFormatting.RED).getVisualOrderText()
+                                    .withStyle(ChatFormatting.GREEN).getVisualOrderText()
                         );
                 graphics.renderTooltip(font, depLines, mouseX, mouseY);
-            } else if (wdHov) {
-                java.util.List<net.minecraft.util.FormattedCharSequence> wdLines = java.util.List.of(
-                        Component.translatable("spatial_blueprint.gui.placement.tooltip.quick_withdraw.title")
+            } else if (genHov) {
+                java.util.List<net.minecraft.util.FormattedCharSequence> genLines = java.util.List.of(
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_generate.title")
                                 .withStyle(ChatFormatting.YELLOW).getVisualOrderText(),
-                        Component.translatable("spatial_blueprint.gui.placement.tooltip.quick_withdraw.line1")
-                                .withStyle(ChatFormatting.GRAY).getVisualOrderText()
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_generate.line1")
+                                .withStyle(ChatFormatting.GRAY).getVisualOrderText(),
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_generate.line2")
+                                .withStyle(ChatFormatting.RED).getVisualOrderText()
                 );
-                graphics.renderTooltip(font, wdLines, mouseX, mouseY);
+                graphics.renderTooltip(font, genLines, mouseX, mouseY);
+            } else if (clearHov) {
+                java.util.List<net.minecraft.util.FormattedCharSequence> clearLines = java.util.List.of(
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_clear.title")
+                                .withStyle(ChatFormatting.YELLOW).getVisualOrderText(),
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_clear.line1")
+                                .withStyle(ChatFormatting.GRAY).getVisualOrderText(),
+                        Component.translatable("spatial_blueprint.gui.placement.tooltip.reward_clear.line2")
+                                .withStyle(ChatFormatting.RED).getVisualOrderText()
+                );
+                graphics.renderTooltip(font, clearLines, mouseX, mouseY);
             } else if (saveHov) {
                 java.util.List<net.minecraft.util.FormattedCharSequence> saveLines = java.util.List.of(
                         Component.translatable("spatial_blueprint.gui.placement.tooltip.save_materials.title")
@@ -1114,33 +1394,13 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                                 .withStyle(ChatFormatting.GRAY).getVisualOrderText()
                 );
                 graphics.renderTooltip(font, saveLines, mouseX, mouseY);
-            } else if (hoveredName != null) {
-                graphics.renderTooltip(font, Component.literal(hoveredName), mouseX, mouseY);
-            } else if (titleHovered && data != null
-                    && (!data.creatorName.isEmpty() || data.createdAt > 0)) {
-                java.util.List<net.minecraft.util.FormattedCharSequence> infoLines = new java.util.ArrayList<>();
-                if (!data.creatorName.isEmpty()) {
-                    infoLines.add(Component.translatable(
-                                    "spatial_blueprint.gui.library.tooltip.creator", data.creatorName)
-                            .withStyle(ChatFormatting.YELLOW).getVisualOrderText());
-                }
-                if (data.createdAt > 0) {
-                    infoLines.add(Component.translatable(
-                                    "spatial_blueprint.gui.library.tooltip.created_at", formatDate(data.createdAt))
-                            .withStyle(ChatFormatting.GRAY).getVisualOrderText());
-                }
-                if (!infoLines.isEmpty()) {
-                    graphics.renderTooltip(font, infoLines, mouseX, mouseY);
-                }
+            } else if (!hoveredStack.isEmpty()) {
+                graphics.renderTooltip(font, hoveredStack, mouseX, mouseY);
+            } else if (titleHovered && data != null) {
+                // 蓝图列表同款元数据 tooltip（缺「文件名字」——BlueprintData 不带 blueprintId）
+                graphics.renderTooltip(font, BlueprintTooltips.buildDataTip(data), mouseX, mouseY);
             }
         }
-    }
-
-    private static String formatDate(long epochMillis) {
-        if (epochMillis <= 0) return "-";
-        java.time.LocalDate d = java.time.Instant.ofEpochMilli(epochMillis)
-                .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
-        return d.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
     }
 
     private static void drawBorder(GuiGraphics g, int x, int y, int w, int h) {
@@ -1166,29 +1426,6 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         this.errorToast = message;
     }
 
-    // ── 取出经验/次数辅助 ──────────────────────────────────────────────────
-
-    /**
-     * 计算当前快捷取出所需经验等级（客户端乐观估算）。
-     * 优先使用物品 NBT 中的 customWithdrawXp；否则按配置公式计算。
-     */
-    private int computeWithdrawXpCost() {
-        int custom = ProjectionBlueprintItem.getCustomWithdrawXp(stack);
-        if (custom >= 0) return custom;
-        long types = localDeposited.values().stream().filter(v -> v > 0).count();
-        if (types == 0) return 0;
-        int ratio = BlueprintConfig.WITHDRAW_XP_RATIO.get();
-        if (ratio == 0) return 0;
-        int cost  = Math.max(1, ((int) types + ratio - 1) / ratio);
-        return Math.min(cost, BlueprintConfig.MAX_WITHDRAW_XP_COST.get());
-    }
-
-    /** 获取此蓝图物品的有效快捷取出次数上限。 */
-    private int getEffectiveWithdrawLimit() {
-        int custom = ProjectionBlueprintItem.getCustomWithdrawLimit(stack);
-        return custom >= 0 ? custom : BlueprintConfig.MAX_WITHDRAW_COUNT.get();
-    }
-
     // ── 材料右键菜单 & 编辑 overlay ────────────────────────────────────────
 
     @Override
@@ -1196,66 +1433,37 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         if (errorToast != null) { errorToast = null; return true; }
         int mx = (int) mouseX, my = (int) mouseY;
 
-        // ── 存入/取出 overlay ────────────────────────────────────────────
-        if (depositBlockId != null) {
-            final int EW = 200, EH = 90, BW = 60, BH = 16, BP = 8;
-            int ex = (this.width - EW) / 2, ey = (this.height - EH) / 2;
-            int okX = ex + EW / 2 - BW - 4, cancelX = ex + EW / 2 + 4;
-            int by  = ey + EH - BH - BP;
-            if (my >= by && my < by + BH) {
-                if (mx >= okX && mx < okX + BW) { confirmDeposit(); return true; }
-                if (mx >= cancelX && mx < cancelX + BW) {
-                    depositBlockId = null; depositBlockName = null;
-                    depositInput.setLength(0); return true;
-                }
-            }
-            if (mx < ex || mx >= ex + EW || my < ey || my >= ey + EH) {
-                depositBlockId = null; depositBlockName = null; depositInput.setLength(0);
-            }
+        // ── 清空全部材料确认 overlay（按钮是原版 Button，命中由按钮自己处理）──
+        if (confirmClearAll) {
+            if (!canEditMaterials()) { confirmClearAll = false; return true; }
+            if (clearOkBtn != null && clearOkBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            if (clearCancelBtn != null && clearCancelBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            final int CW = 200, CH = 80;
+            int cwx = (this.width - CW) / 2, cwy = (this.height - CH) / 2;
+            // 点击面板外关闭
+            if (mx < cwx || mx >= cwx + CW || my < cwy || my >= cwy + CH) confirmClearAll = false;
             return true;
         }
 
-        // ── 删除确认 overlay ─────────────────────────────────────────────
+        // ── 删除确认 overlay（按钮是原版 Button，命中由按钮自己处理）─────────
         if (deleteBlockId != null) {
-            if (!player.isCreative()) { deleteBlockId = null; return true; }
-            final int DW = 200, DH = 80, BW = 60, BH = 16, BP = 8;
+            if (!canEditMaterials()) { deleteBlockId = null; return true; }
+            if (deleteOkBtn != null && deleteOkBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            if (deleteCancelBtn != null && deleteCancelBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            final int DW = 200, DH = 80;
             int dx = (this.width - DW) / 2, dy = (this.height - DH) / 2;
-            int okX = dx + DW / 2 - BW - 4, cancelX = dx + DW / 2 + 4;
-            int by  = dy + DH - BH - BP;
-            if (my >= by && my < by + BH) {
-                if (mx >= okX && mx < okX + BW) {
-                    if (data != null && data.materialList != null) {
-                        data.materialList.blockCounts.remove(deleteBlockId);
-                        buildMatEntries(); // M9: map mutated — refresh snapshot
-                        String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
-                        if (!bpId.isEmpty()) {
-                            BlueprintNetwork.CHANNEL.sendToServer(
-                                    new C2S_EditMaterialMessage(bpId, deleteBlockId, -1));
-                        }
-                    }
-                    deleteBlockId = null;
-                    return true;
-                }
-                if (mx >= cancelX && mx < cancelX + BW) { deleteBlockId = null; return true; }
-            }
             // 点击面板外关闭
             if (mx < dx || mx >= dx + DW || my < dy || my >= dy + DH) deleteBlockId = null;
             return true;
         }
 
-        // ── 数量编辑 overlay ─────────────────────────────────────────────
+        // ── 数量编辑 overlay（按钮是原版 Button，命中由按钮自己处理）─────────
         if (editBlockId != null) {
-            if (!player.isCreative()) { editBlockId = null; editInput.setLength(0); return true; }
-            final int EW = 200, EH = 90, BW = 60, BH = 16, BP = 8;
+            if (!canEditMaterials()) { editBlockId = null; editInput.setLength(0); return true; }
+            if (editOkBtn != null && editOkBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            if (editCancelBtn != null && editCancelBtn.mouseClicked(mouseX, mouseY, button)) return true;
+            final int EW = 200, EH = 90;
             int ex = (this.width - EW) / 2, ey = (this.height - EH) / 2;
-            int okX = ex + EW / 2 - BW - 4, cancelX = ex + EW / 2 + 4;
-            int by  = ey + EH - BH - BP;
-            if (my >= by && my < by + BH) {
-                if (mx >= okX && mx < okX + BW) { confirmEditCount(); return true; }
-                if (mx >= cancelX && mx < cancelX + BW) {
-                    editBlockId = null; editInput.setLength(0); return true;
-                }
-            }
             if (mx < ex || mx >= ex + EW || my < ey || my >= ey + EH) {
                 editBlockId = null; editInput.setLength(0);
             }
@@ -1264,7 +1472,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         // ── 右键菜单 overlay（仅创造模式）───────────────────────────────
         if (ctxBlockId != null) {
-            final int CM_ROWS = 6;
+            final int CM_ROWS = 2;   // [修改数量] [删除]（复制名字 / 复制 ID / 存入 已移除，见 e35）
             final int CMW = 130, CM_ROW_H = 16, CM_PAD = 4;
             final int CMH = CM_PAD + CM_ROWS * CM_ROW_H + CM_PAD;
             int cx2 = Math.min(ctxX, this.width - CMW - 2);
@@ -1273,20 +1481,15 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                 int row = (my - cy2 - CM_PAD) / CM_ROW_H;
                 if (row >= 0 && row < CM_ROWS) {
                     switch (row) {
-                        case 0 -> Minecraft.getInstance().keyboardHandler
-                                .setClipboard(ctxBlockName != null ? ctxBlockName : ctxBlockId);
-                        case 1 -> Minecraft.getInstance().keyboardHandler.setClipboard(ctxBlockId);
-                        case 2 -> {
-                            if (data != null && data.materialList != null) {
+                        case 0 -> {
+                            MaterialList ctxMl = mats();
+                            if (ctxMl != null) {
                                 editBlockId = ctxBlockId;
                                 editInput.setLength(0);
-                                editInput.append(data.materialList.blockCounts
-                                        .getOrDefault(ctxBlockId, 0));
+                                editInput.append(ctxMl.blockCounts.getOrDefault(ctxBlockId, 0));
                             }
                         }
-                        case 3 -> openDepositDialog(ctxBlockId, ctxBlockName, true);
-                        case 4 -> openDepositDialog(ctxBlockId, ctxBlockName, false);
-                        case 5 -> deleteBlockId = ctxBlockId;
+                        case 1 -> deleteBlockId = ctxBlockId;
                     }
                 }
             }
@@ -1294,43 +1497,72 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
             return true;
         }
 
-        // ── ✚ 新增材料按钮点击 ────────────────────────────────────────────
-        if (button == 0 && showMaterials && player.hasPermissions(2) && player.isCreative() && matAddBtnW > 0
+        // ── ✚ 新增材料按钮点击（仅创造模式 OP）────────────────────────────
+        if (button == 0 && showMaterials && canEditMaterials() && matAddBtnW > 0
                 && mx >= matAddBtnX && mx < matAddBtnX + matAddBtnW
                 && my >= matAddBtnY && my < matAddBtnY + matAddBtnH) {
-            Minecraft.getInstance().setScreen(new MaterialItemPickerScreen(this, stack, data));
+            Minecraft.getInstance().setScreen(new MaterialItemPickerScreen(this, this::addMaterialLocally));
             return true;
         }
 
-        // ── ✎ 快捷存入 ────────────────────────────────────────────────────
-        if (button == 0 && showMaterials && isProjection() && matQuickDepBtnW > 0
+        // ── ✎ 快捷存入（仅生存模式的投影 / 工程蓝图）──────────────────────
+        if (button == 0 && showMaterials && isProjection() && needsMaterialSubmit() && matQuickDepBtnW > 0
                 && mx >= matQuickDepBtnX && mx < matQuickDepBtnX + matQuickDepBtnW
                 && my >= matQuickDepBtnY && my < matQuickDepBtnY + matQuickDepBtnH) {
             handleQuickDeposit();
             return true;
         }
 
-        // ── ♻ 一键清空材料（仅创造模式 + OP）────────────────────────────
-        if (button == 0 && showMaterials && isProjection() && matQuickWdBtnW > 0
-                && player.hasPermissions(2) && player.isCreative()
-                && mx >= matQuickWdBtnX && mx < matQuickWdBtnX + matQuickWdBtnW
-                && my >= matQuickWdBtnY && my < matQuickWdBtnY + matQuickWdBtnH) {
-            handleClearMaterials();
-            return true;
-        }
-
-        // ── ⎙ 保存材料清单至服务器文件（仅创造模式 + OP）─────────────────
-        if (button == 0 && showMaterials && player.hasPermissions(2) && player.isCreative()
-                && matSaveBtnW > 0
+        // ── ⎙ 保存材料清单至服务器文件（仅创造模式 OP）───────────────────
+        if (button == 0 && showMaterials && canEditMaterials() && matSaveBtnW > 0
                 && mx >= matSaveBtnX && mx < matSaveBtnX + matSaveBtnW
                 && my >= matSaveBtnY && my < matSaveBtnY + matSaveBtnH) {
             handleSaveMaterialList();
             return true;
         }
 
-        // ── 右键点击材料图标 → 弹出菜单（仅创造模式）───────────────────
-        if (button == 1 && player.isCreative() && showMaterials && isProjection()
-                && data != null && data.materialList != null && matContentY >= 0) {
+        // ── ✎ 提取并载入材料（奖励蓝图专属：服务端生成 + 剔非法 + 直接写盘）──
+        if (button == 0 && showMaterials && canEditMaterials() && matGenBtnW > 0
+                && mx >= matGenBtnX && mx < matGenBtnX + matGenBtnW
+                && my >= matGenBtnY && my < matGenBtnY + matGenBtnH) {
+            if (sendRewardIntent(com.xioyim.spatialblueprint.network.C2S_RewardMaterialsMessage.MODE_GENERATE)) {
+                NotifySound.client();
+            }
+            return true;
+        }
+
+        // ── ✖ 清空全部材料（奖励蓝图专属；第一次点进确认覆盖层）────────────
+        if (button == 0 && showMaterials && canEditMaterials() && matClearBtnW > 0
+                && mx >= matClearBtnX && mx < matClearBtnX + matClearBtnW
+                && my >= matClearBtnY && my < matClearBtnY + matClearBtnH) {
+            String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+            if (bpId.isEmpty()) {
+                NotifySound.clientError();
+                errorToast = Component.translatable("spatial_blueprint.gui.placement.error.material_save_no_id");
+                return true;
+            }
+            confirmClearAll = true;
+            return true;
+        }
+
+        // ── 材料图标 → JEI 查配方（仅生存模式）─────────────────────────────
+        // 左键 = 来源（这东西怎么来的），右键 = 用途（拿它能做什么）。
+        //
+        // 只在生存模式接管：创造模式下右键是「编辑清单」菜单（见下），
+        // 两者抢同一个按键，必须错开。生存模式本来就没有那个菜单。
+        if (!player.isCreative() && showMaterials && hasMaterialList() && matContentY >= 0
+                && (button == 0 || button == 1)) {
+            ItemStack jeiStack = materialStackAt(mx, my);
+            if (!jeiStack.isEmpty()
+                    && com.xioyim.spatialblueprint.compat.jei.SBJeiSupport
+                            .showRecipe(jeiStack, button == 1)) {
+                return true;
+            }
+        }
+
+        // ── 右键点击材料图标 → 弹出菜单（仅创造模式 OP）───────────────────
+        if (button == 1 && canEditMaterials() && showMaterials && hasMaterialList()
+                && mats() != null && matContentY >= 0) {
             int panelX = this.width / 2 - 149;  // MAT_PANEL_W/2 = 298/2
             List<Map.Entry<String, Integer>> entries = cachedMatEntries; // M9: use pre-built snapshot
             for (int i = 0; i < entries.size(); i++) {
@@ -1342,11 +1574,14 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
                 if (mx >= entryX && mx < entryX + MAT_ICON_SCR
                         && my >= entryY && my < entryY + MAT_ICON_SCR) {
                     ctxBlockId = entries.get(i).getKey();
-                    ResourceLocation rl = ResourceLocation.tryParse(ctxBlockId);
-                    ctxBlockName = rl != null
-                            ? BuiltInRegistries.BLOCK.getOptional(rl)
-                                    .map(b -> b.getName().getString()).orElse(ctxBlockId)
-                            : ctxBlockId;
+                    // 复合键（带 NBT 摘要后缀）无法直接解析为 ResourceLocation，
+                    // 改用显示用 ItemStack 的名称 —— 附魔物品还能带上自定义名。
+                    MaterialList ctxMl = mats();
+                    ItemStack nameStack = (ctxMl != null)
+                            ? ctxMl.getDisplayStack(ctxBlockId) : ItemStack.EMPTY;
+                    ctxBlockName = nameStack.isEmpty()
+                            ? com.xioyim.spatialblueprint.util.MaterialKey.idOf(ctxBlockId)
+                            : nameStack.getHoverName().getString();
                     ctxX = mx; ctxY = my;
                     return true;
                 }
@@ -1359,18 +1594,8 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (errorToast != null) { errorToast = null; return true; }
-        if (depositBlockId != null) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                confirmDeposit();
-            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                depositBlockId = null; depositBlockName = null; depositInput.setLength(0);
-            } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE && depositInput.length() > 0) {
-                depositInput.deleteCharAt(depositInput.length() - 1);
-            }
-            return true;
-        }
         if (editBlockId != null) {
-            if (!player.isCreative()) { editBlockId = null; editInput.setLength(0); return true; }
+            if (!canEditMaterials()) { editBlockId = null; editInput.setLength(0); return true; }
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 confirmEditCount();
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
@@ -1381,7 +1606,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
             return true;  // 编辑模式下吞掉所有按键
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            if (depositBlockId != null) { depositBlockId = null; depositBlockName = null; depositInput.setLength(0); return true; }
+            if (confirmClearAll) { confirmClearAll = false; return true; }
             if (deleteBlockId  != null) { deleteBlockId  = null; return true; }
             if (ctxBlockId     != null) { ctxBlockId     = null; return true; }
         }
@@ -1390,10 +1615,6 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
     @Override
     public boolean charTyped(char c, int modifiers) {
-        if (depositBlockId != null) {
-            if (Character.isDigit(c) && depositInput.length() < 9) depositInput.append(c);
-            return true;
-        }
         if (editBlockId != null) {
             if (Character.isDigit(c) && editInput.length() < 9) editInput.append(c);
             return true;
@@ -1401,41 +1622,49 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         return super.charTyped(c, modifiers);
     }
 
-    /** 确认数量编辑：本地更新 + 发包同步 dat 文件。 */
+    /** 确认数量编辑：只改本地副本，必须点 ⎙ 才写入服务端文件。 */
     private void confirmEditCount() {
-        if (!player.isCreative() || editBlockId == null
-                || data == null || data.materialList == null) {
+        if (!canEditMaterials() || editBlockId == null || mats() == null) {
             editBlockId = null; editInput.setLength(0); return;
         }
         try {
             int newCount = Integer.parseInt(editInput.toString());
             if (newCount > 0) {
-                data.materialList.blockCounts.put(editBlockId, newCount);
-                buildMatEntries(); // M9: map mutated — refresh snapshot
-                String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
-                if (!bpId.isEmpty()) {
-                    BlueprintNetwork.CHANNEL.sendToServer(
-                            new C2S_EditMaterialMessage(bpId, editBlockId, newCount));
-                }
+                beginLocalEdit();
+                localMats.blockCounts.put(editBlockId, newCount);
+                buildMatEntries();
+                clearWidgets(); init();
             }
         } catch (NumberFormatException ignored) {}
         editBlockId = null;
         editInput.setLength(0);
     }
 
+    /**
+     * ✚ 新增材料 —— 由 {@link MaterialItemPickerScreen} 回调，只写本地副本。
+     *
+     * <p>非法方块的校验放在服务端保存入口：这里先让 OP 看到结果，点 ⎙ 时若清单含
+     * 非法方块，服务端会拒绝并回推真实清单。带 NBT 的物品不做限制 ——
+     * OP 手动添加即等同管理员准许其存在。</p>
+     */
+    private void addMaterialLocally(String materialKey, @Nullable net.minecraft.nbt.CompoundTag normTag, int count) {
+        if (!canEditMaterials() || count <= 0) return;
+        beginLocalEdit();
+        localMats.blockCounts.merge(materialKey, count, Integer::sum);
+        if (normTag != null) localMats.keyTags.putIfAbsent(materialKey, normTag);
+        buildMatEntries();
+        clearWidgets(); init();
+    }
+
     // ── 材料右键菜单渲染 ────────────────────────────────────────────────────
 
     private void renderMaterialContextMenu(GuiGraphics g, int mouseX, int mouseY) {
-        // 右键菜单仅在创造模式下开启
+        // 右键菜单仅在创造模式下开启（复制名字 / 复制 ID / 存入 已整体移除，见 e35）
         String[] labels = {
-            Component.translatable("spatial_blueprint.gui.placement.context.copy_name").getString(),
-            Component.translatable("spatial_blueprint.gui.placement.context.copy_id").getString(),
             Component.translatable("spatial_blueprint.gui.placement.context.edit_count").getString(),
-            Component.translatable("spatial_blueprint.gui.placement.context.deposit").getString(),
-            Component.translatable("spatial_blueprint.gui.placement.context.withdraw").getString(),
             Component.translatable("spatial_blueprint.gui.placement.context.delete").getString()
         };
-        int[] colors = { 0xFFFFFF, 0xAAAAAA, 0xFFFFFF, 0x55FF55, 0xFFAA00, 0xFF5555 };
+        int[] colors = { 0xFFFFFF, 0xFF5555 };
         int CM_ROWS = labels.length;
         final int CMW = 130, CM_ROW_H = 16, CM_PAD = 4;
         final int CMH = CM_PAD + CM_ROWS * CM_ROW_H + CM_PAD;
@@ -1459,7 +1688,7 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
     private void renderEditCountPanel(GuiGraphics g, int mouseX, int mouseY) {
         if (!player.isCreative()) { editBlockId = null; editInput.setLength(0); return; }
-        final int EW = 200, EH = 90, BW = 60, BH = 16, BP = 8, PAD = 8;
+        final int EW = 200, EH = 90, BW = 60, BH = 20, BP = 8, PAD = 8;
         int ex = (this.width - EW) / 2, ey = (this.height - EH) / 2;
 
         g.pose().pushPose();
@@ -1478,24 +1707,13 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         String cursor = (System.currentTimeMillis() % 1000 < 500) ? "|" : "";
         g.drawString(font, editInput.toString() + cursor, fx + 4, fy + (fh - font.lineHeight) / 2, 0xFFFFFF, false);
 
-        // 按钮
-        int okX = ex + EW / 2 - BW - 4, cancelX = ex + EW / 2 + 4, by = ey + EH - BH - BP;
-        boolean okH = mouseX >= okX && mouseX < okX + BW && mouseY >= by && mouseY < by + BH;
-        boolean cnH = mouseX >= cancelX && mouseX < cancelX + BW && mouseY >= by && mouseY < by + BH;
-        String ec_ok  = Component.translatable("spatial_blueprint.gui.common.confirm").getString();
-        String ec_cnl = Component.translatable("spatial_blueprint.gui.common.cancel").getString();
-        g.fill(okX, by, okX + BW, by + BH, okH ? 0xFF2A5530 : 0xFF1A351F);
-        drawBorder(g, okX, by, BW, BH);
-        g.drawString(font, ec_ok,  okX     + (BW - font.width(ec_ok))  / 2, by + (BH - font.lineHeight) / 2, 0x55FF55, false);
-        g.fill(cancelX, by, cancelX + BW, by + BH, cnH ? 0xFF553030 : 0xFF351A1A);
-        drawBorder(g, cancelX, by, BW, BH);
-        g.drawString(font, ec_cnl, cancelX + (BW - font.width(ec_cnl)) / 2, by + (BH - font.lineHeight) / 2, 0xFF5555, false);
+        layoutAndRenderDialogButtons(g, mouseX, mouseY, editOkBtn, editCancelBtn, ex, ey, EW, EH, BW, BH, BP);
         g.pose().popPose();
     }
 
     private void renderDeleteMaterialPanel(GuiGraphics g, int mouseX, int mouseY) {
         if (!player.isCreative()) { deleteBlockId = null; return; }
-        final int DW = 200, DH = 80, BW = 60, BH = 16, BP = 8, PAD = 8;
+        final int DW = 200, DH = 80, BW = 60, BH = 20, BP = 8, PAD = 8;
         int dx = (this.width - DW) / 2, dy = (this.height - DH) / 2;
 
         g.pose().pushPose();
@@ -1505,64 +1723,186 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
 
         String del_title   = Component.translatable("spatial_blueprint.gui.library.confirm_delete.title").getString();
         String del_warning = Component.translatable("spatial_blueprint.gui.library.confirm_delete.warning").getString();
-        String del_ok      = Component.translatable("spatial_blueprint.gui.common.confirm").getString();
-        String del_cnl     = Component.translatable("spatial_blueprint.gui.common.cancel").getString();
         g.drawString(font, del_title, dx + PAD, dy + PAD, 0xFF5555, false);
         String name = ctxBlockName != null ? ctxBlockName : (deleteBlockId != null ? deleteBlockId : "");
         g.drawString(font, name, dx + PAD, dy + PAD + font.lineHeight + 3, 0xFFFFAA, false);
         g.drawString(font, del_warning, dx + PAD, dy + PAD + (font.lineHeight + 3) * 2, 0x888888, false);
 
-        int okX = dx + DW / 2 - BW - 4, cancelX = dx + DW / 2 + 4, by = dy + DH - BH - BP;
-        boolean okH = mouseX >= okX && mouseX < okX + BW && mouseY >= by && mouseY < by + BH;
-        boolean cnH = mouseX >= cancelX && mouseX < cancelX + BW && mouseY >= by && mouseY < by + BH;
-        g.fill(okX, by, okX + BW, by + BH, okH ? 0xFF553030 : 0xFF351A1A);
-        drawBorder(g, okX, by, BW, BH);
-        g.drawString(font, del_ok,  okX     + (BW - font.width(del_ok))  / 2, by + (BH - font.lineHeight) / 2, 0xFF5555, false);
-        g.fill(cancelX, by, cancelX + BW, by + BH, cnH ? 0xFF2A2A2A : 0xFF1A1A1A);
-        drawBorder(g, cancelX, by, BW, BH);
-        g.drawString(font, del_cnl, cancelX + (BW - font.width(del_cnl)) / 2, by + (BH - font.lineHeight) / 2, 0xFFFFFF, false);
+        layoutAndRenderDialogButtons(g, mouseX, mouseY, deleteOkBtn, deleteCancelBtn, dx, dy, DW, DH, BW, BH, BP);
+        g.pose().popPose();
+    }
+
+    /**
+     * 摆好一个对话框的 [确定] [取消] 两个原版 Button 并手动渲染 ——
+     * 不加入 renderables（overlay 必须画在所有控件之上），命中在 {@code mouseClicked} 里
+     * 调 {@code Button#mouseClicked} 处理。两处布局必须一起看：改这里也要改那边。
+     */
+    private void layoutAndRenderDialogButtons(GuiGraphics g, int mouseX, int mouseY,
+                                              @Nullable Button ok, @Nullable Button cancel,
+                                              int panelX, int panelY, int panelW, int panelH,
+                                              int btnW, int btnH, int pad) {
+        int by = panelY + panelH - btnH - pad;
+        if (ok != null) {
+            ok.setX(panelX + panelW / 2 - btnW - 4);
+            ok.setY(by);
+            ok.render(g, mouseX, mouseY, 0f);
+        }
+        if (cancel != null) {
+            cancel.setX(panelX + panelW / 2 + 4);
+            cancel.setY(by);
+            cancel.render(g, mouseX, mouseY, 0f);
+        }
+    }
+
+    /** [删除] 确认：只改本地副本 —— 必须点 ⎙ 才写入服务端文件。 */
+    private void confirmDeleteMaterial() {
+        if (deleteBlockId == null) return;
+        if (mats() != null) {
+            beginLocalEdit();
+            localMats.blockCounts.remove(deleteBlockId);
+            localMats.keyTags.remove(deleteBlockId);
+            buildMatEntries();
+            clearWidgets(); init();
+        }
+        deleteBlockId = null;
+    }
+
+    // ── 奖励蓝图材料：✎ 提取并载入 / ✖ 清空全部 ─────────────────────────────
+
+    /**
+     * ✎ 提取 / ✖ 清空的公共发包：丢弃本地未保存副本 → 发服务端 → 结果由
+     * 聊天栏 + 回推体现（成功不走 S2C_OperationResult，它会把界面关掉）。
+     *
+     * @return 是否真的发出（bpId 缺失时为 false，已弹横幅）
+     */
+    private boolean sendRewardIntent(int mode) {
+        String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+        if (bpId.isEmpty()) {
+            NotifySound.clientError();
+            errorToast = Component.translatable("spatial_blueprint.gui.placement.error.material_save_no_id");
+            return false;
+        }
+        // 回推到达后 mats() 因 localMats == null 回落到服务端那份，面板自然刷新
+        localMats = null;
+        BlueprintNetwork.CHANNEL.sendToServer(
+                new com.xioyim.spatialblueprint.network.C2S_RewardMaterialsMessage(bpId, mode));
+        return true;
+    }
+
+    /** ✖ 清空确认覆盖层里点 [清空] 的落点。 */
+    private void confirmClearAllMaterials() {
+        confirmClearAll = false;
+        if (!canEditMaterials()) return;
+        sendRewardIntent(com.xioyim.spatialblueprint.network.C2S_RewardMaterialsMessage.MODE_CLEAR);
+    }
+
+    /** ✖ 清空全部材料的确认覆盖层（一行提示 + [清空][取消]，样式照单条 [删除] 的确认）。 */
+    private void renderConfirmClearAllPanel(GuiGraphics g, int mouseX, int mouseY) {
+        if (!canEditMaterials()) { confirmClearAll = false; return; }
+        final int DW = 200, DH = 80, BW = 60, BH = 20, BP = 8, PAD = 8;
+        int dx = (this.width - DW) / 2, dy = (this.height - DH) / 2;
+
+        g.pose().pushPose();
+        g.pose().translate(0, 0, 300);
+        g.fill(dx, dy, dx + DW, dy + DH, 0xF0101010);
+        drawBorder(g, dx, dy, DW, DH);
+
+        String title = Component.translatable("spatial_blueprint.gui.placement.confirm_clear_all").getString();
+        g.drawString(font, title, dx + PAD, dy + PAD, 0xFF5555, false);
+        String warning = Component.translatable(
+                "spatial_blueprint.gui.placement.tooltip.reward_clear.line2").getString();
+        g.drawString(font, warning, dx + PAD, dy + PAD + font.lineHeight + 3, 0x888888, false);
+
+        layoutAndRenderDialogButtons(g, mouseX, mouseY, clearOkBtn, clearCancelBtn, dx, dy, DW, DH, BW, BH, BP);
         g.pose().popPose();
     }
 
     // ── 存入/取出 辅助方法 ─────────────────────────────────────────────────
 
+    /**
+     * 材料面板上指定屏幕坐标处的物品；没有命中任何格子时返回 {@link ItemStack#EMPTY}。
+     *
+     * <p>命中判定与 {@code renderMaterialPanel} 里画图标的那段保持一致 ——
+     * 同一套格子坐标算两遍容易走样，改布局时两处都要动。</p>
+     */
+    private ItemStack materialStackAt(int mx, int my) {
+        MaterialList ml = mats();
+        if (ml == null || matContentY < 0) return ItemStack.EMPTY;
+        int panelX = this.width / 2 - 149;   // MAT_PANEL_W/2 = 298/2
+        List<Map.Entry<String, Integer>> entries = cachedMatEntries;
+        for (int i = 0; i < entries.size(); i++) {
+            int row = i / MAT_COLS, col = i % MAT_COLS;
+            int entryX = panelX + MAT_PAD + col * MAT_CELL_W;
+            int entryY = matContentY + (row - matScrollRow) * MAT_CELL_H;
+            if (entryY < matContentY
+                    || entryY + MAT_ICON_SCR > matContentY + MAT_VISIBLE * MAT_CELL_H) continue;
+            if (mx >= entryX && mx < entryX + MAT_ICON_SCR
+                    && my >= entryY && my < entryY + MAT_ICON_SCR) {
+                return ml.getDisplayStack(entries.get(i).getKey());
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
     /** 检查客户端乐观跟踪的存入量是否满足所有材料需求。 */
     private boolean hasSufficientLocalMaterials() {
-        if (data == null || data.materialList == null) return true;
-        for (Map.Entry<String, Integer> e : data.materialList.blockCounts.entrySet()) {
+        MaterialList ml = mats();
+        if (ml == null) return true;
+        for (Map.Entry<String, Integer> e : ml.blockCounts.entrySet()) {
             if (localDeposited.getOrDefault(e.getKey(), 0) < e.getValue()) return false;
         }
         return true;
     }
 
-    /** 打开存入/取出对话框。 */
-    private void openDepositDialog(String blockId, String blockName, boolean isDeposit) {
-        depositBlockId   = blockId;
-        depositBlockName = blockName;
-        depositMode      = isDeposit;
-        depositInput.setLength(0);
-        depositInput.append("1");
+    /**
+     * 用服务端权威的材料空间数据刷新 {@link #localDeposited}。
+     * 服务端在每次存入 / 消耗后推送 {@code S2C_MaterialSpaceSyncMessage}，缓存随之更新。
+     */
+    private void refreshDepositedFromSpace() {
+        localDeposited.clear();
+        MaterialList ml = mats();
+        if (ml == null) return;
+        for (String key : ml.blockCounts.keySet()) {
+            int c = com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache.count(key);
+            if (c > 0) localDeposited.put(key, c);
+        }
     }
 
-    /** 一键存入：乐观更新 localDeposited，然后发包。 */
+    /**
+     * 用服务端回推的蓝图数据替换本地 {@link #data} 引用并重建材料条目快照。
+     *
+     * <p>材料清单的权威数据在服务端 dat 文件。OP 的本地编辑暂存在 {@link #localMats}，
+     * 而 {@link #mats()} 优先返回它 —— 因此这里替换 {@code data} 不会冲掉未保存的改动。
+     * 玩家不点 ⎙ 就关界面的话，下次打开重新拉取，未保存的内容自然消失。</p>
+     */
+    private void refreshDataFromCache() {
+        String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+        if (bpId.isEmpty()) return;
+        BlueprintData fresh = ClientBlueprintCache.get(bpId);
+        if (fresh == null) return;
+        boolean wasEmpty = (this.data == null);
+        this.data = fresh;
+        buildMatEntries();
+        refreshDepositedFromSpace();
+        // 数据是异步到达的：打开界面时 data 可能还是 null，此时 init() 已按「无数据」
+        // 算好了按钮状态（材料按钮禁用 = 看起来没有材料清单）。数据到位后必须重建控件，
+        // 否则材料按钮会一直是灰的。
+        if (wasEmpty) rebuildWidgets();
+    }
+
+    /** 一键存入：乐观更新 localDeposited，然后发包。创造模式不消耗材料，故不参与。 */
     private void handleQuickDeposit() {
-        if (data == null || data.materialList == null) return;
-        for (Map.Entry<String, Integer> entry : data.materialList.blockCounts.entrySet()) {
+        MaterialList ml = mats();
+        if (ml == null || !needsMaterialSubmit()) return;
+        for (Map.Entry<String, Integer> entry : ml.blockCounts.entrySet()) {
             String blockId  = entry.getKey();
-            int needed      = entry.getValue();
             int already     = localDeposited.getOrDefault(blockId, 0);
-            int stillNeed   = needed - already;
+            int stillNeed   = entry.getValue() - already;
             if (stillNeed <= 0) continue;
 
-            if (player.isCreative()) {
-                localDeposited.put(blockId, needed);
-            } else {
-                net.minecraft.world.item.Item item = findDisplayItem(blockId);
-                if (item == null) continue;
-                int available = countInInventory(player, item);
-                int toDeposit = Math.min(stillNeed, available);
-                if (toDeposit > 0) localDeposited.put(blockId, already + toDeposit);
-            }
+            int available = countInInventory(player, blockId);
+            int toDeposit = Math.min(stillNeed, available);
+            if (toDeposit > 0) localDeposited.put(blockId, already + toDeposit);
         }
         BlueprintNetwork.CHANNEL.sendToServer(new C2S_MaterialDepositMessage(
                 C2S_MaterialDepositMessage.OP_QUICK_DEPOSIT, "", 0,
@@ -1572,169 +1912,39 @@ public class PlacementScreen extends Screen implements ErrorToastSupport {
         clearWidgets(); init();
     }
 
-    /** 一键取出：客户端预校验后发包；生存模式检查次数限制和经验等级。 */
-    private void handleQuickWithdraw() {
-        // 没有存入任何物品则直接跳过
-        boolean hasAny = localDeposited.values().stream().anyMatch(v -> v > 0);
-        if (!hasAny) return;
-
-        if (!player.isCreative()) {
-            // 次数限制预检
-            int limit = getEffectiveWithdrawLimit();
-            if (localWithdrawCount >= limit) {
-                NotifySound.clientError();
-                errorToast = Component.translatable("spatial_blueprint.error.withdraw_limit_reached");
-                return;
-            }
-            // 经验等级预检
-            int xpCost = computeWithdrawXpCost();
-            if (player.experienceLevel < xpCost) {
-                NotifySound.clientError();
-                errorToast = Component.translatable("spatial_blueprint.error.withdraw_xp_insufficient");
-                return;
-            }
-        }
-
-        // 乐观递增（生存模式）：立刻反映服务端即将执行的 incrementWithdrawCount，不等待同步
-        if (!player.isCreative()) localWithdrawCount++;
-        localDeposited.clear();
-        BlueprintNetwork.CHANNEL.sendToServer(new C2S_MaterialDepositMessage(
-                C2S_MaterialDepositMessage.OP_QUICK_WITHDRAW, "", 0,
-                BlueprintSelectionRenderer.getAlignMode(this.stack).name(),
-                SpatialBlueprintItem.getRotation(this.stack).name(),
-                this.xOffset, this.yOffset, this.zOffset));
-        clearWidgets(); init();
-    }
-
-    /** OP 一键清空已存入材料（不返还物品）。 */
-    private void handleClearMaterials() {
-        localDeposited.clear();
-        BlueprintNetwork.CHANNEL.sendToServer(new C2S_MaterialDepositMessage(
-                C2S_MaterialDepositMessage.OP_CLEAR_MATERIALS, "", 0,
-                BlueprintSelectionRenderer.getAlignMode(this.stack).name(),
-                SpatialBlueprintItem.getRotation(this.stack).name(),
-                this.xOffset, this.yOffset, this.zOffset));
-        clearWidgets(); init();
-    }
-
     /** OP 手动将当前材料清单（需要数量）完整保存至服务端蓝图文件。 */
     private void handleSaveMaterialList() {
-        if (data == null || data.materialList == null) return;
+        MaterialList ml = mats();
+        if (ml == null) return;
         String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
-        if (bpId.isEmpty()) return;
-        BlueprintNetwork.CHANNEL.sendToServer(
-                new C2S_SaveMaterialListMessage(bpId, data.materialList.blockCounts));
-    }
-
-    /** 确认存入/取出对话框。 */
-    private void confirmDeposit() {
-        if (depositBlockId == null) { depositInput.setLength(0); return; }
-        try {
-            int amount = Integer.parseInt(depositInput.toString());
-            if (amount >= 1) {
-                if (depositMode) {
-                    // 存入
-                    int needed    = (data != null && data.materialList != null)
-                            ? data.materialList.blockCounts.getOrDefault(depositBlockId, 0) : 0;
-                    int already   = localDeposited.getOrDefault(depositBlockId, 0);
-                    int canAccept = needed - already;
-                    int toDeposit = Math.min(amount, canAccept);
-                    if (toDeposit > 0) {
-                        if (!player.isCreative()) {
-                            net.minecraft.world.item.Item item = findDisplayItem(depositBlockId);
-                            if (item != null) {
-                                toDeposit = Math.min(toDeposit, countInInventory(player, item));
-                            }
-                        }
-                        if (toDeposit > 0) {
-                            localDeposited.put(depositBlockId, already + toDeposit);
-                            BlueprintNetwork.CHANNEL.sendToServer(new C2S_MaterialDepositMessage(
-                                    C2S_MaterialDepositMessage.OP_DEPOSIT, depositBlockId, toDeposit,
-                                    BlueprintSelectionRenderer.getAlignMode(this.stack).name(),
-                                    SpatialBlueprintItem.getRotation(this.stack).name(),
-                                    this.xOffset, this.yOffset, this.zOffset));
-                        }
-                    }
-                } else {
-                    // 取出
-                    int already    = localDeposited.getOrDefault(depositBlockId, 0);
-                    int toWithdraw = Math.min(amount, already);
-                    if (toWithdraw > 0) {
-                        localDeposited.put(depositBlockId, already - toWithdraw);
-                        BlueprintNetwork.CHANNEL.sendToServer(new C2S_MaterialDepositMessage(
-                                C2S_MaterialDepositMessage.OP_WITHDRAW, depositBlockId, toWithdraw,
-                                BlueprintSelectionRenderer.getAlignMode(this.stack).name(),
-                                SpatialBlueprintItem.getRotation(this.stack).name(),
-                                this.xOffset, this.yOffset, this.zOffset));
-                    }
-                }
-            }
-        } catch (NumberFormatException ignored) {}
-        depositBlockId = null; depositBlockName = null; depositInput.setLength(0);
-        clearWidgets(); init();
-    }
-
-    /** 渲染存入/取出输入对话框。 */
-    private void renderDepositPanel(GuiGraphics g, int mouseX, int mouseY) {
-        if (depositBlockId == null) return;
-        final int EW = 200, EH = 90, BW = 60, BH = 16, BP = 8, PAD = 8;
-        int ex = (this.width - EW) / 2, ey = (this.height - EH) / 2;
-
-        g.pose().pushPose();
-        g.pose().translate(0, 0, 300);
-        g.fill(ex, ey, ex + EW, ey + EH, 0xF0101010);
-        drawBorder(g, ex, ey, EW, EH);
-
-        String depTitleKey = depositMode
-                ? "spatial_blueprint.gui.placement.deposit_dialog.title.deposit"
-                : "spatial_blueprint.gui.placement.deposit_dialog.title.withdraw";
-        String name  = depositBlockName != null ? depositBlockName : depositBlockId;
-        String title = String.format(Component.translatable(depTitleKey).getString(), name);
-        g.drawString(font, title, ex + PAD, ey + PAD, 0xFFFFAA, false);
-
-        int fx = ex + PAD, fy = ey + PAD + font.lineHeight + 4, fw = EW - PAD * 2, fh = 16;
-        g.fill(fx - 1, fy - 1, fx + fw + 1, fy + fh + 1, 0xFF444444);
-        g.fill(fx, fy, fx + fw, fy + fh, 0xFF1A1A1A);
-        String cursor = (System.currentTimeMillis() % 1000 < 500) ? "|" : "";
-        g.drawString(font, depositInput.toString() + cursor,
-                fx + 4, fy + (fh - font.lineHeight) / 2, 0xFFFFFF, false);
-
-        int okX = ex + EW / 2 - BW - 4, cancelX = ex + EW / 2 + 4, by = ey + EH - BH - BP;
-        boolean okH = mouseX >= okX && mouseX < okX + BW && mouseY >= by && mouseY < by + BH;
-        boolean cnH = mouseX >= cancelX && mouseX < cancelX + BW && mouseY >= by && mouseY < by + BH;
-        g.fill(okX, by, okX + BW, by + BH, okH ? 0xFF2A5530 : 0xFF1A351F);
-        drawBorder(g, okX, by, BW, BH);
-        String dep_ok  = Component.translatable("spatial_blueprint.gui.common.confirm").getString();
-        String dep_cnl = Component.translatable("spatial_blueprint.gui.common.cancel").getString();
-        g.drawString(font, dep_ok,  okX     + (BW - font.width(dep_ok))  / 2, by + (BH - font.lineHeight) / 2, 0x55FF55, false);
-        g.fill(cancelX, by, cancelX + BW, by + BH, cnH ? 0xFF553030 : 0xFF351A1A);
-        drawBorder(g, cancelX, by, BW, BH);
-        g.drawString(font, dep_cnl, cancelX + (BW - font.width(dep_cnl)) / 2, by + (BH - font.lineHeight) / 2, 0xFF5555, false);
-        g.pose().popPose();
-    }
-
-    /** 在物品注册表中查找显示用的 Item（block.asItem 优先）。 */
-    @Nullable
-    private static net.minecraft.world.item.Item findDisplayItem(String blockId) {
-        net.minecraft.resources.ResourceLocation rl =
-                net.minecraft.resources.ResourceLocation.tryParse(blockId);
-        if (rl == null) return null;
-        var blockOpt = BuiltInRegistries.BLOCK.getOptional(rl);
-        if (blockOpt.isPresent()) {
-            net.minecraft.world.item.Item bi = blockOpt.get().asItem();
-            if (bi != Items.AIR) return bi;
+        if (bpId.isEmpty()) {
+            NotifySound.clientError();
+            errorToast = Component.translatable("spatial_blueprint.gui.placement.error.material_save_no_id");
+            return;
         }
-        return BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+        BlueprintNetwork.CHANNEL.sendToServer(
+                new C2S_SaveMaterialListMessage(bpId, ml.blockCounts, ml.keyTags));
+        // 用与错误提示同款的横幅给出保存反馈。
+        // 不走 S2C_OperationResult 的成功分支 —— 那条路径会关闭本界面并只在聊天栏显示。
+        // 若服务端校验失败（如清单含非法方块），随后到达的失败结果会覆盖这条横幅。
+        NotifySound.client();
+        errorToast = Component.translatable("spatial_blueprint.gui.placement.material_saved");
     }
 
-    /** 统计玩家背包中指定 Item 的总数量（仅主背包格，不含装备栏）。 */
-    private static int countInInventory(Player player,
-                                        net.minecraft.world.item.Item item) {
+    /**
+     * 统计玩家背包中与该材料复合键<b>完全匹配</b>的物品总数。
+     * 匹配基于物品类型 + 规范化 NBT，因此附魔、耐久不同的同种物品不会互相顶替
+     * （与服务端 {@code C2S_MaterialDepositMessage.takeFromInventory} 的判定一致）。
+     */
+    private static int countInInventory(Player player, String materialKey) {
         int count = 0;
         net.minecraft.world.entity.player.Inventory inv = player.getInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack s = inv.getItem(i);
-            if (!s.isEmpty() && s.is(item)) count += s.getCount();
+            if (s.isEmpty()) continue;
+            if (materialKey.equals(com.xioyim.spatialblueprint.util.MaterialKey.of(s))) {
+                count += s.getCount();
+            }
         }
         return count;
     }

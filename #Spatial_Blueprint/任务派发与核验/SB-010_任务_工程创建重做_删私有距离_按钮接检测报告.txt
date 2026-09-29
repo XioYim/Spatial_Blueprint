@@ -1,0 +1,256 @@
+SB-010 · 工程蓝图创建链路重做 —— 删工程私有距离（只留全局 previewDistance）、⌘ 按钮接内容检测报告、创建页重做（两条路共用）、两条路都按模式净化
+类型：IMPLEMENT（只改第三节列出的文件）
+派发：2026-09-21 22:09:20
+
+执行方就是正在读这份手册的你。直接按下面各节做，不要转派给任何 worker 会话 / 子代理 / 技能，做完写报告即可；不要就「由谁执行」向用户提问。
+
+────────────────────────────────────────────────────────────────────────
+〇、执行前必做：备份
+────────────────────────────────────────────────────────────────────────
+
+动任何代码之前，先按 `D:\Mods\项目工具\安全手册.MD` 备份。直接跑：
+D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint -Note "SB-010 执行前"
+
+备份脚本打印的表格行原样抄进报告「改动」段第一行（主会话负责插进 项目记忆.md，你不要碰那个文件）。
+记下你开工的时刻（精确到秒），第五节的 mtime 窗口用它。
+
+────────────────────────────────────────────────────────────────────────
+一、项目接入
+────────────────────────────────────────────────────────────────────────
+
+先读 D:\Mods\Spatial_Blueprint\#Spatial_Blueprint\记忆与注意事项\项目记忆.md，按里面的「读取顺序」走完再动手。
+记忆先读 注意事项_目录.md 找编号，再按行号只读 注意事项_分类.md 对应那一段；不要整读分类文件。
+
+本任务必读的记忆段：
+- 铁律 T1–T10 整读（本任务尤其用到 T3 网络协议 / T4 客户端服务端边界 / T6 捕获与净化（两个 strip 方法分工、FORCE 只 OP）/ T8 配置读取走 ConfigAccess / T9 文本与提示）。
+- K1 报警行一屏（跑脚本 / 编译前）。
+- C1（报错横幅 ErrorToast 接入现状）—— 新创建页仍实现 ErrorToastSupport。
+- C2（NBT 预算语义与 strip 分工）—— 复制分支要跑净化，先看这段。
+- 开发日志.md 最近一节只为照格式写你自己的执行记录。
+
+────────────────────────────────────────────────────────────────────────
+二、目标与背景
+────────────────────────────────────────────────────────────────────────
+
+现状（2.7.29）：工程蓝图有两条创建路，汇合在同一条 C2S 消息：
+  路 A（空白蓝图）：PointSelectionScreen [创建] → CreateBlueprintScreen 选 [工程]（名字 / 时长 / 短备注 / 长备注）
+       → BlueprintReportScreen（扫世界）确认 → PointSelectionScreen.startCapture("engineering") → openCreateEngineeringScreen()
+       → CreateEngineeringProjectScreen(sourceId="", 名字, …)（只再填名字 + 距离；**上一页填的时长 / 备注被丢掉**）
+       → C2S_CreateEngineeringBlueprintMessage → 服务端 sourceId 为空 → 现场扫世界（**不看报告选的模式，无非法方块 / 危险 NBT 检查**）。
+  路 B（⌘）：PlacementScreen 手持已有蓝图 + 开着预览 → ⌘ → 直接 CreateEngineeringProjectScreen(sourceId=蓝图 id, …)
+       → 同一条消息 → 服务端 BlueprintStorage.load 复制源文件（**不经任何报告、不净化**）。
+  另有一个「工程私有距离」：创建页距离框（默认 128）→ 消息 maxDistance → 文件 data.maxDistance + 物品 NBT engMaxDistance
+       → checkProjectBounds 的 TOO_FAR（玩家到起 / 终点取近 > maxDistance 就不让开预览 / 放置）。
+
+用户拍板四件事：
+  1. **删掉工程私有距离**，只留全局配置 `previewDistance`。服务端本来就有 `BlueprintValidator.validatePlacementDistance`（到放置目标点 ≤ previewDistance + 512，工程蓝图也过），所以服务端只删 TOO_FAR 分支、不加新东西；客户端 [开启预览] 的置灰改为「min(到起点, 到终点) > previewDistance（服务端镜像值）」。
+  2. **⌘ 接内容检测报告**：点 ⌘ 先看一份「这份蓝图里有什么非法 / 危险内容」的报告（复用上传流程的 `BlueprintSanitizer.scanBlueprintData` + `S2C_UploadReportMessage` + `UploadReportScreen`），确认后才进创建页。
+  3. **创建页重做**，两条路共用：名称 / 构建时长 / 简单备注 / 详细备注 / 只读维度·起点·终点·尺寸；没有距离框。路 A 把 CreateBlueprintScreen 填的时长 / 备注带进来预填。
+  4. **服务端两条分支都按报告页选的模式处理**（与 CaptureAreaMessage 同一套语义）：复制分支对副本跑一遍 BlueprintSanitizer；扫描分支补上与捕获路相同的预扫 / 净化 —— 这就把待办里「工程蓝图扫描新区域无非法方块检查」那条口子闭合了。
+
+做完之后的链路：
+  路 A：… → BlueprintReportScreen（扫世界，三个模式按钮）确认 → 新创建页（预填名字 / 时长 / 备注）→ 消息(sourceId="", captureMode=选的) → 服务端扫世界，按模式预扫 / 净化。
+  路 B：⌘ → 发 C2S_RequestEngineeringReportMessage(bpId) 并先开「加载中」UploadReportScreen → 服务端 load + scanBlueprintData → S2C_UploadReportMessage → 报告页（[净化并继续] / OP [强制]）
+       → 回调打开新创建页（预填源蓝图名）→ 消息(sourceId=bpId, captureMode=SANITIZE 或 FORCE) → 服务端 load 副本按模式净化。
+
+不要做的：
+- 不动 `maxVolumeEngineering` / `slotLimitEngineering` 配置与 `S2C_ConfigSyncMessage`（用户决定这轮不碰）。
+- 不动 `BlueprintReportScreen`（路 A 的扫世界报告本来就对）、不动 `CreateBlueprintScreen`、不动 `CaptureAreaMessage`、不动 `C2S_CreateSubProjectMessage` 的扫描代码（它自己那份独立，子工程不在本任务）。
+- 不动 `S2C_UploadReportMessage` 的 encode / decode / 构造（只在 `handleClient` 里透传一个回调）；不动 `C2S_ConfirmUploadMessage` / `PendingUploadRegistry`（工程报告**不**进上传暂存）。
+- 不 bump `mod_version`、不构建 jar、不部署（主会话统一处理：本任务 wire 变，主会话 bump 2.7.30 三端一起换）。
+- 不清理旧文件 / 旧物品里残留的 `maxDistance` / `engMaxDistance` 键（读时忽略即可，无害）。
+- `ProjectBlueprintScreen` 的 `hint_preview_too_far`、`error.target_too_far` 与本任务无关，不要碰。
+
+────────────────────────────────────────────────────────────────────────
+三、允许修改的文件（绝对路径；没列的一律禁区）
+────────────────────────────────────────────────────────────────────────
+
+新建：
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\C2S_RequestEngineeringReportMessage.java
+
+改（括号里是允许动的范围，超出即越权）：
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\CreateEngineeringProjectScreen.java（整文件重写，类名不变）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\PlacementScreen.java（只改 ⌘ 按钮的点击回调与其 tooltip 文案判断，派发时 :590-612）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\PointSelectionScreen.java（只改 `openCreateEngineeringScreen()`，派发时 :504-520）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\UploadReportScreen.java（加宿主回调字段 + 两个构造重载 + `confirm()` 分支 + getter，见 4.6）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\EngineeringBlueprintScreen.java（只改 [开启预览] 的置灰判定与 `buildTooFarTooltip`，派发时 :250-282、:840-860）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\C2S_CreateEngineeringBlueprintMessage.java（见 4.3）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\PlaceBlueprintMessage.java（只删 TOO_FAR 分支，派发时 :190-195）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\C2S_ApplyBlueprintMessage.java（只改 `setBoundProject` 那一处调用，派发时 :143-146）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\S2C_LibrarySyncMessage.java（只删 maxDistance 的 write / read / 构造实参）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\s2c\S2C_UploadReportMessage.java（只改 `handleClient` 里 `isLoading()` 分支，派发时 :307-311）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\BlueprintNetwork.java（只允许在 register() 末尾追加一条 c2s 注册）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\server\SubProjectClaimHandler.java（只改 `setBoundProject` 那一处调用与其上一行注释，派发时 :115-118）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\item\EngineeringBlueprintItem.java（删 engMaxDistance / getBoundMaxDistance / setBoundProject 的 maxDistance 参数 / ProjectBoundsResult.TOO_FAR 分支）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\util\BlueprintData.java（只删 `maxDistance` 字段与序列化 / 反序列化两行，派发时 :100、:283、:353）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\util\BlueprintStorage.java（只动 `BlueprintSummary` 的 `maxDistance` 组件与 :507 / :524 两处）
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\util\BlueprintSanitizer.java（只删 :1291 `data.maxDistance = -1;` 及 :1279 javadoc 里对 maxDistance 的提及）
+D:\Mods\Spatial_Blueprint\src\main\resources\assets\spatial_blueprint\lang\zh_cn.json
+D:\Mods\Spatial_Blueprint\src\main\resources\assets\spatial_blueprint\lang\en_us.json
+
+以上行号是派发时的，改动过程中会漂，以符号定位。
+
+────────────────────────────────────────────────────────────────────────
+四、要改什么（按文件）
+────────────────────────────────────────────────────────────────────────
+
+4.1 删工程私有距离（数据 / 物品 / 摘要 / 判定）
+  `util/BlueprintData.java`：删 `public int maxDistance = -1;`、序列化 `if (maxDistance >= 0) mod.putInt("maxDistance", …)`、反序列化 `if (mod.contains("maxDistance")) …`。旧文件里的键读时自然忽略。
+  `util/BlueprintSanitizer.java`：删 :1291 那一行；:1279 javadoc 里列的字段去掉 maxDistance。
+  `util/BlueprintStorage.java`：`BlueprintSummary` 删组件 `int maxDistance`（派发时 25 个组件 → 24）；`listSummaries` :507 那行读取删掉，:524 构造删对应实参。
+  `network/S2C_LibrarySyncMessage.java`：encode 删 `buf.writeInt(s.maxDistance())`（:61），decode 删 `int maxDist = buf.readInt()`（:102）与构造实参（:120）。write / read 次数各 −1，改完数出来写报告（T3 对称）。**wire 变**（`S2C_VoidBagSyncMessage` 复用同一编解码，一起收窄，T3 有记）。
+  `item/EngineeringBlueprintItem.java`：
+    - 删 `getBoundMaxDistance`（:143-146）；`setBoundProject` 两个重载都去掉 `int maxDistance` 参数与 `tag.putInt("engMaxDistance", …)`（:160）；`clearBoundProject` 里 `tag.remove("engMaxDistance")`（:177）保留一行也行、删也行 —— 删。
+    - `ProjectBoundsResult` 枚举去掉 `TOO_FAR`；`checkProjectBounds` 删距离段（:219-227），只剩维度判定。javadoc 同步。
+  `server/SubProjectClaimHandler.java` :115-118：调用去掉最后那个 `64`，上一行「64 与 … 回退值一致」的注释删掉。
+  `network/C2S_ApplyBlueprintMessage.java` :143-146：调用去掉 `data.maxDistance >= 0 ? data.maxDistance : 64`。
+  `network/PlaceBlueprintMessage.java` :190-195：删 TOO_FAR 分支（WRONG_DIM 分支保留；后面的 `validatePlacementDistance` 本来就跑，不动）。
+  为什么：距离只留一个口径 —— 全局 previewDistance；服务端已有的目标点距离校验就是那个口径。
+
+4.2 客户端 [开启预览] 的置灰改用镜像 previewDistance
+  `gui/EngineeringBlueprintScreen.java`（派发时 :250-282）：
+    - 原来按 `checkProjectBounds` 的 OK / WRONG_DIM / TOO_FAR 三分支；现在 `checkProjectBounds` 只会给 OK / WRONG_DIM。
+    - 在 WRONG_DIM 判定之后、OK 分支之前加一道本地距离判定：`limit = com.xioyim.spatialblueprint.client.ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE)`（T8：有服务端镜像用镜像，没有回本地；**不要**直接 `BlueprintConfig.PREVIEW_DISTANCE.get()`），`tooFar = min(玩家到起点中心, 玩家到终点中心) > limit` → 按钮置灰，tooltip 用 `buildTooFarTooltip()`。
+    - `buildTooFarTooltip()`（:843-860）改为：第一行新键 `spatial_blueprint.gui.engineering.tooltip.too_far`（带 limit 参数，见 4.8），后两行起点 / 终点坐标与实际距离保留（改用新键名，见 4.8）。
+  为什么：客户端 128 比服务端 640（previewDistance + 512）严，不会出现按钮亮了服务端拒。
+
+4.3 `network/C2S_CreateEngineeringBlueprintMessage.java` —— 字段改、两分支按模式处理
+  字段（encode / decode 按此顺序，写 128 / 64 / 15 / 200 的 utf 上限）：
+    `String sourceId`（64） · `String name`（64） · `String dimension`（128） · `BlockPos startPos` · `BlockPos endPos`
+    · `CaptureMode captureMode`（`writeInt(ordinal)` / `CaptureMode.fromOrdinal(readInt())`，与 CaptureAreaMessage :132 同）
+    · `int animDuration`（0 = 自动分档） · `String noteShort`（15） · `String noteLong`（200）
+  删 `maxDistance` 字段、`MAX_DISTANCE_LIMIT` 常量、:139-142 的校验、:261 的写入。**wire 变**。
+  handle：
+    a) 权限 / 槽位 / 名字 / 越界 / 边长校验保留原样（:99-137）。
+    b) 模式降级（与 CaptureAreaMessage :223-232 同）：`isOp = player.hasPermissions(2)`；`effMode = (captureMode == FORCE && !isOp) ? SAFE : captureMode`。
+    c) **扫描分支**（sourceId 空，:146-231）：
+       - 体积校验 `validateCaptureArea` 保留。
+       - 预扫（与 CaptureAreaMessage :255-268 的非次元规则同）：`effMode == SAFE && !isOp` → 遍历选区，`BlueprintSanitizer.isIllegalBlock(state)` 任一命中 → `sendResult(false, "spatial_blueprint.error.illegal_blocks")` + `BlueprintLogger.failed(... "illegal_block=…")` 整单拒，**在任何写盘之前**。
+       - 扫描循环里：`effMode == SANITIZE && isIllegalBlock(state)` → `continue`（视为空气，:376-377 同）。
+       - 方块实体 NBT：`stripDangerous = switch(effMode){ SAFE -> !isOp; SANITIZE -> true; FORCE -> false }`；stripDangerous → `BlueprintSanitizer.stripDangerousBlockNbt(nbt)`（非次元版本，连容器一起倒，T6）；否则保持现在的 `stripItemContents(nbt)`（工程蓝图可反复放置，防复制这条**FORCE 也不放开**，与现状一致）。
+       - 其余（装饰实体、材料清单、创建者信息）不动。
+    d) **复制分支**（sourceId 非空，:232-252）：`data = BlueprintStorage.load(sourceId)`，不存在 → return（现状）。然后：
+       - `scan = BlueprintSanitizer.scanBlueprintData(data, BlueprintConfig.MAX_BLOCK_ENTITY_NBT_BYTES.get(), BlueprintConfig.MAX_NBT_DEPTH.get())`。
+       - `effMode == SAFE && !isOp && !scan.isClean()` → `sendResult(false, "spatial_blueprint.error.illegal_blocks")` + BlueprintLogger 一条，整单拒。
+       - `effMode == SANITIZE` → `BlueprintSanitizer.sanitizeForUploadInPlace(data, 同上两个预算)`（删非法方块 + 清危险 NBT + 倒容器 + 超限 / 深 NBT + 实体过滤，:998）。
+       - `effMode == SAFE`（OP 或 clean）→ `BlueprintSanitizer.stripContainerAndSignNbtInPlace(data)`（防复制 + 安全项，:775）。
+       - `effMode == FORCE`（只可能是 OP）→ 原样，不动。
+       - materialList / animDuration 补算保留（:243-251），但 materialList 必须在净化**之后**算（净化会删方块）。
+    e) 汇合段（:254-266）：`data.saveMode = effMode`（两分支都写；复制分支不再沿用源蓝图的 saveMode）；`data.noteShort = msg.noteShort; data.noteLong = msg.noteLong`；`animDuration`：`msg.animDuration > 0` 时按 CaptureAreaMessage :505-515 的同一规则（谁能自定义、夹在什么范围）处理，否则自动分档。删 `data.maxDistance = …`；`setBoundProject` 调用去掉距离实参。`opBypassCapture` 不动。
+    f) 类 javadoc 与 `[EngBP][DBG]` 日志里的 `dist=` 字段删掉，加 `mode=`。
+  为什么：报告页选的模式要有约束力；两条路的净化语义与捕获路一致（T6），不再各搞一套。
+
+4.4 新消息 `network/C2S_RequestEngineeringReportMessage.java` + 注册
+  字段：`String sourceId`（64）。
+  handle（enqueueWork）：`player == null || !player.isCreative()` → return；`data = BlueprintStorage.load(sourceId)`，null → return；
+    `scan = scanBlueprintData(data, MAX_BLOCK_ENTITY_NBT_BYTES, MAX_NBT_DEPTH)`；
+    发 `S2C_UploadReportMessage`，构造实参照 `C2S_UploadProjectionTemplateMessage` :281-292 那一处抄（name = data.name；totalBlocks = 三个方块列表之和；canForce = OP；size 三维；compressedBytes = 0；nbtTotal / nbtMax 用 `BlueprintSanitizer.checkNbtBudget` 的结果；outOfRangeDropped = 0；七个列表 + 七个 total 来自 scan；category = "engineering"；volumeLimit = `BlueprintConfig.getMaxVolumeFor("engineering")`；两个 nbt 上限同上传那处）。
+    **不**进 `PendingUploadRegistry`、**不**记 uploadFlagged 日志。
+  `network/BlueprintNetwork.java`：`register()` **末尾**追加一条 `c2s(C2S_RequestEngineeringReportMessage.class, …)`，其它一行不动（T3）。
+  为什么：报告必须服务端扫 —— 非法方块表是服务端配置，客户端本地 toml 在多人服上可能不同（`C2S_UploadProjectionTemplateMessage` :270 那段注释就是这个理由）。
+
+4.5 `gui/PlacementScreen.java` —— ⌘ 改成「先报告，后创建页」（派发时 :596-612）
+  点击回调改为：
+    1) 算出 `dimStr / previewMin / previewMax`（现状代码）；
+    2) 定义回调 `mode -> Minecraft.getInstance().setScreen(new CreateEngineeringProjectScreen(PlacementScreen.this, bpId, data.name, dimStr, previewMin, previewMax, mode, 0, "", ""))`；
+    3) `setScreen(new UploadReportScreen(PlacementScreen.this, "engineering", data.name, "", 0L, false, 回调))`（加载中态，见 4.6）；
+    4) `BlueprintNetwork.CHANNEL.sendToServer(new C2S_RequestEngineeringReportMessage(bpId))`。
+  顺序必须是先开加载页再发包，否则回包到达时 `handleClient` 找不到加载页。tooltip 三种文案（no_access / no_preview / 正常）不动。
+
+4.6 `gui/UploadReportScreen.java` —— 加「宿主确认回调」
+  - 新字段 `@Nullable private final java.util.function.Consumer<com.xioyim.spatialblueprint.util.CaptureMode> confirmHost;` + getter `getConfirmHost()`。
+  - 加载中构造（:185 那个 6 参）与结果构造（:124 那个 7 参）各加一个末尾带 `confirmHost` 的重载；旧签名委托新签名传 null，**现有调用点一个不改**。
+  - `confirm(boolean force)`（:575-580）：`confirmHost != null` → `submitted = true; confirmHost.accept(force ? FORCE : SANITIZE); return;`（不发 `C2S_ConfirmUploadMessage`、不 `setScreen(parent)`，回调自己开下一页）；否则原逻辑。
+  - 报告页里显示文件名 / 扩展名 / 字节数的行：工程报告传的是 `fileName = 源蓝图名, ext = "", size = 0`，确认这几行在空扩展名 / 0 字节下不画出「.」「0 B」之类的怪样子（不好看就在 ext 为空时跳过那一行，改动限于渲染那几行）。
+  - [取消] 回 parent（PlacementScreen）—— 现状如此，不动。
+  `network/s2c/S2C_UploadReportMessage.java` `handleClient` :307-311：`isLoading()` 分支构造新屏时多传 `urs.getConfirmHost()`（用新重载）。其它分支不动。**这个类里客户端类型只能出现在 `handleClient`（已 @OnlyIn），别把回调类型带进 `handle` 或字段（T4）。**
+
+4.7 `gui/CreateEngineeringProjectScreen.java` —— 整文件重写（类名不变）
+  构造：`(Screen parent, String sourceId, String name, String dim, BlockPos startPos, BlockPos endPos, CaptureMode mode, int duration, String noteShort, String noteLong)`。
+  布局（一块 300 宽面板，居中；风格照 CreateBlueprintScreen 的输入框 + hint + tooltip）：
+    - 标题（现有键 `create_engineering.title`）
+    - 名称 EditBox（64，预填 name）
+    - 构建时长 EditBox：照 CreateBlueprintScreen :96-108 —— 4 位数字、**只有 OP 可编辑**（`setEditable(isOp)`），非 OP 看只读值；预填 duration > 0 ? duration : 自动分档值（路 B 没有方块数就填空 = 自动）；tooltip 复用 `point_selection.tooltip.duration` / `.duration_readonly`（带 `ANIMATION_DURATION_MIN` 参数），标签用 4.9 的新键 `create_engineering.duration`
+    - 简单备注 EditBox（15，预填 noteShort；hint / tooltip 复用 `create_blueprint.note_short.*`）
+    - 详细备注 EditBox（200，预填 noteLong；复用 `create_blueprint.note_long.*`）
+    - 只读四行：维度（`ProjectData.dimensionName(dim)`）、起点、终点、尺寸「X × Y × Z」（新键 `create_engineering.size`）
+    - [取消]（回 parent） [创建工程]
+  [创建工程]：名字 trim 后为空 → ErrorToast（C1）；发 `C2S_CreateEngineeringBlueprintMessage(sourceId, name, dim, startPos, endPos, mode, 时长解析(空或非数 → 0), noteShort, noteLong)`；然后沿用现状：`NotifySound.client()` + `placement.engineering_created` 聊天提示 + `setScreen(null)`。
+  `[EngBP][DBG][Client]` 日志保留，把 dist 换成 mode。ErrorToastSupport + render 开头早返回照 C1。
+  为什么：两条路共用一页，路 A 不再丢时长 / 备注；距离框随 4.1 消失。
+
+4.8 `gui/PointSelectionScreen.java` `openCreateEngineeringScreen()`（:504-520）
+  构造改传 `this.captureMode`（`onReportConfirmed` 已经存进去）、`pendingDuration`、`pendingNoteShort`、`pendingNoteLong`；其余不动。
+
+4.9 lang（zh / en 两份同步）
+  删：`spatial_blueprint.gui.create_engineering.distance`、`.distance_tip`、`spatial_blueprint.error.engineering.too_far`、`.too_far.start`、`.too_far.end`（服务端不再发、客户端改用新键）。
+  加：
+    `spatial_blueprint.gui.engineering.tooltip.too_far` = 「超出预览距离（%s 格），靠近工程后再试」/ "Beyond preview distance (%s blocks) — move closer"
+    `spatial_blueprint.gui.engineering.tooltip.too_far.start` = 「起点：%s, %s, %s（%s 格）」/ "Start: %s, %s, %s (%s blocks)"
+    `spatial_blueprint.gui.engineering.tooltip.too_far.end` = 「终点：%s, %s, %s（%s 格）」/ "End: %s, %s, %s (%s blocks)"
+    `spatial_blueprint.gui.create_engineering.size` = 「尺寸：%s × %s × %s」/ "Size: %s × %s × %s"
+    `spatial_blueprint.gui.create_engineering.duration` = 「构建时长(秒)」/ "Build time (s)"（CreateBlueprintScreen 的时长框没有标签键，只有 tooltip，所以要加）
+  占位符一律 `%s`（T9）。两份键数改完仍相等。
+
+────────────────────────────────────────────────────────────────────────
+五、验收标准（每条 PASS/FAIL + 证据写进报告）
+────────────────────────────────────────────────────────────────────────
+
+1. `.\gradlew.bat compileJava --offline --rerun`（在 D:\Mods\Spatial_Blueprint 下跑）→ BUILD SUCCESSFUL；按 `\.java:\d+:` 计数警告 ≤ 21（基线 21；全量重编常显示 20），不得出现任何新的「文件:行号」。编译必须在最后一次改动之后，报告写编译时刻与最后改动文件 mtime。
+2. `javap -p -c` 反编译（classpath `build\classes\java\main`）`SpatialBlueprintMod`、`network\C2S_CreateEngineeringBlueprintMessage`、`network\C2S_RequestEngineeringReportMessage`、`network\S2C_LibrarySyncMessage`、`network\PlaceBlueprintMessage`、`network\C2S_ApplyBlueprintMessage`、`server\SubProjectClaimHandler`、`util\BlueprintData`、`util\BlueprintStorage`、`util\BlueprintStorage$BlueprintSummary`、`item\EngineeringBlueprintItem`：`grep -c net/minecraft/client` 全 0。`network\s2c\S2C_UploadReportMessage`：`net/minecraft/client` 只出现在 `handleClient` 方法体内（列出命中所在方法名）。
+3. 禁区零改动：以开工时刻做 mtime 窗口，`src` 下窗口内文件 ⊆ 第三节「新建 + 改」；每个「只改 X」的文件用 `git diff` 或与备份副本 diff 证明改动没出那个范围（写 hunk 行号）。
+4. 残留为零：`src\main` 下 grep `maxDistance`、`engMaxDistance`、`getBoundMaxDistance`、`MAX_DISTANCE_LIMIT`、`TOO_FAR`、`error.engineering.too_far`、`create_engineering.distance` —— 全部 0 命中（写命令与计数）。
+5. `BlueprintNetwork.register()`：diff 只有末尾 +2 行；`c2s(` 计数比改前 +1。
+6. `S2C_LibrarySyncMessage`：`writeSummary` write 次数 == `readSummary` read 次数（改前 26 / 26 → 改后各 25）；`BlueprintSummary` 24 个组件；两处构造实参各 24。
+7. `C2S_CreateEngineeringBlueprintMessage`：encode 与 decode 的字段顺序逐项列出并一致；handle 里按 file:line 列出：effMode 降级行 / 扫描分支预扫拒绝行 / 扫描循环 SANITIZE 跳过行 / stripDangerous 分派行 / 复制分支 scan 行 / SAFE 拒绝行 / sanitizeForUploadInPlace 行 / stripContainerAndSignNbtInPlace 行 / materialList 补算行 / `BlueprintStorage.save` 行 —— 最后一条的行号必须大于前面所有校验与净化行。
+8. `UploadReportScreen`：`C2S_ConfirmUploadMessage` 在文件里仍恰 1 处 `new`，且在 `confirmHost == null` 的分支里；现有四个构造签名都还在、外部调用点（grep `new UploadReportScreen(` 全仓）除 PlacementScreen 新增的一处外零改动。
+9. `PlacementScreen`：⌘ 回调里 `setScreen(new UploadReportScreen(` 在 `sendToServer(new C2S_RequestEngineeringReportMessage(` 之前（行号）；`new CreateEngineeringProjectScreen(` 只出现在回调 lambda 内。
+10. `PointSelectionScreen.openCreateEngineeringScreen`：构造实参含 `captureMode`、`pendingDuration`、`pendingNoteShort`、`pendingNoteLong`（file:line）。
+11. `EngineeringBlueprintScreen`：`ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE)` 1 处；`BlueprintConfig.PREVIEW_DISTANCE.get()` 0 处；`getBoundMaxDistance` 0 处。
+12. lang：两份 JSON 解析通过（node 或 PowerShell ConvertFrom-Json），键数相等；代码引用的每个 `spatial_blueprint.` 新键在两份里各恰 1 条；被删的 5 个键在 src\main 下 0 引用。
+13. `gradle.properties` 未动；`build\libs` 无新 jar。
+14. 开发日志.md 只追加 `## SB-010 执行记录` 一节、测试清单.txt 只按第六节范围追加，其余字节不变（备份副本 diff，加 `--strip-trailing-cr`）。
+
+实机不在本任务范围（主会话 bump 2.7.30 三端换包后跑第六节那组）。
+
+────────────────────────────────────────────────────────────────────────
+六、写入权限
+────────────────────────────────────────────────────────────────────────
+
+只能写：#Spatial_Blueprint\任务派发与核验\SB-010_报告.txt、#Spatial_Blueprint\开发日志.md（文末追加一节，标题「## SB-010 执行记录」，
+不许占主序列编号，不许改已有小节）、#Spatial_Blueprint\测试清单.txt（按本手册指定范围，追加用例或勾选结果）。
+禁止：待办事项.html、记忆与注意事项\、记忆目录。
+踩到的坑写进报告「建议记入踩坑记录」段，由主会话合并。
+开发日志.md / 测试清单.txt：追加就是直接在文末按现有格式加内容（先读最近一节照格式写），不要改已有文字、不要引入别的格式。旧 HTML 项目仍按原锚点（注释锚 / <footer>）追加。
+§0.x 与测试编号会被并行会话抢，别提前预留。
+
+本任务对 测试清单.txt 授权的范围（只这一处；纯文本、`----` 分组、全角｜、无表格符，照第二十二组格式）：
+  在「【本文件没有修的东西（测出来也别当 bug 报）】」那段之前追加一组「二十三、工程创建重做：无私有距离 / ⌘ 接报告 / 按模式净化（SB-010）[ ]」，
+  头两行 `构建 2.7.30（待主会话构建，哈希待补） · 登记 <写入时刻> · 测于 —` 与前置（三端换 2.7.30，wire 变：创建消息字段改 + 摘要少 maxDistance + 新 C2S；一个 OP 创造账号 + 一个非 OP 创造账号；一块含 1 个非法方块（按服务端 EXCLUDED_BLOCKS 挑）的小结构；一份已捕获的普通空间蓝图），
+  用例编号从当前最大号 +1 起（派发时清单里最大 129，归档里最大 127；写时重数），六条：
+    ① 路 A 非 OP：空白蓝图选含非法方块的区 → [创建] → [工程] → 报告页选「安全」确认 → 创建页（应预填名字 / 时长 / 备注、无距离框）→ [创建工程]。预期：横幅「非法方块」拒绝、无文件生成、主手仍是空白蓝图。
+    ② 路 A 同区选「净化」。预期：生成工程蓝图，蓝图库 tooltip 存档模式=净化，预览里非法方块位置为空，备注与时长与创建页一致。
+    ③ 路 B 非 OP：手持空间蓝图开预览 → ⌘。预期：先出报告页（标题上传报告、显示非法 / 危险统计、只有 [净化并继续] / [取消]，无 [强制]）；确认后进创建页（名字预填源蓝图名）；创建后工程蓝图存档模式=净化。
+    ④ 路 B OP：同上有 [强制]；强制创建的副本存档模式=强制、容器内容保留；[取消] 回到放置界面。
+    ⑤ 距离：拿一枚工程蓝图走到离起 / 终点都 > previewDistance（默认 128）处开界面。预期：[开启预览] 灰、tooltip 首行「超出预览距离（128 格）」+ 起 / 终点两行；走近后亮；不再出现「距离过远无法激活工程蓝图」。改包把自己传到 700 格外发放置包，服务端回「目标位置距离过远」（可选，无改包工具就跳过）。
+    ⑥ 兼容：用 2.7.29 建的工程蓝图（文件与物品都带 maxDistance）在 2.7.30 打开界面 / 开预览 / 放置一切照旧；蓝图库列表正常。
+  每条下写「预期 / 结果：[ ] 未测」。
+
+────────────────────────────────────────────────────────────────────────
+七、报告模板（写到 SB-010_报告.txt；纯文本、中文；禁止代码块，只给「主张 + file:line」）
+────────────────────────────────────────────────────────────────────────
+
+任务        SB-010
+状态        PASS / PARTIAL / FAIL
+结论        三句话以内：两条路现在各走什么、距离由什么管、净化在哪一步
+发现        - 主张（一句话） · file:line
+改动        - 第一行：备份脚本打印的表格行
+            - 改了哪些文件 · 每个一句话（新建的标「新建」）
+            - wire 变更清单：C2S_CreateEngineeringBlueprintMessage 字段顺序、S2C_LibrarySyncMessage 少哪个字段、register() 末尾加了哪条（主会话据此 bump 2.7.30）
+测试        - 第五节 14 条逐条 PASS/FAIL + 证据（命令 / 数字 / file:line）
+风险        - 没测到的、可能坏的（至少含：旧客户端连新服被踢属预期；旧文件 / 旧物品残留 maxDistance 键无害；UploadReportScreen 在空扩展名 / 0 字节下的显示）
+未完成      - 没做的和为什么
+建议记入踩坑记录  - 本轮踩到的、下次任何人都会再踩的坑
+待复核      - 主会话应重点看的地方，编号列出（含实机建议 ≤ 8 条）
+
+报告里不许出现代码块、完整 grep 输出、完整日志、失败尝试过程、内部推理。

@@ -7,14 +7,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
-import javax.annotation.Nullable;
-import net.minecraftforge.fml.loading.FMLPaths;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -36,28 +33,18 @@ import com.xioyim.spatialblueprint.SpatialBlueprintMod;
  *       表示该轴方向从 Position 往负方向延伸），需要合并计算整体包围盒</li>
  * </ul>
  *
- * <p>暂不支持实体（画/展示框等）导入——与 {@link SchematicImporter} 现状一致，
- * Litematica 的 Entities 列表结构差异较大，后续需要时再补。</p>
+ * <p>实体（画/展示框等）随区域的 {@code Entities} 列表导入，与 .nbt 同口径
+ * （只搬运、不过滤，过滤统一交给 {@code BlueprintSanitizer.filterEntitiesInPlace}）。
+ * 实体坐标按区域局部坐标理解，与方块走同一套 区域→全局 换算。</p>
  */
 public final class LitematicaImporter {
 
     private LitematicaImporter() {}
 
-    /** 扫描 .minecraft/schematics/ 目录，返回所有 .litematic 文件（按修改时间降序）。 */
-    public static List<File> listLitematics() {
-        File dir = new File(FMLPaths.GAMEDIR.get().toFile(), "schematics");
-        List<File> result = new ArrayList<>();
-        if (!dir.isDirectory()) return result;
-        File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".litematic"));
-        if (files != null) {
-            for (File f : files) result.add(f);
-            result.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-        }
-        return result;
-    }
 
     /** 单个区域解析结果的中间态（第一遍扫描 Position/Size/调色板/位压缩数组，尚未落到全局坐标）。 */
     private static final class Region {
+        CompoundTag tag; // 区域原始 NBT（第二遍读 Entities 用）
         int posX, posY, posZ;
         int signX, signY, signZ;
         int sizeX, sizeY, sizeZ; // 绝对值（格子数）
@@ -80,26 +67,24 @@ public final class LitematicaImporter {
      * @param file       .litematic 文件（gzip-NBT，Litematica MOD 格式）
      * @param name       赋予蓝图的名称，为空时使用文件名
      * @param playerName 创建者名称
-     * @return 填充好的 BlueprintData，文件错误时返回 null
+     * @return 填充好的 BlueprintData
+     * @throws StructureImportException 带上具体失败原因的语言键，供界面显示
      */
-    @Nullable
-    public static BlueprintData readLitematic(File file, String name, String playerName) {
+    public static BlueprintData readLitematic(File file, String name, String playerName)
+            throws StructureImportException {
         if (!file.exists() || !file.isFile()) {
-            SpatialBlueprintMod.LOGGER.error("[LitematicaImport] 文件不存在: {}", file);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.file_missing");
         }
 
         CompoundTag root;
         try (FileInputStream fis = new FileInputStream(file)) {
-            root = NbtIo.readCompressed(fis);
+            root = SafeNbtIo.readCompressed(fis);
         } catch (IOException e) {
-            SpatialBlueprintMod.LOGGER.error("[LitematicaImport] 读取失败 {}: {}", file, e.getMessage());
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.read_failed", e);
         }
 
         if (!root.contains("Regions", 10) || root.getCompound("Regions").isEmpty()) {
-            SpatialBlueprintMod.LOGGER.error("[LitematicaImport] 缺少 Regions 字段或为空: {}", file);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.not_litematic");
         }
 
         CompoundTag regionsTag = root.getCompound("Regions");
@@ -126,6 +111,7 @@ public final class LitematicaImporter {
             if (rawSizeX == 0 || rawSizeY == 0 || rawSizeZ == 0) continue; // 空区域
 
             Region region = new Region();
+            region.tag = regionTag;
             region.posX = posTag.getInt("x");
             region.posY = posTag.getInt("y");
             region.posZ = posTag.getInt("z");
@@ -170,8 +156,7 @@ public final class LitematicaImporter {
         }
 
         if (regions.isEmpty()) {
-            SpatialBlueprintMod.LOGGER.error("[LitematicaImport] 没有可用区域: {}", file);
-            return null;
+            throw new StructureImportException("spatial_blueprint.gui.upload.error.not_litematic");
         }
 
         final int W = globalMaxX - globalMinX + 1;
@@ -240,16 +225,69 @@ public final class LitematicaImporter {
             }
         }
 
+        // ── 实体：各区域 Entities 列表，坐标按区域局部理解，与方块同一套换算 ──
+        int countEntity = 0;
+        for (Region region : regions) {
+            countEntity += importRegionEntities(region, data,
+                    globalMinX, globalMinY, globalMinZ, W, H, L);
+        }
+
         data.materialList = MaterialList.fromBlueprintData(data);
 
         SpatialBlueprintMod.LOGGER.info(
-                "[LitematicaImport] '{}' 导入完成: {}×{}×{} | regions={} normal={} dep={} late={} 忽略={}",
-                data.name, W, H, L, regions.size(), countNormal, countDep, countLate, countIgnored);
+                "[LitematicaImport] '{}' 导入完成: {}×{}×{} | regions={} normal={} dep={} late={} entity={} 忽略={}",
+                data.name, W, H, L, regions.size(), countNormal, countDep, countLate,
+                countEntity, countIgnored);
 
         return data;
     }
 
     // ── 内部工具 ──────────────────────────────────────────────────────────────
+
+    /**
+     * 导入单个区域的 {@code Entities} 列表。
+     *
+     * <p>实体坐标按区域局部坐标理解（与该区域 TileEntities 的局部查找一致），先按
+     * {@code abs = pos + local * sign} 还原绝对坐标，再换算成蓝图整体相对坐标；
+     * 落在包围盒外的条目跳过。只搬运、不过滤 ——
+     * 过滤统一交给 {@code BlueprintSanitizer.filterEntitiesInPlace}，
+     * 这样上传检测报告里「将被丢弃的实体」一栏才有东西可显示。</p>
+     */
+    private static int importRegionEntities(Region region, BlueprintData data,
+                                            int globalMinX, int globalMinY, int globalMinZ,
+                                            int w, int h, int l) {
+        if (!region.tag.contains("Entities", 9)) return 0;
+        ListTag entities = region.tag.getList("Entities", 10);
+        int n = 0;
+        for (int i = 0; i < entities.size(); i++) {
+            CompoundTag nbt = entities.getCompound(i).copy();
+            String type = nbt.getString("id");
+            if (type.isEmpty()) continue;
+            int lx, ly, lz;
+            if (nbt.contains("TileX")) {
+                lx = nbt.getInt("TileX");
+                ly = nbt.getInt("TileY");
+                lz = nbt.getInt("TileZ");
+            } else if (nbt.contains("Pos", 9)) {
+                ListTag pos = nbt.getList("Pos", 6);
+                if (pos.size() < 3) continue;
+                lx = (int) Math.floor(pos.getDouble(0));
+                ly = (int) Math.floor(pos.getDouble(1));
+                lz = (int) Math.floor(pos.getDouble(2));
+            } else {
+                continue;
+            }
+            int rx = region.posX + lx * region.signX - globalMinX;
+            int ry = region.posY + ly * region.signY - globalMinY;
+            int rz = region.posZ + lz * region.signZ - globalMinZ;
+            if (rx < 0 || ry < 0 || rz < 0 || rx >= w || ry >= h || rz >= l) continue;
+            nbt.remove("UUID");   // 复制出来的实体必须换新 UUID，否则与原实体撞号
+            data.entities.add(new BlueprintData.EntityEntry(
+                    rx, ry, rz, StructureNbtImporter.readFacing(nbt), type, nbt));
+            n++;
+        }
+        return n;
+    }
 
     /** 调色板条目（Name + 可选 Properties）解析为 BlockState，解析失败时返回空气。 */
     private static BlockState parsePaletteEntry(CompoundTag entry) {

@@ -9,3 +9,9 @@ bin/
 .classpath
 .project
 .settings/
+run-client2/
+run-server/
+run-data/
+mods/
+*.bak
+Desktop.ini

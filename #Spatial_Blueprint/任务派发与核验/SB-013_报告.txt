@@ -1,0 +1,54 @@
+SB-013 报告：大文件上传分片（修复 159 上传被踢）
+================================================
+时间：2026-09-22 23:23:25
+版本：2.7.36（协议版本 = mod 版本，双端须一起换）
+构建产物：D:\Mods\Spatial_Blueprint\build\libs\spatial_blueprint-2.7.36.jar（1,208,514 字节）
+状态：编译通过，未实机（待用户部署三端后重测 159）
+
+一、做了什么
+  1. 新建 server/UploadStagingRegistry.java：服务端分片组包注册表。
+     - Begin 声明 uploadId / 总块数 / 总字节 / category / force；同玩家旧组包直接丢弃。
+     - append 逐块组装；块 ≤30000 字节、累计 ≤ 服务端 MAX_UPLOAD_FILE_BYTES；5 分钟 TTL，
+       begin/append 进入时顺手扫除过期项（不碰事件接线；旧 PendingUploadRegistry.tick 无人调，不动）。
+     - 最后一块到齐返回 COMPLETE + 完整 gzip 字节。
+  2. 新建 network/C2S_UploadBeginMessage.java：分片开始声明（uploadId + 总块数 + 总字节 + 分类 + force）。
+     - 常量：SINGLE_PACKET_LIMIT = 30000（单包/分片分界，留 2KB 包头余量）；
+       CHUNK_SIZE = 30000（< 32767 硬上限，余 2767 给包头）；MAX_CHUNKS = 256（上限 7.5MB）。
+     - 服务端只做轻量前置校验（参数合法 / 总字节 ≤ 配置 / create 需创造）；限流与重量级校验
+       留在组包完成后统一执行。失败回 S2C_OperationResult.failure。
+  3. 新建 network/C2S_UploadChunkMessage.java：分片数据块（uploadId + 序号 + ≤30000 字节）。
+     - 到齐后调 C2S_UploadProjectionTemplateMessage.handleAssembled，走与单包完全相同的
+       限流 → 00~14 校验 → PendingUploadRegistry → 扫描 → 写入 → 报告全流程。
+     - 异常（未知 ID / 非本人 / 序号错 / 重复 / 超限）回 staging_rejected。
+  4. C2S_UploadProjectionTemplateMessage：加 compressPayload（取原始压缩字节）、
+     fromCompressed（已有字节直接构造）、handleAssembled（组包完成入口，复用 handle 全流程）。
+     旧单包 handle 逻辑零改动。
+  5. BlueprintNetwork.register() 末尾追加 2 条 c2s 注册（Begin / Chunk）。无插队、无删除、无改方向。
+  6. UploadBlueprintScreen 上传发送点：先压缩取字节，≤30000 走旧单包（fromCompressed，行为不变）；
+     超过走分片（Begin + 逐块）。客户端先按 ConfigAccess 镜像做快速失败（超限本地报错，不发包，
+     避免块块被拒刷屏）；块数 >256 本地报 upload_too_large。
+  7. lang：补 spatial_blueprint.error.upload_too_large（代码早已引用、此前缺失，会显示 raw key），
+     新增 spatial_blueprint.upload.staging_rejected。中英各一。
+
+二、验证
+  - .\gradlew.bat compileJava --offline --rerun：BUILD SUCCESSFUL，警告 21 条（与基线一致）。
+  - javap -c -p 三新类：无 net/minecraft/client 引用（CLEAN）。
+  - .\gradlew.bat build --offline：BUILD SUCCESSFUL，产物见上。
+  - 未实机：159（46 大文件上传）与 47（小文件单包对照）待三端部署 2.7.36 后重测。
+
+三、设计取舍（与 TASK 追问结论一致）
+  - 双路径：小文件旧单包不动，只大文件走分片。单包 hanlde 零改，风险面最小。
+  - 无 Begin ACK：同连接包保序，Begin 必先于块到达；客户端镜像预检后拒收只剩竞态，块错回单个
+    staging_rejected 可接受，不新增 S2C 消息。
+  - 块不计上传限流：真正的限流在组包完成后的全流程里执行一次；分片块本身不限流。
+
+四、已知边界
+  - 7.5MB~8MB（配置上限内但超 256 块）客户端本地报 upload_too_large；当前默认 8MB 下仅影响
+    压缩后 7.5~8MB 的极端文件，可接受。
+  - S2C 全量摘要超 1MB 与服务端展示预算 8MB 未动（159 的上传方向修完即闭环，下载方向另案）。
+
+五、建议记入踩坑记录（待用户拍板）
+  - K：MAX_UPLOAD_FILE_BYTES 是字节数 IntValue，不是 MB；BlueprintConfig 在根包
+    com.xioyim.spatialblueprint，不在 config 子包。
+  - K：PowerShell 5.1 里 Select-String 无命中 $? 仍为真，javap 验 client 引用须用 -match 写法。
+  - K：upload_too_large 早被服务端引用但 lang 缺失——新增错误 key 时顺手 grep lang 是否存在。

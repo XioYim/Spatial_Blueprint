@@ -22,16 +22,19 @@ public class C2S_PreviewUpdateMessage {
     final int      sizeY;
     final int      sizeZ;
     final String   blueprintId;
+    /** 蓝图分类，决定其他玩家看到的预览框颜色（空间蓝/投影绿/次元橙/工程橘）。 */
+    final String   category;
 
     public C2S_PreviewUpdateMessage(BlockPos origin, int rotation,
                                     int sizeX, int sizeY, int sizeZ,
-                                    String blueprintId) {
+                                    String blueprintId, String category) {
         this.origin      = origin;
         this.rotation    = rotation;
         this.sizeX       = sizeX;
         this.sizeY       = sizeY;
         this.sizeZ       = sizeZ;
         this.blueprintId = blueprintId != null ? blueprintId : "";
+        this.category    = category != null ? category : "";
     }
 
     public static void encode(C2S_PreviewUpdateMessage msg, FriendlyByteBuf buf) {
@@ -43,6 +46,7 @@ public class C2S_PreviewUpdateMessage {
         buf.writeVarInt(msg.sizeY);
         buf.writeVarInt(msg.sizeZ);
         buf.writeUtf(msg.blueprintId, 64);
+        buf.writeUtf(msg.category, 32);
     }
 
     public static C2S_PreviewUpdateMessage decode(FriendlyByteBuf buf) {
@@ -53,7 +57,8 @@ public class C2S_PreviewUpdateMessage {
         int sizeY         = buf.readVarInt();
         int sizeZ         = buf.readVarInt();
         String blueprintId = buf.readUtf(64);
-        return new C2S_PreviewUpdateMessage(origin, rotation, sizeX, sizeY, sizeZ, blueprintId);
+        String category    = buf.readUtf(32);
+        return new C2S_PreviewUpdateMessage(origin, rotation, sizeX, sizeY, sizeZ, blueprintId, category);
     }
 
     public static void handle(C2S_PreviewUpdateMessage msg, Supplier<NetworkEvent.Context> ctx) {
@@ -61,7 +66,7 @@ public class C2S_PreviewUpdateMessage {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
             com.xioyim.spatialblueprint.server.ServerPreviewTracker.update(
-                    player, msg.origin, msg.rotation, msg.sizeX, msg.sizeY, msg.sizeZ, msg.blueprintId);
+                    player, msg.origin, msg.rotation, msg.sizeX, msg.sizeY, msg.sizeZ, msg.blueprintId, msg.category);
         });
         ctx.get().setPacketHandled(true);
     }

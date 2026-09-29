@@ -1,13 +1,10 @@
 package com.xioyim.spatialblueprint.gui;
 
-import com.xioyim.spatialblueprint.network.BlueprintNetwork;
-import com.xioyim.spatialblueprint.network.C2S_EditMaterialMessage;
-import com.xioyim.spatialblueprint.util.BlueprintData;
-import com.xioyim.spatialblueprint.util.MaterialList;
+import com.xioyim.spatialblueprint.util.MaterialKey;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -26,11 +23,24 @@ import javax.annotation.Nullable;
 @OnlyIn(Dist.CLIENT)
 public class MaterialItemPickerScreen extends Screen {
 
+    /**
+     * 新增回调 —— 由父界面决定怎么落地。
+     *
+     * <p>清单编辑是本地暂存的：父界面只改自己的副本，玩家必须点 ⎙ 才写入服务端文件。
+     * 因此这里不再自行发包。</p>
+     *
+     * @param materialKey   复合键（{@link MaterialKey#of}，带 NBT 的物品会带摘要后缀）
+     * @param normalizedTag 规范化后的 NBT；无 NBT 时为 {@code null}
+     * @param count         新增数量（>0）
+     */
+    @FunctionalInterface
+    public interface AddHandler {
+        void onAdd(String materialKey, @Nullable CompoundTag normalizedTag, int count);
+    }
+
     // ── 上下文 ────────────────────────────────────────────────────────────────
     private final Screen parent;
-    private final ItemStack blueprintStack;
-    @Nullable
-    private final BlueprintData blueprintData;
+    private final AddHandler onAdd;
 
     // ── 布局常量 ──────────────────────────────────────────────────────────────
     private static final int SLOT_SIZE = 18;
@@ -39,9 +49,11 @@ public class MaterialItemPickerScreen extends Screen {
     private static final int PANEL_PAD = 10;
 
     // ── 新增对话框状态 ────────────────────────────────────────────────────────
-    /** 当前待添加的物品注册名（null = 对话框关闭）*/
+    /** 当前待添加物品的材料复合键（null = 对话框关闭）*/
     @Nullable private String addingItemId   = null;
     @Nullable private String addingItemName = null;
+    /** 待添加物品的规范化 NBT；无 NBT 时为 null。 */
+    @Nullable private CompoundTag addingTag = null;
     private final StringBuilder addInput = new StringBuilder();
 
     // ── 对话框尺寸（供 render 和 mouseClicked 共享）───────────────────────────
@@ -49,18 +61,45 @@ public class MaterialItemPickerScreen extends Screen {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    public MaterialItemPickerScreen(Screen parent, ItemStack blueprintStack,
-                                    @Nullable BlueprintData blueprintData) {
+    public MaterialItemPickerScreen(Screen parent, AddHandler onAdd) {
         super(Component.translatable("spatial_blueprint.gui.material_picker.title"));
-        this.parent         = parent;
-        this.blueprintStack = blueprintStack;
-        this.blueprintData  = blueprintData;
+        this.parent = parent;
+        this.onAdd  = onAdd;
     }
 
     // ── 格子坐标辅助 ──────────────────────────────────────────────────────────
 
     private int gridX() { return (this.width  - GRID_COLS * SLOT_SIZE) / 2; }
     private int gridY() { return (this.height - GRID_ROWS * SLOT_SIZE) / 2 - 8; }
+
+    // ── 控件 ──────────────────────────────────────────────────────────────────
+
+    /**
+     * 只有对话框打开时才有控件 —— 确认 / 取消两个原版 Button。
+     *
+     * <p>对话框是动态开关的，所以开关时都要 {@link #rebuildWidgets()} 重跑本方法。</p>
+     */
+    @Override
+    protected void init() {
+        super.init();
+        if (addingItemId == null) return;
+
+        int dx = (this.width  - DW) / 2;
+        int dy = (this.height - DH) / 2;
+        int by = dy + DH - BH - BP;
+
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+                        Component.translatable("spatial_blueprint.gui.material_picker.dialog.add"),
+                        b -> confirmAdd())
+                .bounds(dx + DW / 2 - BW - 4, by, BW, BH)
+                .build());
+
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+                        Component.translatable("spatial_blueprint.gui.common.cancel"),
+                        b -> cancelAdd())
+                .bounds(dx + DW / 2 + 4, by, BW, BH)
+                .build());
+    }
 
     // ── 渲染 ──────────────────────────────────────────────────────────────────
 
@@ -127,16 +166,18 @@ public class MaterialItemPickerScreen extends Screen {
         int sepY = gy + 3 * SLOT_SIZE;
         graphics.fill(gx, sepY - 1, gx + GRID_COLS * SLOT_SIZE, sepY, 0xFF555555);
 
+        // 对话框背景必须画在 super.render() 之前 —— 确认/取消现在是原版 Button，
+        // 由 super.render() 绘制，背景后画会把它们盖住。
+        // （格子的 renderItem 用 z=200 会穿透 overlay，因此对话框打开时上面已跳过绘制图标）
+        if (addingItemId != null) {
+            renderAddDialog(graphics, mouseX, mouseY);
+        }
+
         super.render(graphics, mouseX, mouseY, partialTick);
 
         // Tooltip（仅对话框关闭时）
         if (hoveredName != null) {
             graphics.renderTooltip(font, Component.literal(hoveredName), mouseX, mouseY);
-        }
-
-        // 新增对话框 overlay（置于最顶层，在所有 renderItem 之后）
-        if (addingItemId != null) {
-            renderAddDialog(graphics, mouseX, mouseY);
         }
     }
 
@@ -169,24 +210,9 @@ public class MaterialItemPickerScreen extends Screen {
         g.drawString(font, addInput.toString() + cursor,
                 fx + 4, fy + (fh - font.lineHeight) / 2, 0xFFFFFF, false);
 
-        // 按钮
-        int okX     = dx + DW / 2 - BW - 4;
-        int cancelX = dx + DW / 2 + 4;
-        int by      = dy + DH - BH - BP;
-        boolean okH = mouseX >= okX     && mouseX < okX     + BW && mouseY >= by && mouseY < by + BH;
-        boolean cnH = mouseX >= cancelX && mouseX < cancelX + BW && mouseY >= by && mouseY < by + BH;
-
-        String mp_add = Component.translatable("spatial_blueprint.gui.material_picker.dialog.add").getString();
-        String mp_cnl = Component.translatable("spatial_blueprint.gui.common.cancel").getString();
-        g.fill(okX, by, okX + BW, by + BH, okH ? 0xFF2A5530 : 0xFF1A351F);
-        drawBorder(g, okX, by, BW, BH);
-        g.drawString(font, mp_add,
-                okX + (BW - font.width(mp_add)) / 2, by + (BH - font.lineHeight) / 2, 0x55FF55, false);
-
-        g.fill(cancelX, by, cancelX + BW, by + BH, cnH ? 0xFF553030 : 0xFF351A1A);
-        drawBorder(g, cancelX, by, BW, BH);
-        g.drawString(font, mp_cnl,
-                cancelX + (BW - font.width(mp_cnl)) / 2, by + (BH - font.lineHeight) / 2, 0xFF5555, false);
+        // 确认 / 取消是原版 Button widget（见 init()），由 super.render() 绘制，
+        // 所以本方法只画背景与输入框 —— 且必须在 super.render() 之前调用，
+        // 否则这块背景会盖住按钮。
     }
 
     // ── 输入处理 ──────────────────────────────────────────────────────────────
@@ -196,18 +222,12 @@ public class MaterialItemPickerScreen extends Screen {
         int mx = (int) mouseX, my = (int) mouseY;
 
         // ── 新增对话框交互 ────────────────────────────────────────────────────
+        // 确认 / 取消已是原版 Button，命中交给 super.mouseClicked() 处理，
+        // 这里只负责「点面板外关闭」并吞掉其余点击（防止穿透到背包格子）。
         if (addingItemId != null) {
+            if (super.mouseClicked(mouseX, mouseY, button)) return true;
             int dx = (this.width  - DW) / 2;
             int dy = (this.height - DH) / 2;
-            int okX     = dx + DW / 2 - BW - 4;
-            int cancelX = dx + DW / 2 + 4;
-            int by      = dy + DH - BH - BP;
-
-            if (my >= by && my < by + BH) {
-                if (mx >= okX && mx < okX + BW)         { confirmAdd(); return true; }
-                if (mx >= cancelX && mx < cancelX + BW) { cancelAdd(); return true; }
-            }
-            // 点击面板外：关闭对话框
             if (mx < dx || mx >= dx + DW || my < dy || my >= dy + DH) cancelAdd();
             return true;
         }
@@ -228,11 +248,14 @@ public class MaterialItemPickerScreen extends Screen {
                         int slotIndex = (row < 3) ? (9 + row * 9 + col) : col;
                         ItemStack item = inv.getItem(slotIndex);
                         if (!item.isEmpty()) {
-                            // 使用物品的注册名作为清单 key（不限制是否为方块）
-                            addingItemId   = BuiltInRegistries.ITEM.getKey(item.getItem()).toString();
+                            // 复合键：带 NBT 的物品（附魔装备等）各自独立成条，与捕获路径一致。
+                            // OP 手动添加 NBT 物品本身就是「管理员准许该物品存在」，不做限制。
+                            addingItemId   = MaterialKey.of(item);
+                            addingTag      = MaterialKey.normalize(item.getTag());
                             addingItemName = item.getHoverName().getString();
                             addInput.setLength(0);
                             addInput.append("1");
+                            rebuildWidgets();   // 对话框刚打开，加上确认/取消按钮
                         }
                         return true;
                     }
@@ -272,31 +295,12 @@ public class MaterialItemPickerScreen extends Screen {
 
     // ── 业务逻辑 ──────────────────────────────────────────────────────────────
 
-    /** 确认新增：合并计数到本地清单，发包同步服务端，关闭 picker 返回父界面。 */
+    /** 确认新增：交给父界面写入它的本地清单副本，关闭 picker 返回父界面。 */
     private void confirmAdd() {
         if (addingItemId == null) return;
         try {
             int count = Integer.parseInt(addInput.toString());
-            if (count > 0 && blueprintData != null) {
-                // 确保 materialList 存在
-                if (blueprintData.materialList == null) {
-                    blueprintData.materialList = new MaterialList();
-                    blueprintData.materialList.blueprintName =
-                            blueprintData.name != null ? blueprintData.name : "";
-                }
-                // 与已有条目合并（+count）
-                int existing = blueprintData.materialList.blockCounts.getOrDefault(addingItemId, 0);
-                int newTotal = existing + count;
-                blueprintData.materialList.blockCounts.put(addingItemId, newTotal);
-
-                // 发包同步服务端 dat 文件
-                String bpId = blueprintStack.hasTag()
-                        ? blueprintStack.getTag().getString("blueprintId") : "";
-                if (!bpId.isEmpty()) {
-                    BlueprintNetwork.CHANNEL.sendToServer(
-                            new C2S_EditMaterialMessage(bpId, addingItemId, newTotal));
-                }
-            }
+            if (count > 0) onAdd.onAdd(addingItemId, addingTag, count);
         } catch (NumberFormatException ignored) {}
         clearAdd();
         Minecraft.getInstance().setScreen(parent);
@@ -307,7 +311,9 @@ public class MaterialItemPickerScreen extends Screen {
     private void clearAdd() {
         addingItemId   = null;
         addingItemName = null;
+        addingTag      = null;
         addInput.setLength(0);
+        rebuildWidgets();   // 对话框已关闭，移除按钮
     }
 
     @Override

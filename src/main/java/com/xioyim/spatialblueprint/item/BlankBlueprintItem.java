@@ -20,6 +20,8 @@ public class BlankBlueprintItem extends Item {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        // 空白蓝图必须在主手 —— 副手位置留给项目蓝图（决定这次创建的是独立工程还是子工程）
+        if (hand != InteractionHand.MAIN_HAND) return InteractionResultHolder.pass(player.getItemInHand(hand));
         ItemStack stack = player.getItemInHand(hand);
         if (level.isClientSide) {
             openSelectionScreen(player, stack);
@@ -29,6 +31,7 @@ public class BlankBlueprintItem extends Item {
 
     @Override
     public InteractionResult useOn(UseOnContext context) {
+        if (context.getHand() != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
         ItemStack stack = context.getItemInHand();
         Player player = context.getPlayer();
         if (player == null) return InteractionResult.PASS;
@@ -40,7 +43,22 @@ public class BlankBlueprintItem extends Item {
 
     @OnlyIn(Dist.CLIENT)
     private static void openSelectionScreen(Player player, ItemStack stack) {
-        net.minecraft.client.Minecraft.getInstance().setScreen(new PointSelectionScreen(player));
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        // 右键即重查一次非法/危险方块（即使选区未变，世界可能已变）
+        com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer.invalidateIllegalScanCache();
+        com.xioyim.spatialblueprint.gui.PointSelectionScreen.invalidateDangerousScanCache();
+        com.xioyim.spatialblueprint.gui.PointSelectionScreen screen =
+                new com.xioyim.spatialblueprint.gui.PointSelectionScreen(player);
+        // 右键检查：选区已设且覆盖的区块存在未加载/已卸载 → 打开界面并立即弹出 ErrorToast 横幅
+        BlockPos p1 = getPoint1(stack);
+        BlockPos p2 = getPoint2(stack);
+        if (p1 != null && p2 != null
+                && com.xioyim.spatialblueprint.gui.PointSelectionScreen.hasUnloadedChunksIn(mc.level, p1, p2)) {
+            screen.setErrorToast(net.minecraft.network.chat.Component.translatable(
+                    "spatial_blueprint.gui.point_selection.error.unloaded_chunks"));
+            com.xioyim.spatialblueprint.util.NotifySound.clientError();
+        }
+        mc.setScreen(screen);
     }
 
     // --- Point selection ---

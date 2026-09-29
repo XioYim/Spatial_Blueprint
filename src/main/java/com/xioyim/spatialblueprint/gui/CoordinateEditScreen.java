@@ -34,20 +34,49 @@ public class CoordinateEditScreen extends Screen implements ErrorToastSupport {
     private static final int FIELD_W  = 52;
     private static final int FIELD_H  = 20;
     private static final int FIELD_GAP = 4;
-    private static final int LABEL_W  = 30;
+
+    /** 两点从哪来、写回到哪：默认空白蓝图选区；项目范围界面传自己的实现。 */
+    private final PointHost host;
 
     public CoordinateEditScreen(Player player, Screen parent) {
+        this(player, parent, null);
+    }
+
+    public CoordinateEditScreen(Player player, Screen parent, @Nullable PointHost host) {
         super(Component.translatable("spatial_blueprint.gui.coord_edit.title"));
         this.player = player;
         this.parent = parent;
+        this.host = host != null ? host : new BlankBlueprintHost();
     }
 
-    private ItemStack getStack() {
-        ItemStack main = player.getMainHandItem();
-        if (main.getItem() instanceof BlankBlueprintItem) return main;
-        ItemStack off = player.getOffhandItem();
-        if (off.getItem() instanceof BlankBlueprintItem) return off;
-        return ItemStack.EMPTY;
+    /** 默认宿主：主手 / 副手的空白蓝图，与改造前行为一致。 */
+    private final class BlankBlueprintHost implements PointHost {
+        private ItemStack getStack() {
+            ItemStack main = player.getMainHandItem();
+            if (main.getItem() instanceof BlankBlueprintItem) return main;
+            ItemStack off = player.getOffhandItem();
+            if (off.getItem() instanceof BlankBlueprintItem) return off;
+            return ItemStack.EMPTY;
+        }
+
+        @Override public BlockPos point1() { return BlankBlueprintItem.getPoint1(getStack()); }
+        @Override public BlockPos point2() { return BlankBlueprintItem.getPoint2(getStack()); }
+
+        @Override
+        public void applyPoint(int index, BlockPos pos) {
+            if (index == 1) BlankBlueprintItem.setPoint1(getStack(), pos);
+            else            BlankBlueprintItem.setPoint2(getStack(), pos);
+            BlueprintNetwork.CHANNEL.sendToServer(new SetPointMessage(index, pos));
+        }
+
+        @Override
+        public long volumeLimit() {
+            // 这里还不知道要存成哪种蓝图，用最宽松的类型（空间蓝图）做粗校验，
+            // 免得先把坐标拦下来；真正按类型的严格判定在服务端捕获时做。
+            return player.hasPermissions(2)
+                    ? com.xioyim.spatialblueprint.BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME
+                    : S2C_ConfigSyncMessage.maxVolumeFor("create");
+        }
     }
 
     @Override
@@ -56,9 +85,8 @@ public class CoordinateEditScreen extends Screen implements ErrorToastSupport {
         int cx = this.width  / 2;
         int cy = this.height / 2;
 
-        ItemStack stack = getStack();
-        BlockPos pos1 = BlankBlueprintItem.getPoint1(stack);
-        BlockPos pos2 = BlankBlueprintItem.getPoint2(stack);
+        BlockPos pos1 = host.point1();
+        BlockPos pos2 = host.point2();
 
         int fieldsX = cx - (FIELD_W * 3 + FIELD_GAP * 2) / 2;
 
@@ -83,9 +111,12 @@ public class CoordinateEditScreen extends Screen implements ErrorToastSupport {
                 b -> trySave())
                 .bounds(fieldsX, btnY, btnW1, 20)
                 .tooltip(net.minecraft.client.gui.components.Tooltip.create(
-                        Component.translatable("spatial_blueprint.gui.tooltip.capture_limit",
-                                player.hasPermissions(2) ? com.xioyim.spatialblueprint.BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME : com.xioyim.spatialblueprint.BlueprintConfig.MAX_CAPTURE_VOLUME_SURVIVAL.get(),
-                                player.hasPermissions(2) ? com.xioyim.spatialblueprint.BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME : com.xioyim.spatialblueprint.BlueprintConfig.MAX_CAPTURE_VOLUME_CREATIVE.get())))
+                        host.saveTooltip() != null ? host.saveTooltip()
+                        : Component.translatable("spatial_blueprint.gui.tooltip.capture_limit",
+                                S2C_ConfigSyncMessage.maxVolumeFor("create"),
+                                S2C_ConfigSyncMessage.maxVolumeFor("project"),
+                                S2C_ConfigSyncMessage.maxVolumeFor("dimensional"),
+                                S2C_ConfigSyncMessage.maxVolumeFor("engineering"))))
                 .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("spatial_blueprint.gui.coord_edit.btn.cancel"),
@@ -118,11 +149,7 @@ public class CoordinateEditScreen extends Screen implements ErrorToastSupport {
             long dy  = Math.abs((long) newP2.getY() - newP1.getY()) + 1;
             long dz  = Math.abs((long) newP2.getZ() - newP1.getZ()) + 1;
             long vol = dx * dy * dz;
-            long limit = player.hasPermissions(2)
-                    ? com.xioyim.spatialblueprint.BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME
-                    : (player.isCreative()
-                            ? S2C_ConfigSyncMessage.clientMaxVolCreative
-                            : S2C_ConfigSyncMessage.clientMaxVolSurvival);
+            long limit = host.volumeLimit();
             if (vol > limit) {
                 errorToast = Component.translatable("spatial_blueprint.gui.coord_edit.error.over_limit");
                 NotifySound.clientError();
@@ -130,15 +157,8 @@ public class CoordinateEditScreen extends Screen implements ErrorToastSupport {
             }
         }
 
-        ItemStack stack = getStack();
-        if (newP1 != null) {
-            BlankBlueprintItem.setPoint1(stack, newP1);
-            BlueprintNetwork.CHANNEL.sendToServer(new SetPointMessage(1, newP1));
-        }
-        if (newP2 != null) {
-            BlankBlueprintItem.setPoint2(stack, newP2);
-            BlueprintNetwork.CHANNEL.sendToServer(new SetPointMessage(2, newP2));
-        }
+        if (newP1 != null) host.applyPoint(1, newP1);
+        if (newP2 != null) host.applyPoint(2, newP2);
         Minecraft.getInstance().setScreen(parent);
     }
 

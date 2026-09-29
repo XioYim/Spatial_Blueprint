@@ -33,11 +33,11 @@ public class DimensionalBlueprintItem extends SpatialBlueprintItem {
     public Component getName(ItemStack stack) {
         String customName = getBlueprintName(stack);
         if (!customName.isEmpty()) {
-            return Component.translatable(getDescriptionId())
+            return applySaveModeColor(stack, Component.translatable(getDescriptionId())
                     .append(" - ")
-                    .append(customName);
+                    .append(customName));
         }
-        return super.getName(stack);
+        return applySaveModeColor(stack, super.getName(stack));
     }
 
     @Override

@@ -3,8 +3,10 @@ package com.xioyim.spatialblueprint.util;
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.SpatialBlueprintRegistry;
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.item.BlankBlueprintItem;
 import com.xioyim.spatialblueprint.network.BlueprintNetwork;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage;
+import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.block.entity.RenderBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -29,6 +31,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -62,6 +65,8 @@ public class BlueprintPlacementHandler {
         public final int totalBlocks;
         /** 玩家设定的动画时长（秒）。用于推算每 tick 放置方块数。 */
         public final int durationSeconds;
+        /** 放置期间由本放置任务新增的强制加载区块（结束后须解除，原本已强制的区块不记录）。 */
+        public final List<ChunkPos> newlyForcedChunks = new ArrayList<>();
         public boolean finished = false;
         public int finishTick = 0;
 
@@ -87,21 +92,19 @@ public class BlueprintPlacementHandler {
     }
 
     /**
-     * @param player          触发放置的玩家；可为 null（命令方块等触发时）
-     * @param durationSeconds 玩家设定的动画时长（秒）；决定每 tick 放置方块数
-     * @param clearFirst      true = 先清空整个包围盒再放置（默认行为）；
-     *                        false = 仅替换蓝图方块位置，不清空包围盒空白区域
+     * 在扣材料、替换物品和修改蓝图状态之前执行服务端权威预检。
+     *
+     * @return 可开始放置时返回 {@code true}；被领地保护或结构冲突拦截时已通知客户端并返回
+     *         {@code false}
      */
-    public static void startPlacement(ServerLevel level, BlockPos origin, BlueprintData data,
-                                      Rotation rotation, @Nullable ServerPlayer player,
-                                      int durationSeconds, boolean clearFirst,
-                                      com.xioyim.spatialblueprint.util.FluidDisplayMode fluidMode) {
+    public static boolean precheckPlacement(ServerLevel level, BlockPos origin, BlueprintData data,
+                                            Rotation rotation, @Nullable ServerPlayer player,
+                                            boolean clearFirst,
+                                            com.xioyim.spatialblueprint.util.FluidDisplayMode fluidMode) {
         // 根据 fluidMode 过滤掉不需要放置的流体方块
         if (fluidMode.affectsBuild()) {
             data = filterFluids(data, fluidMode);
         }
-        if (isDbg(player)) SpatialBlueprintMod.LOGGER.info("[SpatialBlueprint] Placement starting: origin={} blocks={} size={} rotation={}",
-                origin, data.normalBlocks.size() + data.dependentBlocks.size(), data.size, rotation);
 
         // 领地保护预检：非创造模式玩家（或开启 denyCreativePlacementInProtectedArea 时的创造模式玩家）
         // 须逐块通过 BlockEvent.EntityPlaceEvent。
@@ -124,19 +127,19 @@ public class BlueprintPlacementHandler {
                 if (!isEntityPlaceEventAllowed(level, targetPos, player)) {
                     if (isDbg(player)) SpatialBlueprintMod.LOGGER.info(
                             "[SpatialBlueprint] Placement blocked by protection at {}", targetPos);
-                    NotifySound.server(player);
-                    player.displayClientMessage(
-                            Component.translatable("spatial_blueprint.error.placement_protected"), false);
-                    return;
+                    sendPlacementFailure(player, "spatial_blueprint.error.placement_protected");
+                    return false;
                 }
             }
         }
-
         // ── 结构冲突预检（服务端等价于客户端 PlacementPreValidator.EXTRA_BLOCKS）────────────
         // 仅在"完全清空"模式下执行：清空前需要确认包围盒无不可替换方块。
         // 替换模式（!clearFirst）跳过此检查——语义即"覆盖原有方块"，无需预先清空。
-        if (clearFirst && player != null && (!player.isCreative()
-                || com.xioyim.spatialblueprint.BlueprintConfig.DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA.get())) {
+        //
+        // ⚠ 只看游戏模式，不看 denyCreativePlacementInProtectedArea ——
+        // 那个开关管的是「领地保护对创造模式是否生效」，跟「路上有没有挡道的方块」是两回事。
+        // 创造模式本来就能随手拆掉挡路的方块，拿这条拦他没有意义；真正该拦住他的是领地插件。
+        if (clearFirst && player != null && !player.isCreative()) {
             BlockPos structCheckSize = data.size;
             for (int y = 0; y < structCheckSize.getY(); y++) {
                 for (int x = 0; x < structCheckSize.getX(); x++) {
@@ -149,10 +152,9 @@ public class BlueprintPlacementHandler {
                         if (!existing.isAir() && !existing.canBeReplaced()) {
                             if (isDbg(player)) SpatialBlueprintMod.LOGGER.info(
                                     "[SpatialBlueprint] Placement blocked (extra blocks) at {}", targetPos);
-                            NotifySound.server(player);
-                            player.displayClientMessage(Component.translatable(
-                                    "spatial_blueprint.error.placement_blocked_extra_blocks"), false);
-                            return;
+                            sendPlacementFailure(player,
+                                    "spatial_blueprint.error.placement_blocked_extra_blocks");
+                            return false;
                         }
                     }
                 }
@@ -176,10 +178,8 @@ public class BlueprintPlacementHandler {
                             if (!isEntityBreakEventAllowed(level, targetPos, player)) {
                                 if (isDbg(player)) SpatialBlueprintMod.LOGGER.info(
                                         "[SpatialBlueprint] Placement blocked (break protection) at {}", targetPos);
-                                NotifySound.server(player);
-                                player.displayClientMessage(
-                                        Component.translatable("spatial_blueprint.error.placement_protected"), false);
-                                return;
+                                sendPlacementFailure(player, "spatial_blueprint.error.placement_protected");
+                                return false;
                             }
                         }
                     }
@@ -201,14 +201,32 @@ public class BlueprintPlacementHandler {
                     if (!isEntityBreakEventAllowed(level, targetPos, player)) {
                         if (isDbg(player)) SpatialBlueprintMod.LOGGER.info(
                                 "[SpatialBlueprint] Placement blocked (break protection, replace mode) at {}", targetPos);
-                        NotifySound.server(player);
-                        player.displayClientMessage(
-                                Component.translatable("spatial_blueprint.error.placement_protected"), false);
-                        return;
+                        sendPlacementFailure(player, "spatial_blueprint.error.placement_protected");
+                        return false;
                     }
                 }
             }
         }
+
+        return true;
+    }
+
+    /**
+     * @param player          触发放置的玩家；可为 null（命令方块等触发时）
+     * @param durationSeconds 玩家设定的动画时长（秒）；决定每 tick 放置方块数
+     * @param clearFirst      true = 先清空整个包围盒再放置（默认行为）；
+     *                        false = 仅替换蓝图方块位置，不清空包围盒空白区域
+     */
+    public static void startPlacement(ServerLevel level, BlockPos origin, BlueprintData data,
+                                      Rotation rotation, @Nullable ServerPlayer player,
+                                      int durationSeconds, boolean clearFirst,
+                                      com.xioyim.spatialblueprint.util.FluidDisplayMode fluidMode) {
+        // 根据 fluidMode 过滤掉不需要放置的流体方块
+        if (fluidMode.affectsBuild()) {
+            data = filterFluids(data, fluidMode);
+        }
+        if (isDbg(player)) SpatialBlueprintMod.LOGGER.info("[SpatialBlueprint] Placement starting: origin={} blocks={} size={} rotation={}",
+                origin, data.normalBlocks.size() + data.dependentBlocks.size(), data.size, rotation);
 
         if (player != null) {
             NotifySound.server(player);
@@ -296,8 +314,36 @@ public class BlueprintPlacementHandler {
         // 打乱普通方块顺序，使动画呈现随机散点效果而非按扫描顺序逐层出现
         List<BlueprintData.BlockEntry> shuffled = new ArrayList<>(data.normalBlocks);
         Collections.shuffle(shuffled);
-        pendingPlacements.add(new PendingPlacement(level, origin, data.size, shuffled, data.dependentBlocks,
-                data.lateBlocks, data.entities, rotation, player, safeDuration));
+        PendingPlacement placement = new PendingPlacement(level, origin, data.size, shuffled, data.dependentBlocks,
+                data.lateBlocks, data.entities, rotation, player, safeDuration);
+
+        // 放置前一次性强制加载结构覆盖的所有区块（旋转后取外包 AABB），
+        // 避免动画期间逐格 setBlock 触发区块加载风暴；结束后恢复。
+        BlockPos forceSize = data.size;
+        int fMinX = origin.getX(), fMaxX = origin.getX(), fMinZ = origin.getZ(), fMaxZ = origin.getZ();
+        for (int x = 0; x < forceSize.getX(); x++) {
+            for (int z = 0; z < forceSize.getZ(); z++) {
+                int wx = origin.getX() + transformX(x, 0, z, forceSize, rotation);
+                int wz = origin.getZ() + transformZ(x, 0, z, forceSize, rotation);
+                if (wx < fMinX) fMinX = wx;  if (wx > fMaxX) fMaxX = wx;
+                if (wz < fMinZ) fMinZ = wz;  if (wz > fMaxZ) fMaxZ = wz;
+            }
+        }
+        placement.newlyForcedChunks.addAll(forceLoadChunks(level, fMinX, fMaxX, fMinZ, fMaxZ));
+        if (isDbg(player) && !placement.newlyForcedChunks.isEmpty()) {
+            SpatialBlueprintMod.LOGGER.info("[SpatialBlueprint] Force-loaded {} placement chunk(s) at {}",
+                    placement.newlyForcedChunks.size(), origin);
+        }
+        pendingPlacements.add(placement);
+    }
+
+    private static void sendPlacementFailure(ServerPlayer player, String messageKey) {
+        BlueprintNetwork.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+                S2C_OperationResult.failure(messageKey));
+        BlueprintNetwork.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+                new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(-1f));
     }
 
     /**
@@ -422,6 +468,11 @@ public class BlueprintPlacementHandler {
         // ── 召唤装饰实体（画、展示框）────────────────────────────────────
         int entitiesPlaced = 0;
         for (BlueprintData.EntityEntry entry : data.entities) {
+            // 盒型实体（超级胶水）的位置在 From/To 角点上，走单独的变换路径
+            if (com.xioyim.spatialblueprint.BlueprintConfig.getBoxEntities().contains(entry.type)) {
+                if (placeBoxEntity(level, entry, origin, size, rotation)) entitiesPlaced++;
+                continue;
+            }
             int tileWorldX = origin.getX() + transformX(entry.tileX, entry.tileY, entry.tileZ, size, rotation);
             int tileWorldY = origin.getY() + transformY(entry.tileX, entry.tileY, entry.tileZ, size, rotation);
             int tileWorldZ = origin.getZ() + transformZ(entry.tileX, entry.tileY, entry.tileZ, size, rotation);
@@ -442,7 +493,7 @@ public class BlueprintPlacementHandler {
             }
             net.minecraft.nbt.ListTag posList = new net.minecraft.nbt.ListTag();
             posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldX + 0.5));
-            posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldY + 0.5));
+            posList.add(net.minecraft.nbt.DoubleTag.valueOf(entityCenterY(entry, tileWorldY)));
             posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldZ + 0.5));
             nbt.put("Pos", posList);
 
@@ -501,6 +552,9 @@ public class BlueprintPlacementHandler {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
 
+        applyGlowingToSelectionEntities(event.getServer());
+        processPendingGlowTasks(event.getServer());
+
         Iterator<PendingPlacement> iterator = pendingPlacements.iterator();
         while (iterator.hasNext()) {
             PendingPlacement placement = iterator.next();
@@ -528,12 +582,17 @@ public class BlueprintPlacementHandler {
                 placement.currentIndex++;
             }
 
+            // 真实放置进度 → 客户端动画边框平滑跟随（0 ~ 1）
+            sendPlacementProgress(placement,
+                    placement.totalBlocks > 0 ? (float) placement.currentIndex / placement.totalBlocks : 1f);
+
             if (placement.currentIndex >= placement.totalBlocks) {
                 placement.finished = true;
                 if (isDbg(placement.player)) SpatialBlueprintMod.LOGGER.info("[SpatialBlueprint] Placement animation complete: {} blocks at {}",
                         placement.totalBlocks, placement.origin);
 
-                if (placement.player != null) {
+                // C1：放置本身照常收尾，只跳过对已离线玩家的通知（否则偶发 warn）
+                if (placement.player != null && !placement.player.hasDisconnected()) {
                     NotifySound.server(placement.player);
                     placement.player.displayClientMessage(
                             Component.translatable("spatial_blueprint.message.placement_completed"), false);
@@ -573,9 +632,7 @@ public class BlueprintPlacementHandler {
         if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
         BlueprintNetwork.CHANNEL.send(
                 net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
-                new S2C_ConfigSyncMessage(
-                        BlueprintConfig.MAX_CAPTURE_VOLUME_CREATIVE.get(),
-                        BlueprintConfig.MAX_CAPTURE_VOLUME_SURVIVAL.get()));
+                S2C_ConfigSyncMessage.fromConfig());
     }
 
     // render_block 只允许空手瞬间破坏
@@ -704,6 +761,12 @@ public class BlueprintPlacementHandler {
         // 第三轮：召唤装饰实体（画、展示框）
         int entitiesPlaced = 0;
         for (BlueprintData.EntityEntry entry : placement.entities) {
+            // 盒型实体（超级胶水）的位置在 From/To 角点上，走单独的变换路径
+            if (com.xioyim.spatialblueprint.BlueprintConfig.getBoxEntities().contains(entry.type)) {
+                if (placeBoxEntity(placement.level, entry, placement.origin,
+                        placement.size, placement.rotation)) entitiesPlaced++;
+                continue;
+            }
             int tileWorldX = placement.origin.getX() + transformX(entry.tileX, entry.tileY, entry.tileZ, placement.size, placement.rotation);
             int tileWorldY = placement.origin.getY() + transformY(entry.tileX, entry.tileY, entry.tileZ, placement.size, placement.rotation);
             int tileWorldZ = placement.origin.getZ() + transformZ(entry.tileX, entry.tileY, entry.tileZ, placement.size, placement.rotation);
@@ -730,7 +793,7 @@ public class BlueprintPlacementHandler {
             // Pos 仍指向原始捕捉坐标，距离可能远超 16 格导致验证失败。必须同步更新 Pos。
             net.minecraft.nbt.ListTag posList = new net.minecraft.nbt.ListTag();
             posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldX + 0.5));
-            posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldY + 0.5));
+            posList.add(net.minecraft.nbt.DoubleTag.valueOf(entityCenterY(entry, tileWorldY)));
             posList.add(net.minecraft.nbt.DoubleTag.valueOf(tileWorldZ + 0.5));
             nbt.put("Pos", posList);
 
@@ -789,6 +852,148 @@ public class BlueprintPlacementHandler {
             if (isDbg(placement.player)) SpatialBlueprintMod.LOGGER.info("[SpatialBlueprint] Late placement done: {}/{} blocks at {}",
                     latePlaced, placement.lateBlocks.size(), placement.origin);
         }
+
+        // 放置完成：解除本次新增的强制加载区块（原本已强制的区块不受影响）
+        releaseForcedChunks(placement);
+
+        // 放置完成：动画边框立即走满（进度 1.0 → 客户端进入完成态 + 2 秒淡出）
+        sendPlacementProgress(placement, 1f);
+
+        // 放置完成：2 秒后对选区内全部掉落物设置发光标记（Glowing NBT），方便玩家查看
+        scheduleGlowDrops(placement);
+    }
+
+    /** 向触发放置的玩家推送真实放置进度（progress=1.0 表示全部落地完成）。 */
+    private static void sendPlacementProgress(PendingPlacement placement, float progress) {
+        if (placement.player == null) return;
+        try {
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> placement.player),
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(progress));
+        } catch (Exception ignored) {}
+    }
+
+    private static final java.util.List<GlowTask> pendingGlowTasks = new ArrayList<>();
+    private record GlowTask(net.minecraft.server.level.ServerLevel level, AABB box, long endTick) {}
+
+    /** 延迟 2 秒（40 tick）后给选区内掉落物发光。 */
+    private static void scheduleGlowDrops(PendingPlacement placement) {
+        if (placement.level == null) return;
+        int sx = placement.size.getX();
+        int sy = placement.size.getY();
+        int sz = placement.size.getZ();
+        int extentX = Math.max(sx, sz);
+        int extentZ = Math.max(sx, sz);
+        AABB box = new AABB(
+                placement.origin.getX() - 1, placement.origin.getY() - 1, placement.origin.getZ() - 1,
+                placement.origin.getX() + extentX + 1, placement.origin.getY() + sy + 1, placement.origin.getZ() + extentZ + 1);
+        pendingGlowTasks.add(new GlowTask(placement.level, box, placement.level.getGameTime() + 40));
+    }
+
+    /** 到期后对掉落物施加发光标记。 */
+    private static void processPendingGlowTasks(net.minecraft.server.MinecraftServer server) {
+        if (server == null || pendingGlowTasks.isEmpty()) return;
+        Iterator<GlowTask> it = pendingGlowTasks.iterator();
+        while (it.hasNext()) {
+            GlowTask t = it.next();
+            if (t.level().getGameTime() >= t.endTick()) {
+                java.util.Set<String> specialDrops = com.xioyim.spatialblueprint.BlueprintConfig.getSpecialDropItems();
+                for (net.minecraft.world.entity.item.ItemEntity item :
+                        t.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, t.box(), e -> true)) {
+                    item.setGlowingTag(true);
+                    // 特殊掉落物：永不自动消失（UnlimitedLifetime NBT）
+                    String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .getKey(item.getItem().getItem()).toString();
+                    if (specialDrops.contains(itemId)) {
+                        item.setUnlimitedLifetime();
+                    }
+                }
+                it.remove();
+            }
+        }
+    }
+
+    /**
+     * 强制加载指定区块范围（按世界坐标 AABB 取外包区块），返回本次新增强制的区块列表。
+     * 原本已强制的区块（isPositionForced == true）不记录、不改动。
+     */
+    private static List<ChunkPos> forceLoadChunks(ServerLevel level, int minX, int maxX, int minZ, int maxZ) {
+        List<ChunkPos> added = new ArrayList<>();
+        for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+            for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                if (!level.getForcedChunks().contains(ChunkPos.asLong(cx, cz))) {
+                    level.setChunkForced(cx, cz, true);
+                    added.add(new ChunkPos(cx, cz));
+                }
+            }
+        }
+        return added;
+    }
+
+    /**
+     * 手持空白蓝图时，对选区内的盔甲架/白名单生物施加发光效果（6s），每 5s 刷新一次。
+     */
+    private static void applyGlowingToSelectionEntities(net.minecraft.server.MinecraftServer server) {
+        if (server == null) return;
+        for (net.minecraft.server.level.ServerLevel level : server.getAllLevels()) {
+            // 每 5 秒（100 tick）刷新一次，保持发光持续
+            if (level.getGameTime() % 100 != 0) continue;
+            for (net.minecraft.server.level.ServerPlayer player : level.players()) {
+                net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
+                if (!(stack.getItem() instanceof BlankBlueprintItem)) {
+                    stack = player.getOffhandItem();
+                    if (!(stack.getItem() instanceof BlankBlueprintItem)) continue;
+                }
+                BlockPos p1 = BlankBlueprintItem.getPoint1(stack);
+                BlockPos p2 = BlankBlueprintItem.getPoint2(stack);
+                if (p1 == null || p2 == null) continue;
+                int minX = Math.min(p1.getX(), p2.getX()), maxX = Math.max(p1.getX(), p2.getX());
+                int minY = Math.min(p1.getY(), p2.getY()), maxY = Math.max(p1.getY(), p2.getY());
+                int minZ = Math.min(p1.getZ(), p2.getZ()), maxZ = Math.max(p1.getZ(), p2.getZ());
+                AABB box = new AABB(minX, minY, minZ, maxX + 1.0, maxY + 1.0, maxZ + 1.0);
+                for (net.minecraft.world.entity.LivingEntity le :
+                        level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,
+                                box, e -> e instanceof net.minecraft.world.entity.LivingEntity
+                                        && !(e instanceof net.minecraft.world.entity.player.Player))) {
+                    boolean isArmorStand = le instanceof net.minecraft.world.entity.decoration.ArmorStand;
+                    boolean isMob = !isArmorStand && com.xioyim.spatialblueprint.util.BlueprintSanitizer.ALLOWED_MOB_ENTITIES
+                            .contains(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(le.getType()).toString());
+                    if (isArmorStand || isMob) {
+                        le.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                net.minecraft.world.effect.MobEffects.GLOWING, 120, 0, false, false));
+                    }
+                }
+            }
+        }
+    }
+
+    /** 解除放置任务新增的强制加载区块，恢复放置前状态。幂等，可安全重复调用。 */
+    private static void releaseForcedChunks(PendingPlacement placement) {
+        if (placement.level == null) return;
+        for (ChunkPos pos : placement.newlyForcedChunks) {
+            try {
+                placement.level.setChunkForced(pos.x, pos.z, false);
+            } catch (Exception e) {
+                SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Failed to release forced chunk {}: {}",
+                        pos, e.getMessage());
+            }
+        }
+        placement.newlyForcedChunks.clear();
+    }
+
+    /**
+     * 实体放置时的 Y 坐标：画/展示框 方块中心(+0.5)；盔甲架 脚底+0.9875（中心）；生物 脚底(0)。
+     */
+    private static double entityCenterY(BlueprintData.EntityEntry entry, int tileWorldY) {
+        if (entry.type.equals("minecraft:armor_stand")) {
+            return tileWorldY + 0.9875;
+        }
+        if (entry.type.equals("minecraft:painting")
+                || entry.type.equals("minecraft:item_frame")
+                || entry.type.equals("minecraft:glow_item_frame")) {
+            return tileWorldY + 0.5;
+        }
+        return tileWorldY;
     }
 
     /**
@@ -834,6 +1039,7 @@ public class BlueprintPlacementHandler {
         filtered.category    = data.category;
         filtered.creatorName = data.creatorName;
         filtered.sourceName  = data.sourceName;
+        filtered.ownerUuid   = data.ownerUuid;
         filtered.createdAt   = data.createdAt;
         filtered.entities.addAll(data.entities);
         for (BlueprintData.BlockEntry e : data.normalBlocks)
@@ -846,6 +1052,85 @@ public class BlueprintPlacementHandler {
     }
 
     // ── Transform helpers delegated to shared BlueprintTransform util (#12) ──
+    /**
+     * 放置盒型实体（Create 超级胶水等）—— 位置在 NBT 的 {@code From}/{@code To} 角点上，
+     * 不在 {@code Pos} / {@code TileXYZ}。
+     *
+     * <p>捕获时这对角点已转成相对坐标，这里按旋转变换回世界坐标。三个要点：</p>
+     * <ul>
+     *   <li>角点走 {@link BlueprintTransform#cornerX}/{@code cornerZ}（连续坐标，公式不带 -1），
+     *       用方块版会让整个盒子偏一格；</li>
+     *   <li>旋转后 From 不一定还是最小角 —— 90°/180° 会把两个角对调，
+     *       所以变换完必须重新按 min/max 规范化，否则 Create 读出一个反向 AABB；</li>
+     *   <li>{@code Pos} 补成盒子中心。{@code Entity.load} 先读 Pos 再读 From/To，
+     *       Pos 留在原捕获点会让实体先落到很远的地方。</li>
+     * </ul>
+     *
+     * @return 成功放下返回 {@code true}
+     */
+    private static boolean placeBoxEntity(net.minecraft.server.level.ServerLevel level,
+                                          BlueprintData.EntityEntry entry,
+                                          BlockPos origin, BlockPos size, Rotation rotation) {
+        net.minecraft.nbt.ListTag from = entry.nbt.getList("From", 6);
+        net.minecraft.nbt.ListTag to   = entry.nbt.getList("To", 6);
+        if (from.size() != 3 || to.size() != 3) return false;
+
+        double fx = BlueprintTransform.cornerX(from.getDouble(0), from.getDouble(2), size, rotation) + origin.getX();
+        double fz = BlueprintTransform.cornerZ(from.getDouble(0), from.getDouble(2), size, rotation) + origin.getZ();
+        double tx = BlueprintTransform.cornerX(to.getDouble(0),   to.getDouble(2),   size, rotation) + origin.getX();
+        double tz = BlueprintTransform.cornerZ(to.getDouble(0),   to.getDouble(2),   size, rotation) + origin.getZ();
+        double fy = from.getDouble(1) + origin.getY();
+        double ty = to.getDouble(1)   + origin.getY();
+
+        // 旋转把角点对调了，重新规范化成 min/max
+        double loX = Math.min(fx, tx), hiX = Math.max(fx, tx);
+        double loY = Math.min(fy, ty), hiY = Math.max(fy, ty);
+        double loZ = Math.min(fz, tz), hiZ = Math.max(fz, tz);
+
+        if (!level.hasChunkAt(new BlockPos((int) Math.floor(loX), (int) Math.floor(loY), (int) Math.floor(loZ)))) {
+            return false;
+        }
+
+        CompoundTag nbt = entry.nbt.copy();
+        // Create 读盘：bb = (From/To) + Pos，Pos 是盒底中心（resetPositionToBB 的约定）。
+        // 所以 From/To 必须写成相对 Pos 的偏移，不是世界坐标 —— 写世界坐标会被再加一次 Pos，
+        // 盒子跑到两倍远的地方去。
+        double cx = (loX + hiX) / 2.0, cz = (loZ + hiZ) / 2.0;
+        nbt.put("Pos",  doubleTriple(cx, loY, cz));
+        nbt.put("From", doubleTriple(loX - cx, 0.0,       loZ - cz));
+        nbt.put("To",   doubleTriple(hiX - cx, hiY - loY, hiZ - cz));
+        // 这几个是给悬挂实体用的，对盒型实体没有意义，留着反而可能被误读
+        nbt.remove("TileX");
+        nbt.remove("TileY");
+        nbt.remove("TileZ");
+        nbt.remove("Facing");
+        nbt.remove("facing");
+
+        try {
+            java.util.Optional<net.minecraft.world.entity.Entity> opt = EntityType.create(nbt, level);
+            if (opt.isPresent()) {
+                level.addFreshEntity(opt.get());
+                return true;
+            }
+            // Create 没装时这里就是 empty —— 蓝图里带着胶水、目标服务器没有 Create，
+            // 属于正常情况，不该刷 warn。
+            SpatialBlueprintMod.LOGGER.debug(
+                    "[SpatialBlueprint] Box entity '{}' could not be created (mod absent?)", entry.type);
+        } catch (Exception e) {
+            SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Failed to summon box entity {}: {}",
+                    entry.type, e.getMessage());
+        }
+        return false;
+    }
+
+    private static net.minecraft.nbt.ListTag doubleTriple(double a, double b, double c) {
+        net.minecraft.nbt.ListTag list = new net.minecraft.nbt.ListTag();
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(a));
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(b));
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(c));
+        return list;
+    }
+
     private static int transformX(int x, int y, int z, BlockPos size, Rotation rotation) {
         return BlueprintTransform.x(x, y, z, size, rotation);
     }

@@ -7,6 +7,7 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraftforge.fml.loading.FMLPaths;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -30,7 +31,7 @@ import java.util.UUID;
 public class BlueprintStorage {
 
     /** Known category subdirectory names (store removed — replaced by dimensional). */
-    private static final String[] SUBDIRS = {"create", "project", "projections", "templates", "dimensional", "engineering"};
+    private static final String[] SUBDIRS = {"create", "project", "projections", "templates", "dimensional", "engineering", "reward"};
 
     /**
      * Maximum allowed blueprint file size in bytes (64 MB).
@@ -93,6 +94,7 @@ public class BlueprintStorage {
             case "template"    -> getDir().resolve("templates");
             case "dimensional" -> getDir().resolve("dimensional");
             case "engineering" -> getDir().resolve("engineering");
+            case "reward"      -> getDir().resolve("reward");
             default            -> getDir();
         };
     }
@@ -113,6 +115,22 @@ public class BlueprintStorage {
             File[] candidates = dir.toFile().listFiles(
                     (d, name) -> name.endsWith("_" + idStr + ".litematic"));
             if (candidates != null && candidates.length > 0) return candidates[0].toPath();
+        }
+        // 子工程存在 projects/{projectId}/ 下，且文件名不带 "<category>_<name>_" 前缀，
+        // 是纯 "{engUuid}.litematic" —— 上面那轮的下划线匹配对它无效，单独找一遍
+        if (idStr == null) return null;
+        try {
+            UUID.fromString(idStr);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        Path projectsRoot = root.resolve("projects");
+        File[] projectDirs = projectsRoot.toFile().listFiles(File::isDirectory);
+        if (projectDirs != null) {
+            for (File projectDir : projectDirs) {
+                Path candidate = projectDir.toPath().resolve(idStr + ".litematic");
+                if (Files.exists(candidate)) return candidate;
+            }
         }
         return null;
     }
@@ -178,7 +196,7 @@ public class BlueprintStorage {
                         idStr, fileSize, MAX_FILE_BYTES);
                 return null;
             }
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             return BlueprintData.deserialize(tag);
         } catch (IllegalArgumentException e) {
             SpatialBlueprintMod.LOGGER.warn("[BlueprintStorage] Invalid blueprint UUID '{}': {}", idStr, e.getMessage());
@@ -206,6 +224,66 @@ public class BlueprintStorage {
     }
 
     /**
+     * 把蓝图文件重命名为 {@code .bak}，而不是真正删除。
+     *
+     * <p>用于 OP 清理尚未放置（{@code placed == false}）的次元蓝图 —— 这类蓝图仍可被玩家
+     * 重新领取，误删等于同时丢失结构与材料，因此只做改名。{@code .bak} 后缀不被
+     * {@link #collectLitematicFiles} 与 {@link #findFile} 识别，文件会从列表和加载路径中消失，
+     * 但仍留在磁盘上，需要手动进服务器目录才能真正删除。</p>
+     *
+     * @return 改名后的文件名；未找到文件或改名失败时返回 {@code null}
+     */
+    @Nullable
+    public static String renameToBak(String idStr) {
+        invalidateSummaryCache();
+        Path file = findFile(idStr);
+        if (file == null) return null;
+        try {
+            String bakName = file.getFileName().toString() + ".bak";
+            Path target = file.resolveSibling(bakName);
+            // 同名 .bak 已存在时追加时间戳，避免覆盖上一次的备份
+            if (Files.exists(target)) {
+                bakName = file.getFileName() + "." + System.currentTimeMillis() + ".bak";
+                target = file.resolveSibling(bakName);
+            }
+            Files.move(file, target);
+            SpatialBlueprintMod.LOGGER.info(
+                    "[BlueprintStorage] Renamed blueprint '{}' → {} (not deleted)", idStr, bakName);
+            return bakName;
+        } catch (IOException e) {
+            SpatialBlueprintMod.LOGGER.error(
+                    "[BlueprintStorage] Failed to rename blueprint '{}': {}", idStr, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 写入次元蓝图的「已放置」标记与放置点信息。
+     * 只改 {@code SpatialBlueprintData} 下的少数键，不做完整反序列化往返。
+     */
+    public static boolean setPlaced(String idStr, int x, int y, int z, String dimension) {
+        invalidateSummaryCache();
+        Path file = findFile(idStr);
+        if (file == null) return false;
+        try {
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
+            CompoundTag mod = tag.getCompound("SpatialBlueprintData");
+            mod.putBoolean("placed", true);
+            mod.putInt("placedX", x);
+            mod.putInt("placedY", y);
+            mod.putInt("placedZ", z);
+            mod.putString("placedDimension", dimension == null ? "" : dimension);
+            tag.put("SpatialBlueprintData", mod);
+            writeCompressedAtomic(tag, file);
+            return true;
+        } catch (IOException e) {
+            SpatialBlueprintMod.LOGGER.error(
+                    "[BlueprintStorage] Failed to mark blueprint '{}' as placed: {}", idStr, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Renames a blueprint in-place by rewriting only {@code Metadata.Name}.
      * Avoids a full deserialize/serialize round-trip.
      */
@@ -214,7 +292,7 @@ public class BlueprintStorage {
         Path file = findFile(idStr);
         if (file == null) return false;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             tag.getCompound("Metadata").putString("Name", newName);
             writeCompressedAtomic(tag, file);
             return true;
@@ -224,46 +302,72 @@ public class BlueprintStorage {
         }
     }
 
-    /** Updates only the {@code customWithdrawXp} key under {@code SpatialBlueprintData}. Pass -1 to remove the key. */
-    public static boolean setCustomWithdrawXp(String idStr, int xp) {
+    public static boolean updateNotes(String idStr, String noteShort, String noteLong) {
         invalidateSummaryCache();
         Path file = findFile(idStr);
         if (file == null) return false;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             CompoundTag mod = tag.getCompound("SpatialBlueprintData");
-            if (xp < 0) {
-                mod.remove("customWithdrawXp");
-            } else {
-                mod.putInt("customWithdrawXp", xp);
-            }
+            if (noteShort.isEmpty()) mod.remove("noteShort");
+            else mod.putString("noteShort", noteShort);
+            if (noteLong.isEmpty()) mod.remove("noteLong");
+            else mod.putString("noteLong", noteLong);
             tag.put("SpatialBlueprintData", mod);
             writeCompressedAtomic(tag, file);
             return true;
         } catch (IOException e) {
-            SpatialBlueprintMod.LOGGER.error("[BlueprintStorage] Failed to set customWithdrawXp for '{}': {}", idStr, e.getMessage());
+            SpatialBlueprintMod.LOGGER.error(
+                    "[BlueprintStorage] Failed to update notes '{}': {}", idStr, e.getMessage());
             return false;
         }
     }
 
-    /** Updates only the {@code customWithdrawLimit} key under {@code SpatialBlueprintData}. Pass -1 to remove the key. */
-    public static boolean setCustomWithdrawLimit(String idStr, int limit) {
+    /**
+     * Converts a blueprint's category between {@code "create"} (Spatial) and {@code "project"}
+     * (Projection). Only these two categories are supported; any other category is a no-op.
+     *
+     * <p>The file is moved from the old category subdirectory to the new one with an updated
+     * filename prefix. Only the {@code SpatialBlueprintData.category} NBT field changes;
+     * all other blueprint data (name, creator, timestamps, notes, etc.) is preserved.</p>
+     *
+     * @return {@code true} if the conversion succeeded, {@code false} on error or unsupported category.
+     */
+    public static boolean convertCategory(String idStr) {
         invalidateSummaryCache();
-        Path file = findFile(idStr);
-        if (file == null) return false;
+        Path oldFile = findFile(idStr);
+        if (oldFile == null) return false;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
-            CompoundTag mod = tag.getCompound("SpatialBlueprintData");
-            if (limit < 0) {
-                mod.remove("customWithdrawLimit");
-            } else {
-                mod.putInt("customWithdrawLimit", limit);
-            }
-            tag.put("SpatialBlueprintData", mod);
-            writeCompressedAtomic(tag, file);
+            CompoundTag tag     = SafeNbtIo.readCompressed(oldFile.toFile());
+            CompoundTag sbData  = tag.getCompound("SpatialBlueprintData");
+            String oldCategory  = sbData.getString("category");
+            String newCategory  = switch (oldCategory) {
+                case "create"  -> "project";
+                case "project" -> "create";
+                default        -> null;
+            };
+            if (newCategory == null) return false;
+
+            sbData.putString("category", newCategory);
+            tag.put("SpatialBlueprintData", sbData);
+
+            String creatorName = sbData.getString("creatorName");
+            String safeCreator = sanitizeForFilename(creatorName);
+            if (safeCreator.isEmpty()) safeCreator = "unknown";
+
+            Path newDir = dirFor(newCategory);
+            Files.createDirectories(newDir);
+            Path newFile = newDir.resolve(
+                    sanitizeForFilename(newCategory) + "_" + safeCreator + "_" + idStr + ".litematic");
+
+            writeCompressedAtomic(tag, newFile);
+            Files.deleteIfExists(oldFile);
+            SpatialBlueprintMod.LOGGER.debug(
+                    "[BlueprintStorage] Converted blueprint '{}': {} → {}", idStr, oldCategory, newCategory);
             return true;
         } catch (IOException e) {
-            SpatialBlueprintMod.LOGGER.error("[BlueprintStorage] Failed to set customWithdrawLimit for '{}': {}", idStr, e.getMessage());
+            SpatialBlueprintMod.LOGGER.error(
+                    "[BlueprintStorage] Failed to convert category for '{}': {}", idStr, e.getMessage());
             return false;
         }
     }
@@ -274,7 +378,7 @@ public class BlueprintStorage {
         Path file = findFile(idStr);
         if (file == null) return false;
         try {
-            CompoundTag tag = NbtIo.readCompressed(file.toFile());
+            CompoundTag tag = SafeNbtIo.readCompressed(file.toFile());
             CompoundTag mod = tag.getCompound("SpatialBlueprintData");
             mod.putInt("animDuration", seconds);
             tag.put("SpatialBlueprintData", mod);
@@ -311,13 +415,55 @@ public class BlueprintStorage {
      * @param animDuration Animation duration in seconds (0 if not set)
      */
     public record BlueprintSummary(String id, String name, String category, int blockCount, int animDuration,
-                                   int customWithdrawXp, int customWithdrawLimit,
+                                   /** 材料清单条目数（SpatialBlueprintData.materialList.entries）；0 = 无材料清单。 */
+                                   int materialCount,
                                    String creatorName, long createdAt,
-                                   BlockPos fixedStartPos, BlockPos fixedEndPos, int maxDistance,
+                                   BlockPos fixedStartPos, BlockPos fixedEndPos,
                                    String fixedDimension,
-                                   boolean safeCoordSet, int safeX, int safeY, int safeZ,
-                                   boolean safeAllowSurvival,
-                                   String sourceName) {}
+                                   String sourceName,
+                                   com.xioyim.spatialblueprint.util.CaptureMode saveMode,
+                                   String noteShort,
+                                   String noteLong,
+                                   boolean placed, int placedX, int placedY, int placedZ,
+                                   String placedDimension,
+                                   /** 归属玩家 UUID 字符串；空 = 无主（本字段之前捕获的旧蓝图）。 */
+                                   String ownerUuid,
+                                   /**
+                                    * 该蓝图<b>不属于</b>当前存档。扫描时就地判定（服务端能拿到当前存档 UUID、
+                                    * 客户端拿不到），所以这里存的是结论而非原始 UUID。
+                                    * 未记录存档的旧蓝图恒为 false，不去为难旧数据。
+                                    */
+                                   boolean foreignWorld,
+                                   /** 创建时所在存档名，仅用于界面显示「所属存档」。 */
+                                   String worldName,
+                                   /** 上传来源：0=非上传 1=安全上传 2=强制上传。 */
+                                   int uploadMode,
+                                   /**
+                                    * 工程蓝图的安全传送坐标（OP 在蓝图库 [TP] 设；存服务端 SBSafeCoordData，
+                                    * 不在文件里）。listSummaries 一律填 false/0，C2S_RequestLibraryMessage 下发前合并。
+                                    * 放在末尾：摘要 wire 追加字段（T3）。
+                                    */
+                                   boolean safeCoordSet, int safeX, int safeY, int safeZ) {
+
+        /** 只换安全坐标四个字段，其余原样（record 没有 wither，服务端合并 SavedData 时用）。 */
+        public BlueprintSummary withSafeCoord(boolean set, int x, int y, int z) {
+            return new BlueprintSummary(id, name, category, blockCount, animDuration, materialCount,
+                    creatorName, createdAt, fixedStartPos, fixedEndPos, fixedDimension,
+                    sourceName, saveMode, noteShort, noteLong,
+                    placed, placedX, placedY, placedZ, placedDimension, ownerUuid, foreignWorld, worldName,
+                    uploadMode, set, x, y, z);
+        }
+        /**
+         * 该蓝图产自别的存档，且属于「换个存档就失去意义」的类型。
+         *
+         * <p>只有工程蓝图与次元蓝图绑定了固定坐标与维度 —— 空间 / 投影 / 模板本来就是
+         * 拿到哪儿都能放的，不受存档约束。</p>
+         */
+        public boolean worldLocked() {
+            return foreignWorld
+                    && ("engineering".equals(category) || "dimensional".equals(category));
+        }
+    }
 
     /**
      * Scans the save directory (root + all category subdirs) and returns a lightweight
@@ -351,28 +497,48 @@ public class BlueprintStorage {
                             filename, file.length());
                     continue;
                 }
-                CompoundTag tag = NbtIo.readCompressed(file);
+                CompoundTag tag = SafeNbtIo.readCompressed(file);
                 CompoundTag metadata = tag.getCompound("Metadata");
                 CompoundTag mod = tag.getCompound("SpatialBlueprintData");
 
                 String name         = metadata.getString("Name");
                 String category     = mod.contains("category")    ? mod.getString("category")  : "";
                 int animDuration    = mod.contains("animDuration")        ? mod.getInt("animDuration")        : 0;
-                int cwXp            = mod.contains("customWithdrawXp")    ? mod.getInt("customWithdrawXp")    : -1;
-                int cwLimit         = mod.contains("customWithdrawLimit") ? mod.getInt("customWithdrawLimit") : -1;
                 String creatorName  = mod.contains("creatorName") ? mod.getString("creatorName") : "";
                 String sourceName   = mod.contains("sourceName")  ? mod.getString("sourceName")  : "";
+                String noteShort    = mod.contains("noteShort")   ? mod.getString("noteShort")   : "";
+                String noteLong     = mod.contains("noteLong")    ? mod.getString("noteLong")    : "";
                 long   createdAt    = mod.contains("createdAt")   ? mod.getLong("createdAt")     : 0L;
+                int materialCount  = 0;
+                if (mod.contains("materialList", 10)) {
+                    CompoundTag ml = mod.getCompound("materialList");
+                    if (ml.contains("entries", 9)) materialCount = ml.getList("entries", 10).size();
+                }
                 int blockCount      = metadata.contains("TotalBlocks") ? metadata.getInt("TotalBlocks") : 0;
                 BlockPos fixedStartPos = mod.contains("fixedStartPos", 10)
                         ? NbtUtils.readBlockPos(mod.getCompound("fixedStartPos")) : null;
                 BlockPos fixedEndPos   = mod.contains("fixedEndPos",   10)
                         ? NbtUtils.readBlockPos(mod.getCompound("fixedEndPos"))   : null;
-                int maxDistance = mod.contains("maxDistance") ? mod.getInt("maxDistance") : -1;
                 String fixedDimension = mod.contains("fixedDimension") ? mod.getString("fixedDimension") : "";
-                result.add(new BlueprintSummary(id, name, category, blockCount, animDuration, cwXp, cwLimit,
-                        creatorName, createdAt, fixedStartPos, fixedEndPos, maxDistance, fixedDimension,
-                        false, 0, 0, 0, false, sourceName));
+                com.xioyim.spatialblueprint.util.CaptureMode saveMode =
+                        mod.contains("saveMode")
+                                ? com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"))
+                                : com.xioyim.spatialblueprint.util.CaptureMode.SAFE;
+                boolean placed  = mod.getBoolean("placed");
+                int placedX     = mod.getInt("placedX");
+                int placedY     = mod.getInt("placedY");
+                int placedZ     = mod.getInt("placedZ");
+                String placedDim = mod.contains("placedDimension") ? mod.getString("placedDimension") : "";
+                String ownerUuid = mod.contains("ownerUuid") ? mod.getString("ownerUuid") : "";
+                String worldUuid = mod.contains("worldUuid") ? mod.getString("worldUuid") : "";
+                String worldName = mod.contains("worldName") ? mod.getString("worldName") : "";
+                boolean foreignWorld = !WorldIdentity.belongsToCurrentWorld(worldUuid);
+                int uploadMode = mod.contains("uploadMode") ? mod.getInt("uploadMode") : 0;
+                result.add(new BlueprintSummary(id, name, category, blockCount, animDuration, materialCount,
+                        creatorName, createdAt, fixedStartPos, fixedEndPos, fixedDimension,
+                        sourceName, saveMode, noteShort, noteLong,
+                        placed, placedX, placedY, placedZ, placedDim, ownerUuid, foreignWorld, worldName,
+                        uploadMode, false, 0, 0, 0));
             } catch (Exception e) {
                 SpatialBlueprintMod.LOGGER.warn("[BlueprintStorage] Skipped unreadable file '{}': {}",
                         file.getName(), e.getMessage());
@@ -380,6 +546,39 @@ public class BlueprintStorage {
         }
         summaryCache = result;
         return summaryCache;
+    }
+
+    /**
+     * 查某蓝图的归属玩家 UUID —— 走摘要缓存，不做完整反序列化。
+     *
+     * <p>用于右键入口这类只需判归属、不需要方块数据的场景；蓝图不存在或无主时返回空串。</p>
+     */
+    public static String ownerUuidOf(String blueprintId) {
+        if (blueprintId == null || blueprintId.isEmpty()) return "";
+        for (BlueprintSummary s : listSummaries()) {
+            if (s.id().equals(blueprintId)) {
+                return s.ownerUuid() == null ? "" : s.ownerUuid();
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 统计某玩家在某分类下已占用的槽位数。
+     *
+     * <p>只数 {@code ownerUuid} 精确匹配的 —— <b>无主的旧蓝图不计入任何人</b>
+     * （归属制度加入前捕获的那批，谁都用不了，算进谁的额度都不合理）。
+     * 归档成 {@code .bak} 的文件不被 {@code collectLitematicFiles} 识别，天然不计入。</p>
+     *
+     * <p>已放置的次元蓝图<b>仍然占槽位</b> —— 文件还在，玩家删掉它才释放。</p>
+     */
+    public static int countSlots(String ownerUuid, String category) {
+        if (ownerUuid == null || ownerUuid.isEmpty()) return 0;
+        int n = 0;
+        for (BlueprintSummary s : listSummaries()) {
+            if (ownerUuid.equals(s.ownerUuid()) && category.equals(s.category())) n++;
+        }
+        return n;
     }
 
     /** Collects {@code .litematic} files directly inside {@code dir}. */

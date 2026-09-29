@@ -7,25 +7,28 @@ import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 public class BlueprintConfig {
     public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
     public static final ForgeConfigSpec SPEC;
 
-    public static final ForgeConfigSpec.ConfigValue<String>       FLUID_COLOR_WATER;
-    public static final ForgeConfigSpec.ConfigValue<String>       FLUID_COLOR_LAVA;
     public static final ForgeConfigSpec.ConfigValue<List<String>> EXCLUDED_BLOCKS;
-    public static final ForgeConfigSpec.ConfigValue<List<String>> BLOCK_SUBSTITUTIONS;
-    public static final ForgeConfigSpec.IntValue WITHDRAW_XP_RATIO;
-    public static final ForgeConfigSpec.IntValue MAX_WITHDRAW_XP_COST;
-    public static final ForgeConfigSpec.IntValue MAX_WITHDRAW_COUNT;
+    /**
+     * 不允许出现在容器（及任何 NBT 层级）里的<b>物品</b> ID。
+     *
+     * <p>与 {@link #EXCLUDED_BLOCKS} 互补：那份列表只覆盖有方块形式的物品，
+     * 刷怪蛋、命令方块矿车这类<b>纯物品</b>不在方块注册表里，只能靠本列表拦。</p>
+     */
+    public static final ForgeConfigSpec.ConfigValue<List<String>> EXCLUDED_ITEMS;
+    public static final java.util.List<String> DEFAULT_BLOCK_SUBSTITUTIONS;
+    /** 材料空间（非次元分区）总件数上限。0 = 自动取 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME} 的 1.2 倍。 */
+    public static final ForgeConfigSpec.IntValue MATERIAL_SPACE_MAX_COUNT;
+    /** 构建材料复合键时忽略的顶层 NBT 字段。 */
+    public static final ForgeConfigSpec.ConfigValue<List<String>> MATERIAL_SPACE_IGNORED_NBT_KEYS;
     public static final ForgeConfigSpec.IntValue ANIMATION_SPEED;
     public static final ForgeConfigSpec.IntValue ANIMATION_DURATION_MIN;
     public static final ForgeConfigSpec.IntValue ANIMATION_DURATION_MAX;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_CREATIVE_DURATION_EDIT;
     // ── 构建时间自动分档（6档）────────────────────────────────────────────
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER1_MAX_BLOCKS;
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER1_SECONDS;
@@ -37,9 +40,38 @@ public class BlueprintConfig {
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER4_SECONDS;
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER5_MAX_BLOCKS;
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER5_SECONDS;
+    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER6_MAX_BLOCKS;
     public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER6_SECONDS;
-    public static final ForgeConfigSpec.IntValue MAX_CAPTURE_VOLUME_CREATIVE;
-    public static final ForgeConfigSpec.IntValue MAX_CAPTURE_VOLUME_SURVIVAL;
+    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER7_SECONDS;
+    // ── 捕获体积上限：按【蓝图类型】而非游戏模式 ────────────────────────────
+    // 生存 / 创造不再影响上限 —— 一个结构该多大是由它要存成哪种蓝图决定的，
+    // 与玩家当时处于什么模式无关。OP 一律豁免（上限 = ABSOLUTE_MAX_CAPTURE_VOLUME）。
+    /** 空间蓝图体积上限。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_SPATIAL;
+    /** 投影蓝图体积上限。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_PROJECTION;
+    /** 次元蓝图体积上限。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_DIMENSIONAL;
+    /** 工程蓝图体积上限。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_ENGINEERING;
+    /** 投影模板体积上限。0 = 不额外限制（仍受 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME} 硬底线约束）。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_TEMPLATE;
+    /** 项目蓝图选区体积上限。0 = 不额外限制（仍受 ABSOLUTE_MAX_CAPTURE_VOLUME 约束）。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_PROJECTSET;
+    /** 子工程方块数上限。与独立工程蓝图分开配置。 */
+    public static final ForgeConfigSpec.IntValue MAX_VOLUME_SUBPROJECT;
+
+    // ── 磁盘日志保留天数（0 = 永久保留）────────────────────────────────────
+    public static final ForgeConfigSpec.IntValue LOG_RETENTION_DAYS_PLACEMENT;
+    public static final ForgeConfigSpec.IntValue LOG_RETENTION_DAYS_ADMIN;
+
+    // ── 每玩家槽位上限（0 = 不限）──────────────────────────────────────────
+    // 按 ownerUuid + category 统计；无主的旧蓝图不计入任何人，归档为 .bak 的天然不计。
+    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_SPATIAL;
+    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_PROJECTION;
+    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_DIMENSIONAL;
+    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_ENGINEERING;
+    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_TEMPLATE;
     /**
      * Hard upper bound for capture volume regardless of config values.
      * To raise this limit, change the value here and rebuild the mod:
@@ -59,6 +91,8 @@ public class BlueprintConfig {
     public static final ForgeConfigSpec.IntValue PREVIEW_BROADCAST_RADIUS;
     public static final ForgeConfigSpec.IntValue PREVIEW_BROADCAST_INTERVAL;
     public static final ForgeConfigSpec.IntValue EXTRA_COOLDOWN_SECONDS;
+    /** 子工程领取冷却（秒）。每个玩家的每个子工程单独计时。 */
+    public static final ForgeConfigSpec.IntValue SUBPROJECT_CLAIM_COOLDOWN;
     public static final ForgeConfigSpec.IntValue MAX_UNDO_HISTORY;
     public static final ForgeConfigSpec.BooleanValue LARGE_BLUEPRINT_BROADCAST_ENABLED;
     public static final ForgeConfigSpec.IntValue LARGE_BLUEPRINT_BROADCAST_THRESHOLD;
@@ -69,10 +103,21 @@ public class BlueprintConfig {
     // ── 上传安全检测 ────────────────────────────────────────────────────────
     public static final ForgeConfigSpec.IntValue MAX_UPLOAD_FILE_BYTES;
     public static final ForgeConfigSpec.IntValue MAX_NBT_DEPTH;
+
+    /** 上传文件中单个方块实体 NBT 的字节预算，超出即拒收整个文件。 */
+    public static final ForgeConfigSpec.IntValue MAX_BLOCK_ENTITY_NBT_BYTES;
+
+    /** 上传文件中所有方块实体 NBT 的字节总预算，超出即拒收整个文件。 */
+    public static final ForgeConfigSpec.IntValue MAX_TOTAL_NBT_BYTES;
     public static final ForgeConfigSpec.IntValue MAX_BOUNDING_VOLUME;
     public static final ForgeConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS;
     public static final ForgeConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS_OP;
     public static final ForgeConfigSpec.IntValue UPLOAD_MAX_PER_MINUTE;
+    /** 特殊掉落物处理：放置完成发光时，列表中的物品设为永不自动消失。 */
+    public static final ForgeConfigSpec.ConfigValue<List<String>> SPECIAL_DROP_ITEMS;
+
+    /** 盒型实体：位置由 NBT 的 From/To 角点描述，而不是 Pos / TileXYZ。 */
+    public static final ForgeConfigSpec.ConfigValue<List<String>> BOX_ENTITIES;
 
     static {
         BUILDER.push("general");
@@ -88,31 +133,134 @@ public class BlueprintConfig {
                         "minecraft:repeating_command_block",
                         "minecraft:chain_command_block",
                         "minecraft:structure_block",
+                        "minecraft:structure_void",
                         "minecraft:jigsaw",
-                        "minecraft:barrier"
+                        "minecraft:barrier",
+                        "minecraft:nether_portal",
+                        "minecraft:end_gateway",
+                        "minecraft:moving_piston"
                 ));
 
-        MAX_CAPTURE_VOLUME_CREATIVE = BUILDER
-                .comment("Maximum capture volume (W×H×D) for creative-mode players.\n"
-                        + "Default: 300000. Hard cap enforced by the mod: " + ABSOLUTE_MAX_CAPTURE_VOLUME + " blocks.\n"
-                        + "To raise the hard cap, edit ABSOLUTE_MAX_CAPTURE_VOLUME in BlueprintConfig.java.")
-                .defineInRange("maxCaptureVolumeCreative", 300000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+        EXCLUDED_ITEMS = BUILDER
+                .comment("List of ITEM IDs that may not appear inside containers (or anywhere in NBT).",
+                        "Complements excludedBlocks: that list only covers items that also exist as blocks.",
+                        "Pure items such as spawn eggs and command block minecarts are not in the block",
+                        "registry at all and can only be blocked here.",
+                        "Checked recursively against every string 'id' key at any NBT depth, so it also",
+                        "covers nested shulker boxes and modded containers using their own key names.")
+                .define("excludedItems", List.of(
+                        "minecraft:command_block_minecart",
+                        "minecraft:spawner",
+                        "minecraft:bedrock",
+                        "minecraft:barrier",
+                        "minecraft:structure_block",
+                        "minecraft:structure_void",
+                        "minecraft:jigsaw",
+                        "minecraft:command_block",
+                        "minecraft:repeating_command_block",
+                        "minecraft:chain_command_block",
+                        "minecraft:end_portal_frame",
+                        "minecraft:debug_stick",
+                        "minecraft:knowledge_book"
+                ));
 
-        MAX_CAPTURE_VOLUME_SURVIVAL = BUILDER
-                .comment("Maximum capture volume (W×H×D) for survival/adventure-mode players.\n"
-                        + "Default: 100000. Hard cap enforced by the mod: " + ABSOLUTE_MAX_CAPTURE_VOLUME + " blocks.\n"
-                        + "To raise the hard cap, edit ABSOLUTE_MAX_CAPTURE_VOLUME in BlueprintConfig.java.")
-                .defineInRange("maxCaptureVolumeSurvival", 100000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+        BUILDER.comment("Capture volume limits per BLUEPRINT TYPE (non-air block count).",
+                        "Game mode no longer affects these — how big a structure may be is decided by",
+                        "which kind of blueprint it is stored as, not by what mode the player is in.",
+                        "OP players are exempt and always capped at " + ABSOLUTE_MAX_CAPTURE_VOLUME + ".",
+                        "To raise the hard cap, edit ABSOLUTE_MAX_CAPTURE_VOLUME in BlueprintConfig.java.")
+               .push("volumeLimits");
+
+        MAX_VOLUME_SPATIAL = BUILDER
+                .comment("Spatial blueprint volume limit. Default: 500000.")
+                .defineInRange("maxVolumeSpatial", 500000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_PROJECTION = BUILDER
+                .comment("Projection blueprint volume limit. Default: 100000.")
+                .defineInRange("maxVolumeProjection", 100000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_DIMENSIONAL = BUILDER
+                .comment("Dimensional blueprint volume limit. Default: 100000.")
+                .defineInRange("maxVolumeDimensional", 100000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_ENGINEERING = BUILDER
+                .comment("Engineering blueprint volume limit. Default: 100000.")
+                .defineInRange("maxVolumeEngineering", 100000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_TEMPLATE = BUILDER
+                .comment("Projection template volume limit. 0 = no extra limit.",
+                        "Templates are uploaded from untrusted client data, so the",
+                        ABSOLUTE_MAX_CAPTURE_VOLUME + " hard floor still applies even at 0.")
+                .defineInRange("maxVolumeTemplate", 0, 0, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_PROJECTSET = BUILDER
+                .comment("Project blueprint SELECTION VOLUME limit (sizeX * sizeY * sizeZ,",
+                        "not the non-air block count). 0 = no extra limit; only the",
+                        ABSOLUTE_MAX_CAPTURE_VOLUME + " hard cap applies (OP included).")
+                .defineInRange("maxVolumeProjectSet", 0, 0, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        MAX_VOLUME_SUBPROJECT = BUILDER
+                .comment("Sub-project block-count limit, configured separately from",
+                        "maxVolumeEngineering. Default: 300000.")
+                .defineInRange("maxVolumeSubProject", 300000, 1, ABSOLUTE_MAX_CAPTURE_VOLUME);
+
+        BUILDER.pop();
+
+        BUILDER.comment("Disk log retention, in days. 0 = keep forever.",
+                        "Logs live in config/spatial_blueprint/logs/ and roll over daily.",
+                        "placement_<date>.log records successful placements of SAFE/SANITIZE blueprints.",
+                        "admin_<date>.log records events an admin may need to trace later:",
+                        "dimensional archives, FORCE placements, permanent material loss, rejected uploads.")
+               .push("logs");
+
+        LOG_RETENTION_DAYS_PLACEMENT = BUILDER
+                .comment("Retention for placement logs. Default: 30 days.")
+                .defineInRange("retentionDaysPlacement", 30, 0, 3650);
+
+        LOG_RETENTION_DAYS_ADMIN = BUILDER
+                .comment("Retention for admin logs. Default: 90 days (small but high value).")
+                .defineInRange("retentionDaysAdmin", 90, 0, 3650);
+
+        BUILDER.pop();
+
+        BUILDER.comment("Per-player slot limits, counted by owner UUID + blueprint category.",
+                        "0 = unlimited. Blueprints with no recorded owner (captured before the",
+                        "ownership system existed) count towards nobody. Archived .bak files do not count.",
+                        "When a category is full, capture/upload of that type is refused.",
+                        "OP players are exempt. Usage is also shown on the blueprint library tabs.")
+               .push("slotLimits");
+
+        SLOT_LIMIT_SPATIAL = BUILDER
+                .comment("Spatial blueprint slots per player. Default: 0 (unlimited).")
+                .defineInRange("slotLimitSpatial", 0, 0, 100000);
+
+        SLOT_LIMIT_PROJECTION = BUILDER
+                .comment("Projection blueprint slots per player. Default: 30.")
+                .defineInRange("slotLimitProjection", 30, 0, 100000);
+
+        SLOT_LIMIT_DIMENSIONAL = BUILDER
+                .comment("Dimensional blueprint slots per player. Default: 10.")
+                .defineInRange("slotLimitDimensional", 10, 0, 100000);
+
+        SLOT_LIMIT_ENGINEERING = BUILDER
+                .comment("Engineering blueprint slots per player. Default: 0 (unlimited).")
+                .defineInRange("slotLimitEngineering", 0, 0, 100000);
+
+        SLOT_LIMIT_TEMPLATE = BUILDER
+                .comment("Projection template slots per player. Default: 30.")
+                .defineInRange("slotLimitTemplate", 30, 0, 100000);
+
+        BUILDER.pop();
 
         PREVIEW_DISTANCE = BUILDER
-                .comment("Max distance (in blocks) for blueprint placement preview and deployment.")
-                .defineInRange("previewDistance", 64, 1, 256);
+                .comment("Max distance (in blocks) for blueprint placement preview and deployment. Default: 128.")
+                .defineInRange("previewDistance", 128, 1, 256);
 
         RENDER_CANCEL_MARGIN = BUILDER
                 .comment("Extra distance (in blocks) added to the building's half-diagonal for the auto-cancel radius.\n"
                         + "If the player moves farther than (halfDiagonal + margin) from the building center,\n"
-                        + "the preview is hidden and deployment is blocked. Default: 64.")
-                .defineInRange("renderCancelMargin", 64, 0, 512);
+                        + "the preview is hidden and deployment is blocked. Default: 128.")
+                .defineInRange("renderCancelMargin", 128, 0, 512);
 
         PREVIEW_BROADCAST_RADIUS = BUILDER
                 .comment("Radius (in blocks) within which other players can see your blueprint preview outline.\n"
@@ -128,31 +276,20 @@ public class BlueprintConfig {
         BUILDER.pop();
         BUILDER.push("materialList");
 
-        BLOCK_SUBSTITUTIONS = BUILDER
-                .comment("Block substitution map for the material list.\n"
-                        + "When a blueprint captures the left-side block, it is recorded in the material\n"
-                        + "list as the right-side block/item instead. This affects both the material count\n"
-                        + "and the displayed icon, so survival players know which obtainable item to gather.\n"
-                        + "\n"
-                        + "Format: one entry per line as \"sourceBlockId=targetBlockOrItemId\".\n"
-                        + "Example: minecraft:weeping_vines_plant=minecraft:weeping_vines\n"
-                        + "         minecraft:water=minecraft:water_bucket\n"
-                        + "\n"
-                        + "The defaults cover all vanilla blocks that have no direct item form or whose\n"
-                        + "block registry name differs from the obtainable item (wall signs, crop stages,\n"
-                        + "plant variants, liquid blocks, potted plants, etc.).")
-                .define("blockSubstitutions", List.of(
+        // blockSubstitutions 配置项已迁移到独立 toml（GeneratedSubstitutionsConfig）。
+        // 此处仅保留默认值列表作为独立配置的默认值。
+        DEFAULT_BLOCK_SUBSTITUTIONS = List.of(
                         // ── Liquids & fire ─────────────────────────────────────────────────
                         "minecraft:water=minecraft:water_bucket",
                         "minecraft:lava=minecraft:lava_bucket",
-                        "minecraft:bubble_column=minecraft:water_bucket",
+                        "minecraft:bubble_column=",
                         "minecraft:fire=minecraft:flint_and_steel",
-                        "minecraft:soul_fire=minecraft:soul_torch",
-                        "minecraft:powder_snow=minecraft:powder_snow_bucket",
-                        // ── Cauldrons (filled variants) ────────────────────────────────────
-                        "minecraft:water_cauldron=minecraft:water_bucket",
-                        "minecraft:lava_cauldron=minecraft:lava_bucket",
-                        "minecraft:powder_snow_cauldron=minecraft:powder_snow_bucket",
+                        "minecraft:soul_fire=minecraft:flint_and_steel",
+                        "minecraft:powder_snow=minecraft:snowball",
+                        // ── Cauldrons (filled variants: cauldron + its content) ────────────
+                        "minecraft:water_cauldron=minecraft:cauldron+minecraft:water_bucket",
+                        "minecraft:lava_cauldron=minecraft:cauldron+minecraft:lava_bucket",
+                        "minecraft:powder_snow_cauldron=minecraft:cauldron+minecraft:snowball",
                         // ── Piston ────────────────────────────────────────────────────────
                         "minecraft:piston_head=minecraft:piston",
                         // ── Redstone & string ─────────────────────────────────────────────
@@ -162,6 +299,7 @@ public class BlueprintConfig {
                         "minecraft:carrots=minecraft:carrot",
                         "minecraft:potatoes=minecraft:potato",
                         "minecraft:beetroots=minecraft:beetroot_seeds",
+                        "minecraft:wheat=minecraft:wheat_seeds",
                         "minecraft:cocoa=minecraft:cocoa_beans",
                         "minecraft:melon_stem=minecraft:melon_seeds",
                         "minecraft:pumpkin_stem=minecraft:pumpkin_seeds",
@@ -170,13 +308,27 @@ public class BlueprintConfig {
                         "minecraft:sweet_berry_bush=minecraft:sweet_berries",
                         "minecraft:torchflower_crop=minecraft:torchflower_seeds",
                         "minecraft:pitcher_crop=minecraft:pitcher_pod",
+                        // ── 免费（转化为空气）：海草、高海草、草、高草、雪层等 ───────────
+                        "minecraft:seagrass=",
+                        "minecraft:tall_seagrass=",
+                        // ⚠ 1.20.1 里矮草叫 minecraft:grass，1.20.3 才改名 minecraft:short_grass。
+                        // 升级版本时要跟着改，否则这条匹配不到任何方块（配置菜单里显示无图标）。
+                        "minecraft:grass=",
+                        "minecraft:tall_grass=",
+                        "minecraft:snow=",
+                        "minecraft:moss_carpet=",
+                        "minecraft:pink_petals=",
+                        "minecraft:sculk_vein=",
+                        // ── 转化为其他物品 ────────────────────────────────────────────────
+                        "minecraft:cobweb=minecraft:string",
+                        "minecraft:grass_block=minecraft:dirt",
+                        "minecraft:farmland=minecraft:dirt",
                         // ── Vine / seagrass plant-block variants ──────────────────────────
                         "minecraft:kelp_plant=minecraft:kelp",
                         "minecraft:weeping_vines_plant=minecraft:weeping_vines",
                         "minecraft:twisting_vines_plant=minecraft:twisting_vines",
                         "minecraft:cave_vines=minecraft:glow_berries",
                         "minecraft:cave_vines_plant=minecraft:glow_berries",
-                        "minecraft:tall_seagrass=minecraft:seagrass",
                         "minecraft:big_dripleaf_stem=minecraft:big_dripleaf",
                         "minecraft:bamboo_sapling=minecraft:bamboo",
                         // ── Wall torches ──────────────────────────────────────────────────
@@ -207,23 +359,23 @@ public class BlueprintConfig {
                         "minecraft:bamboo_wall_hanging_sign=minecraft:bamboo_hanging_sign",
                         "minecraft:crimson_wall_hanging_sign=minecraft:crimson_hanging_sign",
                         "minecraft:warped_wall_hanging_sign=minecraft:warped_hanging_sign",
-                        // ── Wall banners (all 16 colors) ──────────────────────────────────
+                        // ── Wall banners (all colors → default white banner, shown with its pattern NBT) ──
                         "minecraft:white_wall_banner=minecraft:white_banner",
-                        "minecraft:orange_wall_banner=minecraft:orange_banner",
-                        "minecraft:magenta_wall_banner=minecraft:magenta_banner",
-                        "minecraft:light_blue_wall_banner=minecraft:light_blue_banner",
-                        "minecraft:yellow_wall_banner=minecraft:yellow_banner",
-                        "minecraft:lime_wall_banner=minecraft:lime_banner",
-                        "minecraft:pink_wall_banner=minecraft:pink_banner",
-                        "minecraft:gray_wall_banner=minecraft:gray_banner",
-                        "minecraft:light_gray_wall_banner=minecraft:light_gray_banner",
-                        "minecraft:cyan_wall_banner=minecraft:cyan_banner",
-                        "minecraft:purple_wall_banner=minecraft:purple_banner",
-                        "minecraft:blue_wall_banner=minecraft:blue_banner",
-                        "minecraft:brown_wall_banner=minecraft:brown_banner",
-                        "minecraft:green_wall_banner=minecraft:green_banner",
-                        "minecraft:red_wall_banner=minecraft:red_banner",
-                        "minecraft:black_wall_banner=minecraft:black_banner",
+                        "minecraft:orange_wall_banner=minecraft:white_banner",
+                        "minecraft:magenta_wall_banner=minecraft:white_banner",
+                        "minecraft:light_blue_wall_banner=minecraft:white_banner",
+                        "minecraft:yellow_wall_banner=minecraft:white_banner",
+                        "minecraft:lime_wall_banner=minecraft:white_banner",
+                        "minecraft:pink_wall_banner=minecraft:white_banner",
+                        "minecraft:gray_wall_banner=minecraft:white_banner",
+                        "minecraft:light_gray_wall_banner=minecraft:white_banner",
+                        "minecraft:cyan_wall_banner=minecraft:white_banner",
+                        "minecraft:purple_wall_banner=minecraft:white_banner",
+                        "minecraft:blue_wall_banner=minecraft:white_banner",
+                        "minecraft:brown_wall_banner=minecraft:white_banner",
+                        "minecraft:green_wall_banner=minecraft:white_banner",
+                        "minecraft:red_wall_banner=minecraft:white_banner",
+                        "minecraft:black_wall_banner=minecraft:white_banner",
                         // ── Wall heads & skulls ───────────────────────────────────────────
                         "minecraft:skeleton_wall_skull=minecraft:skeleton_skull",
                         "minecraft:wither_skeleton_wall_skull=minecraft:wither_skeleton_skull",
@@ -262,61 +414,56 @@ public class BlueprintConfig {
                         "minecraft:red_candle_cake=minecraft:red_candle",
                         "minecraft:black_candle_cake=minecraft:black_candle",
                         // ── Potted plants (pot not tracked; map to contained plant) ────────
-                        "minecraft:potted_oak_sapling=minecraft:oak_sapling",
-                        "minecraft:potted_spruce_sapling=minecraft:spruce_sapling",
-                        "minecraft:potted_birch_sapling=minecraft:birch_sapling",
-                        "minecraft:potted_jungle_sapling=minecraft:jungle_sapling",
-                        "minecraft:potted_acacia_sapling=minecraft:acacia_sapling",
-                        "minecraft:potted_dark_oak_sapling=minecraft:dark_oak_sapling",
-                        "minecraft:potted_mangrove_propagule=minecraft:mangrove_propagule",
-                        "minecraft:potted_cherry_sapling=minecraft:cherry_sapling",
-                        "minecraft:potted_bamboo=minecraft:bamboo",
-                        "minecraft:potted_fern=minecraft:fern",
-                        "minecraft:potted_dandelion=minecraft:dandelion",
-                        "minecraft:potted_poppy=minecraft:poppy",
-                        "minecraft:potted_blue_orchid=minecraft:blue_orchid",
-                        "minecraft:potted_allium=minecraft:allium",
-                        "minecraft:potted_azure_bluet=minecraft:azure_bluet",
-                        "minecraft:potted_red_tulip=minecraft:red_tulip",
-                        "minecraft:potted_orange_tulip=minecraft:orange_tulip",
-                        "minecraft:potted_white_tulip=minecraft:white_tulip",
-                        "minecraft:potted_pink_tulip=minecraft:pink_tulip",
-                        "minecraft:potted_oxeye_daisy=minecraft:oxeye_daisy",
-                        "minecraft:potted_cornflower=minecraft:cornflower",
-                        "minecraft:potted_lily_of_the_valley=minecraft:lily_of_the_valley",
-                        "minecraft:potted_wither_rose=minecraft:wither_rose",
-                        "minecraft:potted_brown_mushroom=minecraft:brown_mushroom",
-                        "minecraft:potted_red_mushroom=minecraft:red_mushroom",
-                        "minecraft:potted_crimson_fungus=minecraft:crimson_fungus",
-                        "minecraft:potted_warped_fungus=minecraft:warped_fungus",
-                        "minecraft:potted_crimson_roots=minecraft:crimson_roots",
-                        "minecraft:potted_warped_roots=minecraft:warped_roots",
-                        "minecraft:potted_dead_bush=minecraft:dead_bush",
-                        "minecraft:potted_cactus=minecraft:cactus",
-                        "minecraft:potted_azalea_bush=minecraft:azalea",
-                        "minecraft:potted_flowering_azalea_bush=minecraft:flowering_azalea",
-                        "minecraft:potted_torchflower=minecraft:torchflower"
-                ));
+                        "minecraft:potted_oak_sapling=minecraft:flower_pot+minecraft:oak_sapling",
+                        "minecraft:potted_spruce_sapling=minecraft:flower_pot+minecraft:spruce_sapling",
+                        "minecraft:potted_birch_sapling=minecraft:flower_pot+minecraft:birch_sapling",
+                        "minecraft:potted_jungle_sapling=minecraft:flower_pot+minecraft:jungle_sapling",
+                        "minecraft:potted_acacia_sapling=minecraft:flower_pot+minecraft:acacia_sapling",
+                        "minecraft:potted_dark_oak_sapling=minecraft:flower_pot+minecraft:dark_oak_sapling",
+                        "minecraft:potted_mangrove_propagule=minecraft:flower_pot+minecraft:mangrove_propagule",
+                        "minecraft:potted_cherry_sapling=minecraft:flower_pot+minecraft:cherry_sapling",
+                        "minecraft:potted_bamboo=minecraft:flower_pot+minecraft:bamboo",
+                        "minecraft:potted_fern=minecraft:flower_pot+minecraft:fern",
+                        "minecraft:potted_dandelion=minecraft:flower_pot+minecraft:dandelion",
+                        "minecraft:potted_poppy=minecraft:flower_pot+minecraft:poppy",
+                        "minecraft:potted_blue_orchid=minecraft:flower_pot+minecraft:blue_orchid",
+                        "minecraft:potted_allium=minecraft:flower_pot+minecraft:allium",
+                        "minecraft:potted_azure_bluet=minecraft:flower_pot+minecraft:azure_bluet",
+                        "minecraft:potted_red_tulip=minecraft:flower_pot+minecraft:red_tulip",
+                        "minecraft:potted_orange_tulip=minecraft:flower_pot+minecraft:orange_tulip",
+                        "minecraft:potted_white_tulip=minecraft:flower_pot+minecraft:white_tulip",
+                        "minecraft:potted_pink_tulip=minecraft:flower_pot+minecraft:pink_tulip",
+                        "minecraft:potted_oxeye_daisy=minecraft:flower_pot+minecraft:oxeye_daisy",
+                        "minecraft:potted_cornflower=minecraft:flower_pot+minecraft:cornflower",
+                        "minecraft:potted_lily_of_the_valley=minecraft:flower_pot+minecraft:lily_of_the_valley",
+                        "minecraft:potted_wither_rose=minecraft:flower_pot+minecraft:wither_rose",
+                        "minecraft:potted_brown_mushroom=minecraft:flower_pot+minecraft:brown_mushroom",
+                        "minecraft:potted_red_mushroom=minecraft:flower_pot+minecraft:red_mushroom",
+                        "minecraft:potted_crimson_fungus=minecraft:flower_pot+minecraft:crimson_fungus",
+                        "minecraft:potted_warped_fungus=minecraft:flower_pot+minecraft:warped_fungus",
+                        "minecraft:potted_crimson_roots=minecraft:flower_pot+minecraft:crimson_roots",
+                        "minecraft:potted_warped_roots=minecraft:flower_pot+minecraft:warped_roots",
+                        "minecraft:potted_dead_bush=minecraft:flower_pot+minecraft:dead_bush",
+                        "minecraft:potted_cactus=minecraft:flower_pot+minecraft:cactus",
+                        "minecraft:potted_azalea_bush=minecraft:flower_pot+minecraft:azalea",
+                        "minecraft:potted_flowering_azalea_bush=minecraft:flower_pot+minecraft:flowering_azalea",
+                        "minecraft:potted_torchflower=minecraft:flower_pot+minecraft:torchflower"
+                );
 
-        WITHDRAW_XP_RATIO = BUILDER
-                .comment("Experience level cost ratio for quick-withdrawing materials from a blueprint.\n"
-                        + "Cost = ceil(material_types / ratio), capped at maxWithdrawXpCost, minimum 1.\n"
-                        + "Example: 10 material types with ratio 6 → ceil(10/6) = 2 levels.\n"
-                        + "Set to 0 to disable XP cost entirely (free withdrawals).\n"
-                        + "Per-blueprint override (set by creative players via ✦ button) takes priority.")
-                .defineInRange("withdrawXpRatio", 6, 0, 100);
+        MATERIAL_SPACE_MAX_COUNT = BUILDER
+                .comment("Maximum total item count in a player's material space (non-dimensional partition).\n"
+                        + "0 = auto: ABSOLUTE_MAX_CAPTURE_VOLUME * 1.2 = 1920000.\n"
+                        + "The dimensional partition (materials captured by dimensional blueprints)\n"
+                        + "is bound to blueprint IDs and is NOT subject to this cap.")
+                .defineInRange("materialSpaceMaxCount", 0, 0, Integer.MAX_VALUE);
 
-        MAX_WITHDRAW_XP_COST = BUILDER
-                .comment("Maximum experience levels deducted per quick-withdraw operation.\n"
-                        + "Acts as a hard cap on the formula-calculated cost.\n"
-                        + "Per-blueprint custom XP (set via ✦) is NOT capped by this value.")
-                .defineInRange("maxWithdrawXpCost", 30, 1, 1000);
-
-        MAX_WITHDRAW_COUNT = BUILDER
-                .comment("Maximum number of times a survival player may quick-withdraw from one blueprint item.\n"
-                        + "After reaching this limit the ♻ button is disabled. Creative mode is unrestricted.\n"
-                        + "Per-blueprint override via the ⊘ button in the blueprint library.")
-                .defineInRange("maxWithdrawCount", 5, 1, 1000);
+        MATERIAL_SPACE_IGNORED_NBT_KEYS = BUILDER
+                .comment("Top-level NBT keys ignored when building a material key.\n"
+                        + "Items differing ONLY in these fields are treated as the same material.\n"
+                        + "Default: RepairCost — otherwise the same enchanted gear with a different\n"
+                        + "anvil repair cost counts as a separate material and cannot be deposited.")
+                .define("materialSpaceIgnoredNbtKeys",
+                        (List<String>) new ArrayList<>(List.of("RepairCost")));
 
         BUILDER.pop();
         BUILDER.push("animation");
@@ -343,29 +490,36 @@ public class BlueprintConfig {
                 .defineInRange("buildTimeTier2Seconds", 12, 1, 3600);
 
         BUILD_TIME_TIER3_MAX_BLOCKS = BUILDER
-                .comment("Build-time tier 3: < this many blocks → tier3 seconds. Default: 80000")
-                .defineInRange("buildTimeTier3MaxBlocks", 80000, 1, 2000000);
+                .comment("Build-time tier 3: < this many blocks → tier3 seconds. Default: 120000")
+                .defineInRange("buildTimeTier3MaxBlocks", 120000, 1, 2000000);
         BUILD_TIME_TIER3_SECONDS = BUILDER
                 .comment("Build-time tier 3 duration in seconds. Default: 16")
                 .defineInRange("buildTimeTier3Seconds", 16, 1, 3600);
 
         BUILD_TIME_TIER4_MAX_BLOCKS = BUILDER
-                .comment("Build-time tier 4: < this many blocks → tier4 seconds. Default: 100000")
-                .defineInRange("buildTimeTier4MaxBlocks", 100000, 1, 2000000);
+                .comment("Build-time tier 4: < this many blocks → tier4 seconds. Default: 250000")
+                .defineInRange("buildTimeTier4MaxBlocks", 250000, 1, 2000000);
         BUILD_TIME_TIER4_SECONDS = BUILDER
                 .comment("Build-time tier 4 duration in seconds. Default: 25")
                 .defineInRange("buildTimeTier4Seconds", 25, 1, 3600);
 
         BUILD_TIME_TIER5_MAX_BLOCKS = BUILDER
-                .comment("Build-time tier 5: < this many blocks → tier5 seconds. Default: 200000")
-                .defineInRange("buildTimeTier5MaxBlocks", 200000, 1, 2000000);
+                .comment("Build-time tier 5: < this many blocks → tier5 seconds. Default: 400000")
+                .defineInRange("buildTimeTier5MaxBlocks", 400000, 1, 2000000);
         BUILD_TIME_TIER5_SECONDS = BUILDER
                 .comment("Build-time tier 5 duration in seconds. Default: 30")
                 .defineInRange("buildTimeTier5Seconds", 30, 1, 3600);
 
+        BUILD_TIME_TIER6_MAX_BLOCKS = BUILDER
+                .comment("Build-time tier 6: < this many blocks → tier6 seconds. Default: 600000")
+                .defineInRange("buildTimeTier6MaxBlocks", 600000, 1, 2000000);
         BUILD_TIME_TIER6_SECONDS = BUILDER
-                .comment("Build-time tier 6 (catch-all for >= tier5 blocks). Default: 40")
-                .defineInRange("buildTimeTier6Seconds", 40, 1, 3600);
+                .comment("Build-time tier 6 duration in seconds. Default: 50")
+                .defineInRange("buildTimeTier6Seconds", 50, 1, 3600);
+
+        BUILD_TIME_TIER7_SECONDS = BUILDER
+                .comment("Build-time tier 7 (catch-all for >= tier6 blocks). Default: 60")
+                .defineInRange("buildTimeTier7Seconds", 60, 1, 3600);
 
         ANIMATION_DURATION_MIN = BUILDER
                 .comment("Minimum animation duration (seconds) for all players (including OP and creative). Default: 3")
@@ -375,16 +529,17 @@ public class BlueprintConfig {
                 .comment("Maximum animation duration (seconds) for all players (including OP and creative). Default: 600")
                 .defineInRange("animationDurationMax", 600, 1, 3600);
 
-        ALLOW_CREATIVE_DURATION_EDIT = BUILDER
-                .comment("If true, creative mode players can manually edit the build duration (same as OP).\n"
-                        + "If false, creative players are read-only and duration is auto-calculated. Default: false")
-                .define("allowCreativeDurationEdit", false);
-
         EXTRA_COOLDOWN_SECONDS = BUILDER
                 .comment("Extra cooldown (seconds) added on top of the animation duration after a blueprint\n"
                         + "finishes deploying. Total cooldown = animationDuration + extraCooldown.\n"
                         + "During this time the item shows as a 'building blueprint' and cannot be re-used.")
                 .defineInRange("extraCooldownSeconds", 3, 0, 3600);
+
+        SUBPROJECT_CLAIM_COOLDOWN = BUILDER
+                .comment("Cooldown in seconds between claims of the SAME sub-project",
+                        "by the SAME player. Counted per player per sub-project.",
+                        "Default: 600 (10 minutes). 0 disables the cooldown.")
+                .defineInRange("subProjectClaimCooldownSeconds", 600, 0, 86400);
 
         MAX_UNDO_HISTORY = BUILDER
                 .comment("Maximum number of undo records stored per creative-mode player for /sb undo.\n"
@@ -405,9 +560,12 @@ public class BlueprintConfig {
 
         DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA = BUILDER
                 .comment("If true, creative-mode players are also subject to territory-protection checks\n"
-                        + "during blueprint placement (same as survival players).\n"
-                        + "Default: false (creative players bypass territory protection — vanilla behavior).")
-                .define("denyCreativePlacementInProtectedArea", false);
+                        + "(same as survival players). Covers BOTH directions of world modification:\n"
+                        + "  - placement (EntityPlaceEvent + BreakEvent on the clear pass)\n"
+                        + "  - dimensional-blueprint capture, which clears the region (BreakEvent)\n"
+                        + "The key name says 'placement' for backward compatibility with existing configs.\n"
+                        + "Default: true.")
+                .define("denyCreativePlacementInProtectedArea", true);
 
         BUILDER.pop();
         BUILDER.push("placement");
@@ -472,20 +630,6 @@ public class BlueprintConfig {
                 ));
 
         BUILDER.pop();
-        BUILDER.push("preview");
-
-        FLUID_COLOR_WATER = BUILDER
-                .comment("Ghost preview color for water blocks in blueprint rendering (6-digit RGB hex).\n"
-                        + "Fluid blocks are rendered as opaque solid-color cubes to avoid animated texture overhead.\n"
-                        + "Default: 3F76E4 (Minecraft water blue). Prefix '#' is optional.")
-                .define("fluidPreviewColorWater", "3F76E4");
-
-        FLUID_COLOR_LAVA = BUILDER
-                .comment("Ghost preview color for lava blocks in blueprint rendering (6-digit RGB hex).\n"
-                        + "Default: FF6400 (lava orange).")
-                .define("fluidPreviewColorLava", "FF6400");
-
-        BUILDER.pop();
         BUILDER.push("upload_security");
 
         MAX_UPLOAD_FILE_BYTES = BUILDER
@@ -535,13 +679,76 @@ public class BlueprintConfig {
                 .defineInRange("uploadMaxPerMinute", 10, 1, 1000);
 
         BUILDER.pop();
+        BUILDER.push("nbt_budget");
+
+        MAX_BLOCK_ENTITY_NBT_BYTES = BUILDER
+                .comment("Byte budget for a SINGLE block entity NBT in an UPLOADED blueprint file.",
+                        "The other upload checks measure compressed size, nesting depth and bounding",
+                        "box -- none of them measures NBT BYTES. A command block holds up to 32500",
+                        "chars in one tag, player-head skin blobs are all distinct so they never dedupe,",
+                        "and a 5000-entry enchantment list is only 3 levels deep so maxNbtDepth never",
+                        "sees it. None of those are dangerous or block-count-heavy, yet they inflate",
+                        "the save by orders of magnitude.",
+                        "UPLOAD ONLY -- capture is deliberately unlimited: OP forced blueprints must be",
+                        "able to carry every byte of NBT, and dimensional blueprints move the structure",
+                        "out of the world so their contents have to come along.",
+                        "Over budget = that block entity's NBT is CLEARED and the block is KEPT; the",
+                        "file still uploads. Only maxTotalNbtBytes rejects the whole file, because a",
+                        "total overrun cannot be fixed by clearing one block. Same for maxNbtDepth.",
+                        "Default: 8192 (8 KB). Vanilla block entities are far below this.")
+                .defineInRange("maxBlockEntityNbtBytes", 8192, 512, 1_048_576);
+
+        MAX_TOTAL_NBT_BYTES = BUILDER
+                .comment("Byte budget for ALL block-entity NBT in one uploaded file, summed.",
+                        "Only block-entity NBT counts toward this -- the bounding box and block count",
+                        "are bounded by maxBoundingVolume and the maxVolume* settings instead.",
+                        "UPLOAD ONLY, same rationale as maxBlockEntityNbtBytes.",
+                        "Default: 20971520 (20 MB).")
+                .defineInRange("maxTotalNbtBytes", 20_971_520, 1_048_576, Integer.MAX_VALUE);
+
+        BUILDER.pop();
+        BUILDER.push("special_drops");
+
+        // Special drop handling: when placement glows the drops, items in this list never despawn
+        SPECIAL_DROP_ITEMS = BUILDER
+                .comment("Special drop handling: when blueprint placement glows the dropped items,\n"
+                        + "items in this list are set to never despawn automatically (UnlimitedLifetime).\n"
+                        + "Default: lead, item_frame, glow_item_frame.")
+                .define("specialDropItems", List.of(
+                        "minecraft:lead",
+                        "minecraft:item_frame",
+                        "minecraft:glow_item_frame"));
+
+        BOX_ENTITIES = BUILDER
+                .comment("Entity IDs whose position is described by a From/To corner pair in NBT",
+                        "(a double ListTag each) instead of Pos / TileX-Y-Z.",
+                        "Create's super glue is the reason this exists: it is an invisible box spanning",
+                        "two blocks, and Create refuses to re-assemble a contraption without it —",
+                        "capturing the blocks but not the glue makes the structure fall apart on placement.",
+                        "These entities are captured only when the box lies entirely inside the selection,",
+                        "and their corners are rotated with the blueprint on placement.",
+                        "Listing an ID here is harmless when the mod providing it is absent.")
+                .define("boxEntities", List.of(
+                        "create:super_glue"));
+
+        BUILDER.pop();
         SPEC = BUILDER.build();
     }
 
     private static List<Block> cachedExcludedBlocks              = null;
-    private static Map<String, String> cachedSubstitutions       = null;
+    private static java.util.Set<String> cachedExcludedItems     = null;
     private static java.util.Set<String> cachedLatePlaceBlocks   = null;
+    private static java.util.Set<String> cachedBoxEntities       = null;
     private static java.util.Set<String> cachedHiddenPreviewBlocks = null;
+    private static java.util.Set<String> cachedSpecialDropItems  = null;
+
+    /** 特殊掉落物物品 ID 集合（永不消失）。 */
+    public static java.util.Set<String> getSpecialDropItems() {
+        if (cachedSpecialDropItems == null) {
+            cachedSpecialDropItems = new java.util.HashSet<>(SPECIAL_DROP_ITEMS.get());
+        }
+        return cachedSpecialDropItems;
+    }
 
     public static List<Block> getExcludedBlocks() {
         if (cachedExcludedBlocks == null) {
@@ -576,25 +783,66 @@ public class BlueprintConfig {
     }
 
     /**
-     * Returns the block-substitution map: source block registry ID → target block/item registry ID.
+     * 该分类的捕获体积上限（非空气方块数）。
      *
-     * <p>Applied at material-list creation time so the recorded ID is the obtainable target.
-     * For example {@code minecraft:weeping_vines_plant} → {@code minecraft:weeping_vines}
-     * means survival players are told to gather weeping vines, not the unobtainable plant form.</p>
+     * <p>OP 请直接用 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME}，不要走本方法 —— OP 一律豁免。</p>
+     *
+     * @param category {@code create} / {@code project} / {@code dimensional} /
+     *                 {@code engineering} / {@code template}；未知分类按空间蓝图处理
+     * @return 有效上限，恒不超过 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME}
      */
-    public static Map<String, String> getBlockSubstitutions() {
-        if (cachedSubstitutions == null) {
-            cachedSubstitutions = new LinkedHashMap<>();
-            for (String entry : BLOCK_SUBSTITUTIONS.get()) {
-                int eq = entry.indexOf('=');
-                if (eq > 0) {
-                    cachedSubstitutions.put(
-                            entry.substring(0, eq).trim(),
-                            entry.substring(eq + 1).trim());
-                }
-            }
+    public static int getMaxVolumeFor(String category) {
+        int configured = switch (category == null ? "" : category) {
+            case "project"     -> MAX_VOLUME_PROJECTION.get();
+            case "dimensional" -> MAX_VOLUME_DIMENSIONAL.get();
+            case "engineering" -> MAX_VOLUME_ENGINEERING.get();
+            // 模板的 0 表示「不额外限制」，退回硬底线
+            case "template"    -> MAX_VOLUME_TEMPLATE.get() <= 0
+                                        ? ABSOLUTE_MAX_CAPTURE_VOLUME : MAX_VOLUME_TEMPLATE.get();
+            // 项目蓝图按选区体积算；0 表示「不额外限制」，退回硬底线（同模板）
+            case "projectset"  -> MAX_VOLUME_PROJECTSET.get() <= 0
+                                        ? ABSOLUTE_MAX_CAPTURE_VOLUME : MAX_VOLUME_PROJECTSET.get();
+            case "subproject"  -> MAX_VOLUME_SUBPROJECT.get();
+            default            -> MAX_VOLUME_SPATIAL.get();
+        };
+        return Math.min(configured, ABSOLUTE_MAX_CAPTURE_VOLUME);
+    }
+
+    /**
+     * 该分类的每玩家槽位上限；{@code 0} 表示不限。
+     *
+     * <p>满槽位时该类型的捕获 / 上传会被拒绝（OP 豁免）；用量同时显示在蓝图列表的 tab 上。</p>
+     */
+    public static int getSlotLimitFor(String category) {
+        return switch (category == null ? "" : category) {
+            case "project"     -> SLOT_LIMIT_PROJECTION.get();
+            case "dimensional" -> SLOT_LIMIT_DIMENSIONAL.get();
+            case "engineering" -> SLOT_LIMIT_ENGINEERING.get();
+            case "template"    -> SLOT_LIMIT_TEMPLATE.get();
+            // 奖励蓝图是 OP 发出去的东西，不占玩家槽位 —— 发多了不该把玩家的投影额度挤爆
+            case "reward"      -> 0;
+            // 项目蓝图与子工程都不占玩家槽位
+            case "projectset", "subproject" -> 0;
+            default            -> SLOT_LIMIT_SPATIAL.get();
+        };
+    }
+
+    /**
+     * 按注册名字符串检测是否为禁用<b>物品</b>（配置 {@code excludedItems}）。
+     *
+     * <p>只查本列表，不查 {@code excludedBlocks} —— 两者的合并判定在
+     * {@code BlueprintSanitizer.isIllegalItemId()} 里做。</p>
+     */
+    public static boolean isExcludedItemId(String registryId) {
+        return getExcludedItems().contains(registryId);
+    }
+
+    /** {@code excludedItems} 的集合形式（缓存）。 */
+    public static java.util.Set<String> getExcludedItems() {
+        if (cachedExcludedItems == null) {
+            cachedExcludedItems = new java.util.HashSet<>(EXCLUDED_ITEMS.get());
         }
-        return cachedSubstitutions;
+        return cachedExcludedItems;
     }
 
     /** Returns the set of block registry IDs that should be force-placed last (round 4). */
@@ -605,14 +853,21 @@ public class BlueprintConfig {
         return cachedLatePlaceBlocks;
     }
 
-    /** Returns the 0x00RRGGBB color for water ghost blocks in preview. */
-    public static int getWaterPreviewColor() { return parseHexRgb(FLUID_COLOR_WATER.get()); }
-    /** Returns the 0x00RRGGBB color for lava ghost blocks in preview. */
-    public static int getLavaPreviewColor()  { return parseHexRgb(FLUID_COLOR_LAVA.get()); }
-
-    private static int parseHexRgb(String hex) {
-        try { return Integer.parseUnsignedInt(hex.strip().replaceFirst("^#", ""), 16) & 0xFFFFFF; }
-        catch (NumberFormatException e) { return 0xFFFFFF; }
+    /**
+     * 位置由 NBT 的 {@code From}/{@code To} 角点描述的实体 ID 集合。
+     *
+     * <p>这类实体的几何是一个 AABB，捕获与放置都要单独处理角点坐标 ——
+     * 见 {@code CaptureAreaMessage} 的盒型实体段与 {@code BlueprintPlacementHandler.placeBoxEntity}。</p>
+     *
+     * <p>⚠ Create 的 {@code From}/{@code To} 是<b>相对 {@code Pos} 的偏移</b>（存盘
+     * {@code bb.move(-pos)}，读盘 {@code +pos}），{@code Pos} 取盒底中心。它们不是世界坐标；
+     * 捕获侧几何一律取 {@code entity.getBoundingBox()}，放置侧按同一约定写回三个键。</p>
+     */
+    public static java.util.Set<String> getBoxEntities() {
+        if (cachedBoxEntities == null) {
+            cachedBoxEntities = new java.util.HashSet<>(BOX_ENTITIES.get());
+        }
+        return cachedBoxEntities;
     }
 
     /** Returns the set of block registry IDs hidden from blueprint preview when hideFluid is on. */
@@ -625,9 +880,11 @@ public class BlueprintConfig {
 
     public static void clearCache() {
         cachedExcludedBlocks        = null;
-        cachedSubstitutions         = null;
+        cachedExcludedItems         = null;
         cachedLatePlaceBlocks       = null;
         cachedHiddenPreviewBlocks   = null;
+        cachedSpecialDropItems      = null;
+        cachedBoxEntities           = null;
     }
 
     /**
@@ -640,7 +897,14 @@ public class BlueprintConfig {
         if (blockCount < BUILD_TIME_TIER3_MAX_BLOCKS.get()) return BUILD_TIME_TIER3_SECONDS.get();
         if (blockCount < BUILD_TIME_TIER4_MAX_BLOCKS.get()) return BUILD_TIME_TIER4_SECONDS.get();
         if (blockCount < BUILD_TIME_TIER5_MAX_BLOCKS.get()) return BUILD_TIME_TIER5_SECONDS.get();
-        return BUILD_TIME_TIER6_SECONDS.get();
+        if (blockCount < BUILD_TIME_TIER6_MAX_BLOCKS.get()) return BUILD_TIME_TIER6_SECONDS.get();
+        return BUILD_TIME_TIER7_SECONDS.get();
+    }
+
+    /** 材料空间（非次元分区）的实际上限；配置为 0 时取捕获体积上限的 1.2 倍。 */
+    public static int materialSpaceMaxCount() {
+        int configured = MATERIAL_SPACE_MAX_COUNT.get();
+        return configured > 0 ? configured : (int) (ABSOLUTE_MAX_CAPTURE_VOLUME * 1.2);
     }
 
     public static void onConfigReload(ModConfigEvent event) {

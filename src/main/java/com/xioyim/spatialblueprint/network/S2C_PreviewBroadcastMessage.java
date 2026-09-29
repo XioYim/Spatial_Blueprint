@@ -18,6 +18,8 @@ public class S2C_PreviewBroadcastMessage {
     public final UUID    playerUUID;
     public final String  playerName;
     public final String  blueprintId;
+    /** 蓝图分类，决定预览框颜色。 */
+    public final String  category;
     /** null = clear */
     public final BlockPos origin;
     public final int      rotation;
@@ -26,11 +28,12 @@ public class S2C_PreviewBroadcastMessage {
     public final int      sizeZ;
 
     public S2C_PreviewBroadcastMessage(UUID playerUUID, String playerName, String blueprintId,
-                                       BlockPos origin, int rotation,
+                                       String category, BlockPos origin, int rotation,
                                        int sizeX, int sizeY, int sizeZ) {
         this.playerUUID  = playerUUID;
         this.playerName  = playerName;
         this.blueprintId = blueprintId;
+        this.category    = category != null ? category : "";
         this.origin      = origin;
         this.rotation    = rotation;
         this.sizeX       = sizeX;
@@ -42,6 +45,7 @@ public class S2C_PreviewBroadcastMessage {
         buf.writeUUID(msg.playerUUID);
         buf.writeUtf(msg.playerName, 40);
         buf.writeUtf(msg.blueprintId, 64);
+        buf.writeUtf(msg.category, 32);
         boolean hasOrigin = msg.origin != null;
         buf.writeBoolean(hasOrigin);
         if (hasOrigin) buf.writeBlockPos(msg.origin);
@@ -55,13 +59,14 @@ public class S2C_PreviewBroadcastMessage {
         UUID   uuid        = buf.readUUID();
         String playerName  = buf.readUtf(40);
         String blueprintId = buf.readUtf(64);
+        String category    = buf.readUtf(32);
         boolean hasOrigin  = buf.readBoolean();
         BlockPos origin    = hasOrigin ? buf.readBlockPos() : null;
         int rotation       = buf.readVarInt();
         int sizeX          = buf.readVarInt();
         int sizeY          = buf.readVarInt();
         int sizeZ          = buf.readVarInt();
-        return new S2C_PreviewBroadcastMessage(uuid, playerName, blueprintId,
+        return new S2C_PreviewBroadcastMessage(uuid, playerName, blueprintId, category,
                 origin, rotation, sizeX, sizeY, sizeZ);
     }
 

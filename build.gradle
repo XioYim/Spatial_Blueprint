@@ -88,8 +88,29 @@ minecraft {
         }
 
         server {
+            // 与客户端隔离的工作目录。configureEach 默认把所有 run 都指向 run/，
+            // 但同时跑 runClient + runServer 时两边会争用同一份 config/、options.txt 和日志，
+            // 本 mod 的配置还有 /sb reload 直接读写磁盘，共用目录会互相覆盖。
+            workingDirectory project.file('run-server')
             property 'forge.enabledGameTestNamespaces', mod_id
             args '--nogui'
+        }
+
+        // 第二个客户端实例，用于多人交叉测试（玩家 A 放置 → 玩家 B 看列表 / 权限差异等）。
+        // 独立工作目录 + 独立用户名，可与 runClient 同时运行。
+        // 任务名：runClient2
+        //
+        // 必须 parent 到 client —— 否则继承不到客户端的主类与模块路径，
+        // genIntellijRuns 生成出来的配置 MAIN_CLASS_NAME 是空的，点运行直接失败。
+        //
+        // 注意 parent 对 args 是【累加】而非覆盖：这里不能再写 --width / --height，
+        // 否则会变成 "--width 1920 --height 1080 --width 1280 --height 720"，
+        // Minecraft 的参数解析器遇到重复项直接退出（exit code 1，日志停在 ImmediateWindowProvider）。
+        // 窗口尺寸沿用 client 的 1920x1080。
+        client2 {
+            parent runs.client
+            workingDirectory project.file('run-client2')
+            args '--username', 'TestPlayer2'
         }
 
         // This run config launches GameTestServer and runs all registered gametests, then exits.
@@ -113,6 +134,8 @@ minecraft {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
+    // JEI 以本地 jar 提供（./libs），用于编译期 API；运行期由 run*/mods 下的同一个 jar 加载
+    flatDir { dir "libs" }
     // Put repositories for dependencies here
     // ForgeGradle automatically adds the Forge maven and Maven Central for you
 
@@ -130,6 +153,17 @@ dependencies {
     // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    // ── JEI 集成（可选依赖）────────────────────────────────────────────
+    // 材料清单支持左键查来源 / 右键查用途。
+    // compileOnly：JEI 不在时本 mod 仍要能编译并正常运行，调用点做了隔离。
+    // ⚠ 运行期必须也走 fg.deobf，不能只把生产版 jar 丢进 run/mods/：
+    // 本工作区用 official 映射，而发布版 jar 里是 SRG 名（I18n.m_118938_），
+    // ForgeGradle 不会去重映射 run/mods/ 下的 jar，JEI 一初始化就 NoSuchMethodError。
+    // fg.deobf 会把它重映射到工作区映射，runtimeOnly 让它进开发运行的类路径由 FML 发现。
+    // ⚠ 必须写成 flatDir 的模块坐标（group 被 flatDir 忽略，用 blank 占位），
+    // 不能写 files(...)：fg.deobf 对 files() 只是原样透传，根本不做重映射。
+    compileOnly fg.deobf("blank:jei-1.20.1-forge:15.20.0.112")
+    runtimeOnly fg.deobf("blank:jei-1.20.1-forge:15.20.0.112")
 
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

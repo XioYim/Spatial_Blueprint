@@ -32,6 +32,12 @@ public class BlueprintData {
     /** 玩家在捕捉时设定的动画时长（秒）。0 表示未设置，使用配置文件默认值。 */
     public int animDuration = 0;
     /**
+     * 上传来源：0 = 非上传（世界捕获/工程等）; 1 = 安全上传; 2 = 强制上传。
+     * 与 {@link #saveMode}（捕获模式）正交 —— 强制上传的蓝图即使源 saveMode=SAFE
+     * 也应享有与 FORCE 捕获相同的「仅 OP」门槛。
+     */
+    public int uploadMode = 0;
+    /**
      * 蓝图分类：{@code "create"}（空间）、{@code "project"}（投影）、
      * {@code "dimensional"}（次元）、{@code "template"}（投影模板）、
      * {@code "engineering"}（工程）。
@@ -43,23 +49,42 @@ public class BlueprintData {
      */
     @Nullable
     public MaterialList materialList = null;
-    /**
-     * 创造玩家为此蓝图指定的取出经验等级（-1 = 未设置，使用配置文件公式计算）。
-     * 此值优先于配置文件 {@code WITHDRAW_XP_RATIO} / {@code MAX_WITHDRAW_XP_COST}。
-     */
-    public int customWithdrawXp    = -1;
-    /**
-     * 创造玩家为此蓝图指定的最大快捷取出次数（-1 = 未设置，使用配置文件 {@code MAX_WITHDRAW_COUNT}）。
-     */
-    public int customWithdrawLimit = -1;
     /** 捕捉蓝图的玩家名称（空字符串表示旧格式或未知）。 */
     public String creatorName = "";
     /** 蓝图来源玩家（与 creatorName 初始相同；预留给未来"转让来源"场景独立赋值）。 */
     public String sourceName  = "";
+    /**
+     * 蓝图归属玩家的 UUID，空字符串表示<b>无主</b>（本字段之前捕获的旧蓝图）。
+     *
+     * <p>次元蓝图的材料存在按 UUID 分表的次元袋里，归属必须用 UUID 判定而非
+     * {@link #creatorName} —— 玩家改名后名字就对不上了。无主蓝图任何人都不能使用，
+     * 只能由 OP 归档。</p>
+     */
+    public String ownerUuid   = "";
     /** 捕捉蓝图的时间戳（毫秒，System.currentTimeMillis()），0 表示旧格式或未知。 */
     public long   createdAt   = 0L;
+    /** 保存模式（SAFE/SANITIZE/FORCE），捕获时记录。 */
+    public com.xioyim.spatialblueprint.util.CaptureMode saveMode
+            = com.xioyim.spatialblueprint.util.CaptureMode.SAFE;
     /** OP 玩家跳过危险内容检测后创建的蓝图，放置时记录普通日志。 */
     public boolean opBypassCapture = false;
+    /** Short display note (max 15 chars), empty = no note. */
+    public String noteShort = "";
+    /** Long tooltip note (max 200 chars), empty = no note. */
+    public String noteLong = "";
+
+    // ── 次元蓝图「已放置」标记（category == "dimensional" 时有效）──────────────
+    // 次元蓝图放置后不再删除 dat 文件，而是打上此标记：
+    //   · 蓝图列表中名称追加「(已放置)」，禁止再次取出，防止同一份结构被反复取出复制
+    //   · 玩家手上的空置次元蓝图「重新储存」后覆盖写回本文件并清除标记
+    /** 是否已放置。 */
+    public boolean placed = false;
+    /** 放置时玩家所在坐标（与空置次元蓝图的传送点同源）。 */
+    public int placedX = 0;
+    public int placedY = 0;
+    public int placedZ = 0;
+    /** 放置时所在维度 ID（如 {@code minecraft:overworld}），空字符串表示未记录。 */
+    public String placedDimension = "";
 
     // ── 工程蓝图专属字段（category == "engineering" 时有效）──────────────────
     /** 工程蓝图固定维度（如 "minecraft:overworld"），空字符串表示未设置。 */
@@ -69,10 +94,27 @@ public class BlueprintData {
     /** 工程蓝图固定终点坐标（捕捉时预览的 max 角），null 表示未设置。 */
     @Nullable public BlockPos fixedEndPos   = null;
     /**
-     * 玩家与起点/终点任意一点的最大允许距离（方块数）。
-     * -1 表示未限制（理论上不应出现，创建时默认 64）。
+     * 创建该工程蓝图时所在存档的 UUID；空串 = 未记录（本机制加入前创建的）。
+     *
+     * <p>工程蓝图绑定固定坐标与维度，换个存档那些坐标毫无意义 ——
+     * 放出来只会砸坏别人的建筑，所以必须能判断归属。</p>
      */
-    public int      maxDistance    = -1;
+    public String   worldUuid      = "";
+    /** 创建时的存档名，仅用于界面显示「所属存档」。 */
+    public String   worldName      = "";
+    /** 所属项目 ID；空表示这不是任何项目的子工程。非空即豁免存档归属校验。 */
+    public String parentProjectId = "";
+
+    /**
+     * 该蓝图是否属于给定玩家。
+     *
+     * <p>无主蓝图（{@link #ownerUuid} 为空的旧数据）对任何人都返回 {@code false} ——
+     * 次元蓝图与玩家的次元袋一一绑定，认错主人会让材料空间和蓝图归属彻底错乱，
+     * 宁可让旧蓝图作废由 OP 归档。</p>
+     */
+    public boolean isOwnedBy(java.util.UUID playerUuid) {
+        return playerUuid != null && !ownerUuid.isEmpty() && ownerUuid.equals(playerUuid.toString());
+    }
 
     public static class BlockEntry {
         public final BlockPos pos;
@@ -210,17 +252,29 @@ public class BlueprintData {
         CompoundTag mod = new CompoundTag();
         if (!category.isEmpty()) mod.putString("category", category);
         if (materialList != null) mod.put("materialList", materialList.serialize());
-        if (customWithdrawXp >= 0) mod.putInt("customWithdrawXp", customWithdrawXp);
-        if (customWithdrawLimit >= 0) mod.putInt("customWithdrawLimit", customWithdrawLimit);
         if (!creatorName.isEmpty()) mod.putString("creatorName", creatorName);
         if (!sourceName.isEmpty()) mod.putString("sourceName", sourceName);
+        if (!ownerUuid.isEmpty()) mod.putString("ownerUuid", ownerUuid);
+        if (!worldUuid.isEmpty()) mod.putString("worldUuid", worldUuid);
+        if (!worldName.isEmpty()) mod.putString("worldName", worldName);
+        if (!parentProjectId.isEmpty()) mod.putString("parentProjectId", parentProjectId);
         if (createdAt > 0L) mod.putLong("createdAt", createdAt);
+        if (saveMode != null) mod.putInt("saveMode", saveMode.ordinal());
         if (opBypassCapture) mod.putBoolean("opBypassCapture", true);
+        if (!noteShort.isEmpty()) mod.putString("noteShort", noteShort);
+        if (!noteLong.isEmpty()) mod.putString("noteLong", noteLong);
+        if (placed) {
+            mod.putBoolean("placed", true);
+            mod.putInt("placedX", placedX);
+            mod.putInt("placedY", placedY);
+            mod.putInt("placedZ", placedZ);
+            if (!placedDimension.isEmpty()) mod.putString("placedDimension", placedDimension);
+        }
         if (animDuration > 0) mod.putInt("animDuration", animDuration);
+        if (uploadMode > 0) mod.putInt("uploadMode", uploadMode);
         if (!fixedDimension.isEmpty()) mod.putString("fixedDimension", fixedDimension);
         if (fixedStartPos != null) mod.put("fixedStartPos", NbtUtils.writeBlockPos(fixedStartPos));
         if (fixedEndPos != null) mod.put("fixedEndPos", NbtUtils.writeBlockPos(fixedEndPos));
-        if (maxDistance >= 0) mod.putInt("maxDistance", maxDistance);
         return mod;
     }
 
@@ -266,17 +320,30 @@ public class BlueprintData {
         CompoundTag mod = tag.getCompound("SpatialBlueprintData");
         if (mod.contains("category")) data.category = mod.getString("category");
         if (mod.contains("materialList")) data.materialList = MaterialList.deserialize(mod.getCompound("materialList"));
-        if (mod.contains("customWithdrawXp")) data.customWithdrawXp = mod.getInt("customWithdrawXp");
-        if (mod.contains("customWithdrawLimit")) data.customWithdrawLimit = mod.getInt("customWithdrawLimit");
         if (mod.contains("creatorName")) data.creatorName = mod.getString("creatorName");
         if (mod.contains("sourceName")) data.sourceName = mod.getString("sourceName");
+        if (mod.contains("ownerUuid")) data.ownerUuid = mod.getString("ownerUuid");
+        if (mod.contains("worldUuid")) data.worldUuid = mod.getString("worldUuid");
+        if (mod.contains("worldName")) data.worldName = mod.getString("worldName");
+        data.parentProjectId = mod.contains("parentProjectId")
+                ? mod.getString("parentProjectId") : "";
         if (mod.contains("createdAt")) data.createdAt = mod.getLong("createdAt");
+        if (mod.contains("saveMode")) data.saveMode = com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"));
         if (mod.contains("opBypassCapture")) data.opBypassCapture = mod.getBoolean("opBypassCapture");
+        if (mod.contains("noteShort")) data.noteShort = mod.getString("noteShort");
+        if (mod.contains("noteLong")) data.noteLong = mod.getString("noteLong");
+        if (mod.contains("placed")) {
+            data.placed          = mod.getBoolean("placed");
+            data.placedX         = mod.getInt("placedX");
+            data.placedY         = mod.getInt("placedY");
+            data.placedZ         = mod.getInt("placedZ");
+            data.placedDimension = mod.getString("placedDimension");
+        }
         if (mod.contains("animDuration")) data.animDuration = mod.getInt("animDuration");
+        if (mod.contains("uploadMode")) data.uploadMode = mod.getInt("uploadMode");
         if (mod.contains("fixedDimension")) data.fixedDimension = mod.getString("fixedDimension");
         if (mod.contains("fixedStartPos")) data.fixedStartPos = NbtUtils.readBlockPos(mod.getCompound("fixedStartPos"));
         if (mod.contains("fixedEndPos")) data.fixedEndPos = NbtUtils.readBlockPos(mod.getCompound("fixedEndPos"));
-        if (mod.contains("maxDistance")) data.maxDistance = mod.getInt("maxDistance");
 
         CompoundTag regionsTag = tag.getCompound("Regions");
         if (regionsTag.isEmpty()) return data; // 空文件，返回空蓝图而不是抛异常
@@ -424,6 +491,9 @@ public class BlueprintData {
     }
 
     private static boolean isDependentUncached(Block block) {
+        // ── 树叶：必须在树干（原木）之后放置，否则无相邻原木会凋零 ──
+        if (block instanceof net.minecraft.world.level.block.LeavesBlock) return true;
+        if (block.defaultBlockState().is(net.minecraft.tags.BlockTags.LEAVES)) return true;
         // ── 多格方块 ──
         if (block instanceof DoorBlock) return true;
         if (block instanceof BedBlock) return true;

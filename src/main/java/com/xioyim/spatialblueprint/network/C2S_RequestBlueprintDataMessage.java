@@ -67,6 +67,16 @@ public class C2S_RequestBlueprintDataMessage {
                 return;
             }
 
+            // H2：归属下沉服务端 —— 复用 canManageBlueprint（主人或 OP），无主只有 OP 能下。
+            // 不满足直接按不存在回，避免向改包者确认 id 是否存在。
+            if (!com.xioyim.spatialblueprint.server.BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
+                BlueprintNetwork.CHANNEL.send(
+                        PacketDistributor.PLAYER.with(() -> player),
+                        new S2C_BlueprintDataFailMessage(msg.blueprintId,
+                                "spatial_blueprint.error.blueprint_not_found"));
+                return;
+            }
+
             try {
                 BlueprintData data = BlueprintStorage.load(msg.blueprintId);
                 if (data == null) {
@@ -76,21 +86,7 @@ public class C2S_RequestBlueprintDataMessage {
                                     "spatial_blueprint.error.blueprint_not_found"));
                     return;
                 }
-                // Serialize to compressed bytes and split into chunks to stay under
-                // Minecraft's 1 MB custom-payload limit per packet.
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                net.minecraft.nbt.NbtIo.writeCompressed(data.serialize(), baos);
-                byte[] full        = baos.toByteArray();
-                int    chunkSize   = S2C_BlueprintChunkMessage.CHUNK_SIZE;
-                int    totalChunks = (full.length + chunkSize - 1) / chunkSize;
-                for (int i = 0; i < totalChunks; i++) {
-                    int start  = i * chunkSize;
-                    int end    = Math.min(start + chunkSize, full.length);
-                    byte[] chunk = java.util.Arrays.copyOfRange(full, start, end);
-                    BlueprintNetwork.CHANNEL.send(
-                            PacketDistributor.PLAYER.with(() -> player),
-                            new S2C_BlueprintChunkMessage(msg.blueprintId, i, totalChunks, chunk));
-                }
+                BlueprintNetwork.sendBlueprintTo(player, msg.blueprintId, data);
             } catch (Exception e) {
                 com.xioyim.spatialblueprint.SpatialBlueprintMod.LOGGER.error(
                         "[BlueprintData] Failed to load blueprint {}: {}", msg.blueprintId, e.getMessage());

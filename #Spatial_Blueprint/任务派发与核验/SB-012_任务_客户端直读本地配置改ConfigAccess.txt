@@ -1,0 +1,260 @@
+SB-012 · 客户端直读本地配置改 ConfigAccess.get（修 153/155）
+类型：IMPLEMENT（只改第三节列出的文件；无新消息、无 wire 变更、不 bump mod_version）
+派发：2026-09-22 19:05:00
+
+执行方就是正在读这份手册的你。直接按下面各节做，不要转派给任何 worker 会话 / 子代理 / 技能，做完写报告即可；不要就「由谁执行」向用户提问。
+
+────────────────────────────────────────────────────────────────────────
+〇、执行前必做：备份
+────────────────────────────────────────────────────────────────────────
+
+动任何代码之前，先按 `D:\Mods\项目工具\安全手册.MD` 备份。直接跑：
+D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint -Note "SB-012 执行前"
+
+备份脚本打印的表格行原样抄进报告「改动」段第一行（主会话负责插进 项目记忆.md，你不要碰那个文件）。
+记下你开工的时刻（精确到秒），第五节的 mtime 窗口用它。
+
+────────────────────────────────────────────────────────────────────────
+一、项目接入
+────────────────────────────────────────────────────────────────────────
+
+先读 D:\Mods\Spatial_Blueprint\#Spatial_Blueprint\记忆与注意事项\项目记忆.md，按里面的「读取顺序」走完再动手。
+记忆先读 注意事项_目录.md 找编号，再按行号只读 注意事项_分类.md 对应那一段；不要整读分类文件。
+
+本任务必读的记忆段：
+- 铁律 T1–T11 整读（尤其 T4 客户端/服务端边界、T8 配置与界面——本任务的核心规则在 T8）。
+- K1 报警行一屏（跑编译前）。
+- 开发日志.md 最近一节只为照格式写你自己的执行记录。
+
+────────────────────────────────────────────────────────────────────────
+二、目标与背景
+────────────────────────────────────────────────────────────────────────
+
+问题（见开发日志 e55/e57）：
+- 客户端约 36 处直接调 `BlueprintConfig.XXX.get()`，读的是本机 toml 里的旧值，绕过了
+  `ConfigAccess` 的服务端镜像——服主在服务端改了 `PREVIEW_DISTANCE`、分档、时长上限后，
+  客户端预览距离 / 取消余量 / OP 预估时长不跟（153/155）。
+- `ConfigAccess.get(BlueprintConfig.XXX)` 读服务端镜像，没收到快照时回落本地——这才是正确入口。
+
+`BlueprintConfig.getAutoDuration(int blockCount)` 是**双端共用**静态方法，内部调 `.get()`
+（服务端侧正确，不能改方法本体）。客户端 `PointSelectionScreen.autoDurationSec()` 里调了它，
+需要把 tier 判断**内联展开**、换成 `ConfigAccess.get()`——见 4.5。
+
+不要做的：
+- 不改 `BlueprintConfig.getAutoDuration()` 方法本体。
+- 不新增网络消息、不改 `BlueprintNetwork.register()`、不 bump `mod_version`。
+- 不改服务端文件（`network/CaptureAreaMessage.java` 等服务端消息里的 `.get()` 是对的）。
+- 不改 `ConfigAccess.java` 本身（已有全部所需的 `get(IntValue)` / `get(BooleanValue)` 重载）。
+- 不构建、不部署（主会话统一处理）。
+
+────────────────────────────────────────────────────────────────────────
+三、允许修改的文件（绝对路径；没列的一律禁区）
+────────────────────────────────────────────────────────────────────────
+
+改（括号里是允许动的范围）：
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\client\BlueprintSelectionRenderer.java
+  （9 处 PREVIEW_DISTANCE / RENDER_CANCEL_MARGIN / PREVIEW_BROADCAST_INTERVAL，见 4.1）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\PlacementScreen.java
+  （5 处 PREVIEW_DISTANCE / RENDER_CANCEL_MARGIN，见 4.2）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\client\ClientSubProjectPreview.java
+  （1 处 RENDER_CANCEL_MARGIN，见 4.3）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\item\SpatialBlueprintItem.java
+  （1 处 PREVIEW_DISTANCE，仅在已有 @OnlyIn(Dist.CLIENT) 方法内，见 4.4）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\PointSelectionScreen.java
+  （autoDurationSec() 内联展开 + getTimeSec() 两处，见 4.5）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\CreateBlueprintScreen.java
+  （1 处 ANIMATION_DURATION_MIN，见 4.6）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\SubProjectCreateScreen.java
+  （1 处 ANIMATION_DURATION_MIN，见 4.6）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\BlueprintLibraryScreen.java
+  （6 处 ANIMATION_DURATION_MIN/MAX，见 4.6）
+
+D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\UploadReportScreen.java
+  （4 处上传上限，见 4.7）
+
+以上行号是派发时的，改动过程中会漂，以符号定位。
+
+────────────────────────────────────────────────────────────────────────
+四、要改什么（按文件）
+────────────────────────────────────────────────────────────────────────
+
+统一模式（以下各节如无特别说明）：
+  `BlueprintConfig.XXX.get()` → `ConfigAccess.get(BlueprintConfig.XXX)`
+每个文件在首次用到 ConfigAccess 时加 import（若还没有）：
+  `import com.xioyim.spatialblueprint.client.ConfigAccess;`
+
+━━━━━━━━━━━━━━━━━━
+4.1 client/BlueprintSelectionRenderer.java —— 9 处
+━━━━━━━━━━━━━━━━━━
+
+行号（派发时）：
+  :946 :1011 :1543 :2251 :2287  →  RENDER_CANCEL_MARGIN（共 5 处）
+  :984 :1102 :1513              →  PREVIEW_DISTANCE（共 3 处）
+  :1078                         →  PREVIEW_BROADCAST_INTERVAL（1 处）
+
+定位方法：grep `BlueprintConfig\.RENDER_CANCEL_MARGIN\.get\(\)` 确认 5 处；
+`BlueprintConfig\.PREVIEW_DISTANCE\.get\(\)` 确认 3 处；
+`BlueprintConfig\.PREVIEW_BROADCAST_INTERVAL\.get\(\)` 确认 1 处。
+
+`BlueprintSelectionRenderer` 已是 `@OnlyIn(Dist.CLIENT)` 类，import ConfigAccess 无安全风险。
+
+━━━━━━━━━━━━━━━━━━
+4.2 gui/PlacementScreen.java —— 5 处
+━━━━━━━━━━━━━━━━━━
+
+  :386 :892 :936 :1000  →  PREVIEW_DISTANCE（共 4 处）
+  :441                  →  RENDER_CANCEL_MARGIN（1 处，tooltip 文案行）
+
+注意 :441 的改法稍有不同：
+  原文：`int margin = BlueprintConfig.RENDER_CANCEL_MARGIN.get();`
+  改后：`int margin = ConfigAccess.get(BlueprintConfig.RENDER_CANCEL_MARGIN);`
+  其余四处按统一模式。
+
+━━━━━━━━━━━━━━━━━━
+4.3 client/ClientSubProjectPreview.java —— 1 处
+━━━━━━━━━━━━━━━━━━
+
+  :77  →  RENDER_CANCEL_MARGIN
+  已有的完整引用形式是 `com.xioyim.spatialblueprint.BlueprintConfig.RENDER_CANCEL_MARGIN.get()`，
+  改成 `ConfigAccess.get(com.xioyim.spatialblueprint.BlueprintConfig.RENDER_CANCEL_MARGIN)` 或
+  在顶部加 import 后简写。
+
+━━━━━━━━━━━━━━━━━━
+4.4 item/SpatialBlueprintItem.java —— 1 处
+━━━━━━━━━━━━━━━━━━
+
+  :117（派发时）—— `BlueprintConfig.PREVIEW_DISTANCE.get()` 出现在一个已经调
+  `Minecraft.getInstance()` 和 `BlueprintSelectionRenderer.getPreviewTarget` 的代码块里。
+  **改之前先确认该方法有 `@OnlyIn(Dist.CLIENT)` 标注或被 `@OnlyIn` 方法独占调用**；
+  若有，改成 `ConfigAccess.get(BlueprintConfig.PREVIEW_DISTANCE)`，并加 import。
+  若没有（极罕见），报告里写明，本处跳过，报告「未完成」里说明原因。
+
+━━━━━━━━━━━━━━━━━━
+4.5 gui/PointSelectionScreen.java —— autoDurationSec() + getTimeSec()
+━━━━━━━━━━━━━━━━━━
+
+**autoDurationSec()（约 :379–382）**：当前实现调 `BlueprintConfig.getAutoDuration(cachedBlockCount)`。
+`getAutoDuration` 是双端共用静态方法，不能改它本体。
+**把判断内联展开**，全部换成 `ConfigAccess.get()`：
+
+  public int autoDurationSec() {
+      int n = Math.max(0, cachedBlockCount);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER1_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER1_SECONDS);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER2_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER2_SECONDS);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER3_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER3_SECONDS);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER4_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER4_SECONDS);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER5_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER5_SECONDS);
+      if (n < ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER6_MAX_BLOCKS)) return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER6_SECONDS);
+      return ConfigAccess.get(BlueprintConfig.BUILD_TIME_TIER7_SECONDS);
+  }
+
+改完用 `grep -n "getAutoDuration\|BUILD_TIME_TIER.*\.get()" PointSelectionScreen.java` 确认 0 处残留。
+
+**getTimeSec()（约 :388–395）**：改两行：
+  原：`int minSec = BlueprintConfig.ANIMATION_DURATION_MIN.get();`
+      `int maxSec = BlueprintConfig.ANIMATION_DURATION_MAX.get();`
+  改：`int minSec = ConfigAccess.get(BlueprintConfig.ANIMATION_DURATION_MIN);`
+      `int maxSec = ConfigAccess.get(BlueprintConfig.ANIMATION_DURATION_MAX);`
+
+`PointSelectionScreen` 是 `gui` 包客户端专属界面，import ConfigAccess 无安全风险。
+
+━━━━━━━━━━━━━━━━━━
+4.6 CreateBlueprintScreen / SubProjectCreateScreen / BlueprintLibraryScreen
+━━━━━━━━━━━━━━━━━━
+
+**CreateBlueprintScreen.java（:106 派发时）**：
+  `BlueprintConfig.ANIMATION_DURATION_MIN.get()` → `ConfigAccess.get(BlueprintConfig.ANIMATION_DURATION_MIN)`
+
+**SubProjectCreateScreen.java（:110 派发时）**：
+  同上 ANIMATION_DURATION_MIN。
+
+**BlueprintLibraryScreen.java（6 处，派发时 :269/:270/:1113/:1114/:1256/:1257）**：
+  `BlueprintConfig.ANIMATION_DURATION_MIN.get()` → `ConfigAccess.get(BlueprintConfig.ANIMATION_DURATION_MIN)`
+  `BlueprintConfig.ANIMATION_DURATION_MAX.get()` → `ConfigAccess.get(BlueprintConfig.ANIMATION_DURATION_MAX)`
+
+━━━━━━━━━━━━━━━━━━
+4.7 gui/UploadReportScreen.java —— 4 处（显示类，低优先级，一并改掉）
+━━━━━━━━━━━━━━━━━━
+
+  :319 → MAX_UPLOAD_FILE_BYTES
+  :345 → MAX_BOUNDING_VOLUME
+  :496 → MAX_BLOCK_ENTITY_NBT_BYTES
+  :501 → MAX_TOTAL_NBT_BYTES
+
+**改之前先确认这四个字段都是 ForgeConfigSpec.IntValue 类型**（`ConfigAccess.get` 只有
+`IntValue` 和 `BooleanValue` 重载）。若有 LongValue 或其它类型，该处跳过，报告里说明。
+
+────────────────────────────────────────────────────────────────────────
+五、验收标准（每条 PASS/FAIL + 证据写进报告）
+────────────────────────────────────────────────────────────────────────
+
+1. `.\gradlew.bat compileJava --offline --rerun`（D:\Mods\Spatial_Blueprint 下）→
+   BUILD SUCCESSFUL；按 `\.java:\d+:` 计数警告 ≤ 21（基线 21 条），不得有任何新
+   「文件:行号」警告。编译在最后一次改动之后；报告写编译时刻与最后改动文件 mtime。
+
+2. 全量残留检查（grep，报告写命令与结果）：
+   a) `grep -rn "BlueprintConfig\.\w*\.get()" client/BlueprintSelectionRenderer.java
+      gui/PlacementScreen.java client/ClientSubProjectPreview.java item/SpatialBlueprintItem.java
+      gui/PointSelectionScreen.java gui/CreateBlueprintScreen.java gui/SubProjectCreateScreen.java
+      gui/BlueprintLibraryScreen.java gui/UploadReportScreen.java`
+      预期：0 行（允许的只有 UploadReportScreen 里跳过的 LongValue，若有，列出）。
+   b) `grep -n "getAutoDuration" gui/PointSelectionScreen.java` 预期：0 处。
+   c) `grep -n "BUILD_TIME_TIER.*\.get()" gui/PointSelectionScreen.java` 预期：0 处。
+
+3. `BlueprintConfig.getAutoDuration()` 方法本体未动（diff 与开工前备份比较，报告写「0 处变更」）。
+
+4. `ConfigAccess.java` 未动（diff 0 处变更）。
+
+5. `BlueprintNetwork.register()` 未动（diff 0 处变更；无新 c2s/s2c 注册）。
+
+6. `gradle.properties` 未动（mod_version 未变）；`build\libs` 无新 jar。
+
+7. `SpatialBlueprintItem.java`（:117 所在方法）有 `@OnlyIn(Dist.CLIENT)` 或等价保护；
+   报告写「方法名 + 标注位置」。若无标注，写明已跳过该处。
+
+8. 禁区零改动：开工时刻 mtime 窗口内 `src` 文件 ⊆ 第三节「改」列表；
+   `BlueprintConfig.java`、`ConfigAccess.java`、`BlueprintNetwork.java`、
+   `CaptureAreaMessage.java`（及其他服务端消息）diff 全 0（备份副本 diff 证明）。
+
+9. 开发日志.md 只追加 `## SB-012 执行记录`；测试清单.txt 只按第六节范围写；
+   其余字节不变（备份副本 diff，加 `--strip-trailing-cr`）。
+
+────────────────────────────────────────────────────────────────────────
+六、写入权限
+────────────────────────────────────────────────────────────────────────
+
+只能写：
+  #Spatial_Blueprint\任务派发与核验\SB-012_报告.txt
+  #Spatial_Blueprint\开发日志.md（文末追加「## SB-012 执行记录」，不许占主序列编号）
+  第三节列出的 9 个 .java 文件
+
+禁止：待办事项.html、记忆与注意事项\、记忆目录、项目记忆.md、测试清单.txt（本任务无 UI 改动，不写测试用例）。
+踩到的坑写进报告「建议记入踩坑记录」段，由主会话合并。
+
+────────────────────────────────────────────────────────────────────────
+七、报告模板（写到 SB-012_报告.txt；纯文本、中文；禁止代码块，只给「主张 + file:line」）
+────────────────────────────────────────────────────────────────────────
+
+任务        SB-012
+状态        PASS / PARTIAL / FAIL
+结论        三句话以内：替换了哪几类直读、getAutoDuration 怎么处理的、SpatialBlueprintItem 的情况
+发现        - 主张（一句话） · file:line
+改动        - 第一行：备份脚本打印的表格行
+            - 改了哪些文件 · 每个一句话（列出替换处数）
+            - 跳过了哪些（含原因）
+测试        - 第五节 9 条逐条 PASS/FAIL + 证据（命令 / 数字 / file:line）
+风险        - 没测到的、可能坏的（至少含：ConfigAccess 回落本地兜底对行为的影响；
+             PREVIEW_BROADCAST_INTERVAL 改后全局广播节奏与服务端 M3 限流的对齐情况）
+未完成      - 没做的和为什么（例如 LongValue 跳过、SpatialBlueprintItem 无标注跳过）
+建议记入踩坑记录  - 本轮踩到的坑
+待复核      - 主会话应重点看的地方，编号列出（≤ 6 条）
+
+报告里不许出现代码块、完整 grep 输出、完整日志、失败尝试过程、内部推理。

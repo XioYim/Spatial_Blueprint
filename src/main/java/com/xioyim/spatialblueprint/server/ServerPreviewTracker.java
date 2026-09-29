@@ -20,8 +20,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ServerPreviewTracker {
 
     private static final Map<UUID, PreviewEntry> ENTRIES = new ConcurrentHashMap<>();
+    /** 速率限制：同一玩家两次广播的最小 tick 间隔（2 tick ≈ 100ms，挡每 tick 刷包，不影响正常拖动）。 */
+    private static final long COOLDOWN_TICKS = 2L;
+    private static final Map<UUID, Long> LAST_BROADCAST_TICK = new ConcurrentHashMap<>();
 
-    private record PreviewEntry(String playerName, String blueprintId,
+    private record PreviewEntry(String playerName, String blueprintId, String category,
                                 BlockPos origin, int rotation,
                                 int sizeX, int sizeY, int sizeZ) {}
 
@@ -30,13 +33,29 @@ public class ServerPreviewTracker {
      * origin == null clears the entry and broadcasts a clear to nearby players.
      */
     public static void update(ServerPlayer player, BlockPos origin, int rotation,
-                               int sizeX, int sizeY, int sizeZ, String blueprintId) {
+                               int sizeX, int sizeY, int sizeZ, String blueprintId, String category) {
         UUID uuid = player.getUUID();
 
         if (origin == null) {
             PreviewEntry old = ENTRIES.remove(uuid);
             if (old != null) broadcast(player, uuid, player.getScoreboardName(),
-                    blueprintId, null, rotation, sizeX, sizeY, sizeZ);
+                    blueprintId, category, null, rotation, sizeX, sizeY, sizeZ);
+            return;
+        }
+
+        // 1. size 钳位 / 非法值直接丢弃（静默，不回横幅，高频消息）
+        if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) return;
+        long volume = (long) sizeX * sizeY * sizeZ;
+        if (volume > BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME) return;
+        // 单边过大也视为非法（避免 1×1×1.6M 这类畸形，虽然体积已拦，但单边仍可能撑爆渲染）
+        int maxSide = BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME;
+        if (sizeX > maxSide || sizeY > maxSide || sizeZ > maxSide) return;
+        // rotation 仅 0-3 合法
+        if (rotation < 0 || rotation > 3) return;
+
+        // 2. origin 距离校验：超过预览距离 + 最大偏移则丢弃
+        //    复用放置距离的语义，静默丢弃
+        if (!com.xioyim.spatialblueprint.server.BlueprintValidator.validatePlacementDistance(player, origin).valid()) {
             return;
         }
 
@@ -48,26 +67,36 @@ public class ServerPreviewTracker {
             return;
         }
 
-        ENTRIES.put(uuid, new PreviewEntry(player.getScoreboardName(), blueprintId,
+        // 3. 速率限制：同一玩家两次广播至少间隔 COOLDOWN_TICKS
+        long now = player.serverLevel().getGameTime();
+        Long last = LAST_BROADCAST_TICK.get(uuid);
+        if (last != null && now - last < COOLDOWN_TICKS) {
+            return;
+        }
+        LAST_BROADCAST_TICK.put(uuid, now);
+
+        ENTRIES.put(uuid, new PreviewEntry(player.getScoreboardName(), blueprintId, category,
                 origin, rotation, sizeX, sizeY, sizeZ));
         broadcast(player, uuid, player.getScoreboardName(),
-                blueprintId, origin, rotation, sizeX, sizeY, sizeZ);
+                blueprintId, category, origin, rotation, sizeX, sizeY, sizeZ);
     }
 
     /** Clears the entry for a player (e.g. on disconnect). */
     public static void clear(ServerPlayer player) {
-        PreviewEntry e = ENTRIES.remove(player.getUUID());
-        if (e != null) broadcast(player, player.getUUID(), player.getScoreboardName(),
-                e.blueprintId(), null, 0, 0, 0, 0);
+        UUID id = player.getUUID();
+        LAST_BROADCAST_TICK.remove(id);
+        PreviewEntry e = ENTRIES.remove(id);
+        if (e != null) broadcast(player, id, player.getScoreboardName(),
+                e.blueprintId(), e.category(), null, 0, 0, 0, 0);
     }
 
     private static void broadcast(ServerPlayer source, UUID uuid, String playerName,
-                                   String blueprintId, BlockPos origin, int rotation,
+                                   String blueprintId, String category, BlockPos origin, int rotation,
                                    int sizeX, int sizeY, int sizeZ) {
         if (!(source.level() instanceof ServerLevel level)) return;
         int radius = BlueprintConfig.PREVIEW_BROADCAST_RADIUS.get();
         S2C_PreviewBroadcastMessage msg = new S2C_PreviewBroadcastMessage(
-                uuid, playerName, blueprintId, origin, rotation, sizeX, sizeY, sizeZ);
+                uuid, playerName, blueprintId, category, origin, rotation, sizeX, sizeY, sizeZ);
 
         double ox = origin != null ? origin.getX() : source.getX();
         double oy = origin != null ? origin.getY() : source.getY();

@@ -1,8 +1,8 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.item.ProjectionBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
+import com.xioyim.spatialblueprint.server.BlueprintValidator;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.ItemSyncUtil;
 import net.minecraft.network.FriendlyByteBuf;
@@ -15,19 +15,10 @@ import net.minecraftforge.network.PacketDistributor;
 import java.util.function.Supplier;
 
 /**
- * 客户端 → 服务端：创造模式玩家为指定投影蓝图设置自定义取出经验等级或取出次数上限。
- *
- * <ul>
- *   <li>{@link #PROP_XP}    — 设定 {@code customWithdrawXp}（-1 表示清除，恢复公式计算）</li>
- *   <li>{@link #PROP_LIMIT} — 设定 {@code customWithdrawLimit}（-1 表示清除，恢复配置默认值）</li>
- * </ul>
- *
- * <p>服务端同步更新蓝图文件；若玩家当前手中持有该蓝图，也同步更新物品 NBT。</p>
+ * 客户端 → 服务端：更新蓝图的动画时长。
  */
 public class C2S_SetWithdrawPropertyMessage {
 
-    public static final int PROP_XP       = 0;
-    public static final int PROP_LIMIT    = 1;
     /** Updates animDuration in the blueprint file and the held item's root NBT. Available to all players. */
     public static final int PROP_DURATION = 2;
 
@@ -59,9 +50,16 @@ public class C2S_SetWithdrawPropertyMessage {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
 
-            // PROP_XP and PROP_LIMIT are economy-sensitive — creative-only.
-            // PROP_DURATION may be set by any player.
-            if (msg.property != PROP_DURATION && !player.isCreative()) return;
+            if (msg.property != PROP_DURATION) return;
+
+            // ── 归属校验：主人或 OP 才能改 ────────────────────────────────
+            // 以前这里没有任何校验：blueprintId 直接来自客户端，随便填一个
+            // 别人的 id 就能改掉别人蓝图的动画时长，还会顺带触发一次全库摘要推送。
+            if (!BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
+                BlueprintNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                        new S2C_OperationResult(false, "spatial_blueprint.error.blueprint_not_owner"));
+                return;
+            }
 
             // ── 对 PROP_DURATION 做服务端二次钳位（防止客户端绕过上限）──
             int effectiveValue = msg.value;
@@ -73,8 +71,6 @@ public class C2S_SetWithdrawPropertyMessage {
             // ── 更新蓝图文件（PROP_DURATION 失败时发 S2C 错误反馈）──────
             boolean fileOk;
             switch (msg.property) {
-                case PROP_XP       -> { fileOk = BlueprintStorage.setCustomWithdrawXp(msg.blueprintId, effectiveValue); }
-                case PROP_LIMIT    -> { fileOk = BlueprintStorage.setCustomWithdrawLimit(msg.blueprintId, effectiveValue); }
                 case PROP_DURATION -> { fileOk = BlueprintStorage.setAnimDuration(msg.blueprintId, effectiveValue); }
                 default            -> { fileOk = false; }
             }
@@ -88,16 +84,12 @@ public class C2S_SetWithdrawPropertyMessage {
             for (InteractionHand hand : InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
                 String heldId = null;
-                if (stack.getItem() instanceof ProjectionBlueprintItem) {
-                    heldId = ProjectionBlueprintItem.getBlueprintId(stack);
-                } else if (stack.getItem() instanceof SpatialBlueprintItem) {
+                if (stack.getItem() instanceof SpatialBlueprintItem) {
                     heldId = SpatialBlueprintItem.getBlueprintId(stack);
                 }
                 if (!msg.blueprintId.equals(heldId)) continue;
 
                 switch (msg.property) {
-                    case PROP_XP    -> ProjectionBlueprintItem.setCustomWithdrawXp(stack, effectiveValue);
-                    case PROP_LIMIT -> ProjectionBlueprintItem.setCustomWithdrawLimit(stack, effectiveValue);
                     case PROP_DURATION -> SpatialBlueprintItem.setAnimDuration(stack, effectiveValue);
                 }
                 ItemSyncUtil.syncHand(player, hand);
@@ -105,9 +97,10 @@ public class C2S_SetWithdrawPropertyMessage {
             }
 
             // ── 推送最新摘要列表，让客户端 ClientLibraryCache 同步更新 ──
+            // H2：过滤后再推。
             BlueprintNetwork.CHANNEL.send(
                     PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_LibrarySyncMessage(BlueprintStorage.listSummaries()));
+                    new S2C_LibrarySyncMessage(C2S_RequestLibraryMessage.buildFilteredSummaries(player)));
         });
         ctx.get().setPacketHandled(true);
     }

@@ -15,15 +15,15 @@ import java.util.regex.Pattern;
 
 public class BlueprintValidator {
 
-    public record ValidationResult(boolean valid, String failKey, String detail) {
+    public record ValidationResult(boolean valid, String failKey, String detailKey, Object[] detailArgs) {
         public static ValidationResult ok() {
-            return new ValidationResult(true, "", "");
+            return new ValidationResult(true, "", "", new Object[0]);
         }
         public static ValidationResult fail(String key) {
-            return new ValidationResult(false, key, "");
+            return new ValidationResult(false, key, "", new Object[0]);
         }
-        public static ValidationResult fail(String key, String detail) {
-            return new ValidationResult(false, key, detail);
+        public static ValidationResult fail(String key, String detailKey, Object... detailArgs) {
+            return new ValidationResult(false, key, detailKey, detailArgs);
         }
     }
 
@@ -100,11 +100,64 @@ public class BlueprintValidator {
         return true;
     }
 
-    public static ValidationResult validateCaptureArea(ServerPlayer player, BlockPos p1, BlockPos p2) {
-        return validateCaptureArea(player, p1, p2, FluidCaptureFilter.ALL);
+    /**
+     * 槽位校验：该玩家在此分类下是否还有空位。
+     *
+     * <p><b>必须在任何破坏性操作之前调用</b> —— 次元蓝图捕获会清除世界方块，
+     * 等清完了才发现存不下就晚了。</p>
+     *
+     * <p>OP 豁免；上限为 0 表示不限。无主的旧蓝图不计入（见
+     * {@link com.xioyim.spatialblueprint.util.BlueprintStorage#countSlots}）。</p>
+     */
+    public static ValidationResult checkSlot(ServerPlayer player, String category) {
+        if (player.hasPermissions(2)) return ValidationResult.ok();
+        int limit = BlueprintConfig.getSlotLimitFor(category);
+        if (limit <= 0) return ValidationResult.ok();
+        int used = com.xioyim.spatialblueprint.util.BlueprintStorage
+                .countSlots(player.getUUID().toString(), category);
+        if (used < limit) return ValidationResult.ok();
+        return ValidationResult.fail("spatial_blueprint.error.slot_full",
+                "spatial_blueprint.detail.slot_full", used, limit);
     }
 
-    public static ValidationResult validateCaptureArea(ServerPlayer player, BlockPos p1, BlockPos p2, FluidCaptureFilter filter) {
+    /**
+     * 蓝图管理权判定：<b>主人本人，或 OP</b>。
+     *
+     * <p>用于删除 / 改名 / 改属性这类会写别人文件的操作。以前这几条只查
+     * {@code player.isCreative()} —— 在开放创造的服上等于谁都能改谁的蓝图。</p>
+     *
+     * <p>无主蓝图（{@code ownerUuid} 为空的旧数据）只有 OP 能碰，与
+     * {@link com.xioyim.spatialblueprint.util.BlueprintData#isOwnedBy} 和
+     * {@link com.xioyim.spatialblueprint.util.BlueprintStorage#countSlots}
+     * 的既定语义一致 —— 那批蓝图不属于任何人，不该因为「谁都不是主人」
+     * 就反过来变成谁都能删。</p>
+     *
+     * <p>找不到文件时返回 {@code false}：调用方拿到的就是「无权 / 不存在」，
+     * 不必再分两种失败去区分，也不会因为一个不存在的 id 就放行后续写操作。</p>
+     */
+    public static boolean canManageBlueprint(ServerPlayer player, String blueprintId) {
+        if (player == null || blueprintId == null || blueprintId.isEmpty()) return false;
+        if (player.hasPermissions(2)) return true;
+        String owner = com.xioyim.spatialblueprint.util.BlueprintStorage.ownerUuidOf(blueprintId);
+        return !owner.isEmpty() && owner.equals(player.getUUID().toString());
+    }
+
+    public static ValidationResult validateCaptureArea(ServerPlayer player, BlockPos p1, BlockPos p2) {
+        return validateCaptureArea(player, p1, p2, FluidCaptureFilter.ALL, "create");
+    }
+
+    public static ValidationResult validateCaptureArea(ServerPlayer player, BlockPos p1, BlockPos p2,
+                                                        FluidCaptureFilter filter) {
+        return validateCaptureArea(player, p1, p2, filter, "create");
+    }
+
+    /**
+     * @param category 目标蓝图分类，决定体积上限（{@code create} / {@code project} /
+     *                 {@code dimensional} / {@code engineering} / {@code template}）。
+     *                 上限不再看游戏模式 —— 结构能有多大取决于要存成哪种蓝图。
+     */
+    public static ValidationResult validateCaptureArea(ServerPlayer player, BlockPos p1, BlockPos p2,
+                                                        FluidCaptureFilter filter, String category) {
         ServerLevel level = player.serverLevel();
 
         if (!level.isInWorldBounds(p1) || !level.isInWorldBounds(p2)) {
@@ -115,30 +168,25 @@ public class BlueprintValidator {
         int sy = Math.abs(p1.getY() - p2.getY()) + 1;
         int sz = Math.abs(p1.getZ() - p2.getZ()) + 1;
 
-        // 包围盒体积预检（非 OP：超过绝对上限直接拒绝，避免遍历超大区域）
-        // OP 跳过此预检，直接走非空气方块计数（OP 上限 = ABSOLUTE_MAX_CAPTURE_VOLUME）
+        // 包围盒体积预检：超过绝对上限 1.6M 直接拒绝（包含 OP），避免遍历超大区域
+        // 之前 OP 跳过此预检导致选区>1.6M 仍可无限制创建空间/投影/次元/工程四类
         long bbox = volume(p1, p2);
-        if (!player.hasPermissions(2) && bbox > BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME) {
-            String detail = "空间盒: " + sx + "×" + sy + "×" + sz + " = " + bbox + " 格"
-                    + "，上限: " + BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME + " 格";
-            return ValidationResult.fail("spatial_blueprint.error.area_too_large", detail);
+        if (bbox > BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME) {
+            return ValidationResult.fail("spatial_blueprint.error.area_too_large",
+                    "spatial_blueprint.detail.area_too_large_bbox",
+                    sx, sy, sz, bbox, BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME);
         }
 
         // 统计非空气方块数量（尊重流体过滤，与客户端计数一致）
         long nonAir = countNonAir(level, p1, p2, filter);
-        long effectiveLimit;
-        if (player.hasPermissions(2)) {
-            effectiveLimit = BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME;
-        } else {
-            int configLimit = player.isCreative()
-                    ? BlueprintConfig.MAX_CAPTURE_VOLUME_CREATIVE.get()
-                    : BlueprintConfig.MAX_CAPTURE_VOLUME_SURVIVAL.get();
-            effectiveLimit = Math.min(configLimit, BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME);
-        }
+        // OP 豁免；其余按目标蓝图分类取上限（与游戏模式无关）
+        long effectiveLimit = player.hasPermissions(2)
+                ? BlueprintConfig.ABSOLUTE_MAX_CAPTURE_VOLUME
+                : BlueprintConfig.getMaxVolumeFor(category);
         if (nonAir > effectiveLimit) {
-            String detail = "方块数: " + nonAir + "，上限: " + effectiveLimit
-                    + "\n空间盒: " + sx + "×" + sy + "×" + sz + " = " + bbox + " 格";
-            return ValidationResult.fail("spatial_blueprint.error.area_too_large", detail);
+            return ValidationResult.fail("spatial_blueprint.error.area_too_large",
+                    "spatial_blueprint.detail.area_too_large",
+                    nonAir, effectiveLimit, sx, sy, sz, bbox);
         }
 
         return ValidationResult.ok();

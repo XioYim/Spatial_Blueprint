@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.item.BuildBlueprintItem;
 import com.xioyim.spatialblueprint.item.DimensionalBlueprintItem;
 import com.xioyim.spatialblueprint.item.EngineeringBlueprintItem;
@@ -13,10 +14,16 @@ import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintPlacementHandler;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.ItemSyncUtil;
+import com.xioyim.spatialblueprint.util.ProjectClaimRegistry;
+import com.xioyim.spatialblueprint.util.ProjectData;
+import com.xioyim.spatialblueprint.util.ProjectProgressData;
+import com.xioyim.spatialblueprint.util.ProjectStorage;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
@@ -24,6 +31,7 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.PacketDistributor;
 
+import java.util.UUID;
 import java.util.function.Supplier;
 
 public class PlaceBlueprintMessage {
@@ -80,7 +88,10 @@ public class PlaceBlueprintMessage {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
 
-            if (!BlueprintValidator.checkAndUpdateCooldown(player)) return;
+            if (!BlueprintValidator.checkAndUpdateCooldown(player)) {
+                sendPlacementCancelled(player);
+                return;
+            }
 
             // ── 识别手中物品（DimensionalBlueprintItem 须先于 SpatialBlueprintItem 检测）────
             ItemStack stack = null;
@@ -116,26 +127,53 @@ public class PlaceBlueprintMessage {
                 return;
             }
 
-            // ── 次元蓝图权限检查：非 OP 且非创建者不可使用 ────────────────
+
+            // 奖励蓝图：投影的特殊变体，放置后<b>销毁</b>（与空间蓝图一致）——
+            // 投影蓝图可反复使用，奖励要是也能反复用，发一张等于发无限张。
+            final boolean isReward = stack.getItem() instanceof com.xioyim.spatialblueprint.item.RewardBlueprintItem;
+            // ── 次元蓝图归属检查：任何人（含 OP）都不能用别人的 ────────────
+            //
+            // 旧实现按物品 NBT 里的 creatorName 判，有两个洞：
+            //   · creatorName 为空时视为「是主人」—— 刚捕获还没写名字的蓝图谁捡到都能用
+            //   · OP 直接豁免 —— 与「次元蓝图与主人的次元袋一一绑定」的前提冲突
+            // 现在统一按 ownerUuid 判，与蓝图库、右键入口的判定完全一致。
             if (isDimensional) {
-                String creator = stack.hasTag() && stack.getTag().contains("creatorName")
-                        ? stack.getTag().getString("creatorName") : "";
-                boolean isOp = player.hasPermissions(2);
-                boolean isOwner = creator.isEmpty() || creator.equals(player.getScoreboardName());
-                if (!isOp && !isOwner) {
-                    sendResult(player, false, "spatial_blueprint.error.dimensional_not_owner");
+                String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+                if (!player.getUUID().toString().equals(BlueprintStorage.ownerUuidOf(bpId))) {
+                    sendResult(player, false, "spatial_blueprint.message.void_blueprint.not_owner");
                     return;
                 }
             }
 
             // ── 读取蓝图数据 ──────────────────────────────────────────────
             BlueprintData data = isProjection
-                    ? ProjectionBlueprintItem.getBlueprintData(stack)
-                    : SpatialBlueprintItem.getBlueprintData(stack);
+                    ? ProjectionBlueprintItem.getBlueprintDataServer(stack)
+                    : SpatialBlueprintItem.getBlueprintDataServer(stack);
             if (data == null) {
                 BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
                         BlueprintLogger.pos(msg.targetPos), "no_blueprint_data");
                 sendResult(player, false, "spatial_blueprint.error.no_blueprint_data");
+                return;
+            }
+
+            // ── 已放置的次元蓝图不可再次放置 ──────────────────────────────
+            // 兜底：正常流程下次元蓝图物品在放置那一刻就被替换成 BuildBlueprintItem，
+            // 已放置的蓝图回不到玩家手上。这里再拦一道，防止任何未预料的路径把它取出来
+            // 重复放置 —— 那等于用一份材料无限刷同一个结构。
+            if (data.placed) {
+                BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
+                        BlueprintLogger.pos(msg.targetPos), "blueprint_already_placed");
+                sendResult(player, false, "spatial_blueprint.error.blueprint_already_placed");
+                return;
+            }
+
+            // ── 存档归属校验：不属于本档的工程 / 次元蓝图一律拒绝放置 ──────
+            // 客户端右键时就会拦下来并销毁物品，这里是防改包的底线：
+            // 工程蓝图的固定坐标在别的存档里指向的是完全不相干的地方。
+            if (com.xioyim.spatialblueprint.network.C2S_DiscardForeignBlueprintMessage.isForeign(data)) {
+                BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
+                        BlueprintLogger.pos(msg.targetPos), "foreign_world");
+                sendResult(player, false, "spatial_blueprint.error.foreign_world");
                 return;
             }
 
@@ -147,12 +185,6 @@ public class PlaceBlueprintMessage {
                     BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
                             BlueprintLogger.pos(msg.targetPos), "engineering_wrong_dimension");
                     sendResult(player, false, "spatial_blueprint.error.engineering.wrong_dimension");
-                    return;
-                }
-                if (boundsResult == EngineeringBlueprintItem.ProjectBoundsResult.TOO_FAR) {
-                    BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
-                            BlueprintLogger.pos(msg.targetPos), "engineering_too_far");
-                    sendResult(player, false, "spatial_blueprint.error.engineering.too_far");
                     return;
                 }
             }
@@ -171,6 +203,23 @@ public class PlaceBlueprintMessage {
             int clampedY = BlueprintValidator.clampOffset(msg.yOffset);
             int clampedZ = BlueprintValidator.clampOffset(msg.zOffset);
             BlockPos actualPos = msg.targetPos.offset(clampedX, clampedY, clampedZ);
+
+            // ── 子工程：坐标由服务端说了算，不采信客户端发来的位置 ──────────
+            //
+            // 领取出来的子工程蓝图，绝对坐标是领取时按「激活原点 + relP」算好、写死在
+            // 物品 NBT 上的。这里不覆盖的话，改包的客户端可以把 targetPos 挪到别处，
+            // 只要还在 checkProjectBounds 的距离范围内（默认 64 格）就能通过 ——
+            // 结构会建在错的位置，进度却照样记成完成。
+            //
+            // 只对<b>子工程</b>生效（认 sbTaskSetId）：独立工程蓝图是 OP 自己创作自己用的，
+            // 保持原有行为不动。
+            if (isEngineering) {
+                String subTaskSet = EngineeringBlueprintItem.getTaskSetId(stack);
+                if (subTaskSet != null && !subTaskSet.isEmpty()
+                        && EngineeringBlueprintItem.hasBoundProject(stack)) {
+                    actualPos = EngineeringBlueprintItem.getBoundStartPos(stack);
+                }
+            }
 
             BlueprintValidator.ValidationResult validation =
                     BlueprintValidator.validateBlockPos(player.serverLevel(), actualPos);
@@ -227,11 +276,6 @@ public class PlaceBlueprintMessage {
                 }
             }
 
-            if (data.opBypassCapture) {
-                com.xioyim.spatialblueprint.SpatialBlueprintMod.LOGGER.info(
-                        "[SpatialBlueprint] [op_bypass] placing blueprint '{}' at {} by {} — captured with OP bypass, may contain full NBT content",
-                        data.name, actualPos, player.getScoreboardName());
-            }
             BlueprintLogger.intent(player, BlueprintLogger.Action.PLACE,
                     (isProjection ? "[projection] " : "") + BlueprintLogger.pos(actualPos)
                     + " " + BlueprintLogger.name(data.name)
@@ -244,27 +288,41 @@ public class PlaceBlueprintMessage {
                     : SpatialBlueprintItem.getAnimDuration(stack, 8);
             animDuration = Math.max(configMin, animDuration);
 
-            // ── 次元蓝图：始终删除 dat 文件 ──────────────────────────────
-            if (isDimensional) {
-                String blueprintId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
-                if (!blueprintId.isEmpty()) BlueprintStorage.delete(blueprintId);
+            String blueprintIdForBag = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+
+            // 领地插件的 EntityPlaceEvent / BreakEvent 检查必须先于任何材料、物品和文件状态修改。
+            // 否则服务端二次预检拒绝时，结构没放出来但材料与蓝图已经被消耗。
+            if (!BlueprintPlacementHandler.precheckPlacement(
+                    player.serverLevel(), actualPos, data, msg.rotation, player,
+                    msg.clearFirst, msg.fluidMode)) {
+                return;
             }
 
             // ── 生存模式：放置前先替换物品，防止动画期间重复触发 ──────────
+            // 次元蓝图的「标记已放置」也只在这里做：创造模式不替换手中物品、也不消耗
+            // 次元袋，若在外面无条件打标记，手上会留下一个已被标记为已放置的蓝图
+            // （再次放置会被拒），袋子还成为占着材料空间的孤儿。
+            // 创造模式本就不消耗材料、蓝图可重复使用，因此标记与袋子一并不动。
             if (!player.isCreative()) {
+                com.xioyim.spatialblueprint.util.MaterialSpace space =
+                        com.xioyim.spatialblueprint.util.MaterialSpace.get(player.serverLevel());
                 if (isDimensional) {
-                    // 校验并消耗材料（若蓝图含材料清单，与投影蓝图行为一致）
-                    com.xioyim.spatialblueprint.util.MaterialList mlDim =
-                            ProjectionBlueprintItem.getMaterialList(stack);
-                    if (mlDim != null && !mlDim.blockCounts.isEmpty()) {
-                        if (!ProjectionBlueprintItem.hasSufficientMaterials(stack, mlDim)) {
-                            BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
-                                    BlueprintLogger.pos(actualPos), "insufficient_materials");
-                            sendResult(player, false, "spatial_blueprint.error.insufficient_materials");
-                            return;
-                        }
-                        ProjectionBlueprintItem.clearDepositedMaterials(stack);
+                    // ── 材料校验：必须持有该蓝图的次元袋 ──────────────────
+                    // 袋子本身就是需求清单（捕获时存多少、放置时扣多少），因此不受
+                    // blockSubstitutions / bulkMaterialConversions 配置变更导致的清单重算影响。
+                    // 仅 FORCE 捕获（OP 特权：挖走不给料、放置也不要料）豁免。
+                    boolean consumed = space.bagConsume(player.getUUID(), blueprintIdForBag);
+                    if (!consumed && !data.opBypassCapture) {
+                        BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
+                                BlueprintLogger.pos(actualPos), "insufficient_materials");
+                        sendResult(player, false, "spatial_blueprint.error.insufficient_materials");
+                        return;
                     }
+                    // 放置即消耗，但**不再删除 dat 文件** —— 改为打上「已放置」标记
+                    // 并记录放置点。文件保留下来，玩家手上的空置次元蓝图可通过「重新储存」
+                    // 覆盖写回本文件并清除标记；在此之前该蓝图在列表中显示「(已放置)」且禁止取出。
+                    markPlacedAndSync(player, blueprintIdForBag);
+                    S2C_MaterialSpaceSyncMessage.sendFor(player, null);
                     BlockPos placedMin = actualPos;
                     BlockPos placedMax = (msg.rotation == Rotation.CLOCKWISE_90 || msg.rotation == Rotation.COUNTERCLOCKWISE_90)
                             ? actualPos.offset(data.size.getZ() - 1, data.size.getY() - 1, data.size.getX() - 1)
@@ -272,40 +330,53 @@ public class PlaceBlueprintMessage {
                     ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
                     CompoundTag buildNbt = new CompoundTag();
                     buildNbt.putString("blueprintName", data.name);
+                    buildNbt.putInt("saveMode", data.saveMode.ordinal());
                     buildNbt.putLong("completionTime",
                             player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
                     buildNbt.putString("sourceType", "void_dimensional");
+                    // 空置次元蓝图必须携带 blueprintId，否则「重新储存」找不到要覆盖写回的文件
+                    if (!blueprintIdForBag.isEmpty()) buildNbt.putString("blueprintId", blueprintIdForBag);
                     buildNbt.put("captureMin", NbtUtils.writeBlockPos(placedMin));
                     buildNbt.put("captureMax", NbtUtils.writeBlockPos(placedMax));
                     buildNbt.putDouble("tpX", player.getX());
                     buildNbt.putDouble("tpY", player.getY());
                     buildNbt.putDouble("tpZ", player.getZ());
                     buildNbt.putString("tpDimension", player.serverLevel().dimension().location().toString());
+                    // 存档身份：空置次元蓝图的坐标只在本档有意义，带到别的档里必须能认出来
+                    buildNbt.putString("worldUuid", com.xioyim.spatialblueprint.util.WorldIdentity
+                            .get(player.serverLevel()).uuid().toString());
+                    buildNbt.putString("worldName", com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
                     if (stack.hasTag() && stack.getTag().contains("creatorName"))
                         buildNbt.putString("creatorName", stack.getTag().getString("creatorName"));
                     buildStack.setTag(buildNbt);
                     player.setItemInHand(hand, buildStack);
                     ItemSyncUtil.syncHand(player, hand);
                 } else if (isProjection) {
-                    // 校验材料充足再替换
+                    // 投影 / 工程蓝图：从材料空间普通池原子扣除整份清单。
+                    // FORCE 捕获的蓝图（opBypassCapture）通常跳过校验与扣除，
+                    // 但奖励蓝图若 OP 事后设定了耗材，则仍需消耗（不跳过）。
                     com.xioyim.spatialblueprint.util.MaterialList ml =
-                            ProjectionBlueprintItem.getMaterialList(stack);
-                    if (!ProjectionBlueprintItem.hasSufficientMaterials(stack, ml)) {
+                            ProjectionBlueprintItem.getMaterialListServer(stack);
+                    boolean hasMaterialCost = ml != null && !ml.blockCounts.isEmpty();
+                    boolean skipConsume = data.opBypassCapture && !(isReward && hasMaterialCost);
+                    if (!skipConsume && !space.consume(player.getUUID(), ml)) {
                         BlueprintLogger.failed(player, BlueprintLogger.Action.PLACE,
                                 BlueprintLogger.pos(actualPos), "insufficient_materials");
                         sendResult(player, false, "spatial_blueprint.error.insufficient_materials");
                         return;
                     }
-                    if (isEngineering) {
-                        // 工程蓝图生存模式：参考空间蓝图，立即移除物品（存入的材料随之消耗）
+                    S2C_MaterialSpaceSyncMessage.sendFor(player, ml);
+                    if (isEngineering || isReward) {
+                        // 工程蓝图 / 奖励蓝图：参考空间蓝图，立即移除物品（用后销毁）
+                        recordSubProjectCompletion(player, stack);
                         player.setItemInHand(hand, ItemStack.EMPTY);
                         ItemSyncUtil.syncHand(player, hand);
                     } else {
-                        // 投影蓝图：清除存入材料，转为 BuildBlueprintItem 等待动画完成
-                        ProjectionBlueprintItem.clearDepositedMaterials(stack);
+                        // 投影蓝图：转为 BuildBlueprintItem 等待动画完成
                         ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
                         CompoundTag buildNbt = new CompoundTag();
                         buildNbt.putString("blueprintName", data.name);
+                        buildNbt.putInt("saveMode", data.saveMode.ordinal());
                         if (stack.hasTag()) {
                             CompoundTag src = stack.getTag();
                             if (src.contains("blueprintId"))   buildNbt.putString("blueprintId", src.getString("blueprintId"));
@@ -324,8 +395,14 @@ public class PlaceBlueprintMessage {
                     ItemSyncUtil.syncHand(player, hand);
                 }
             } else if (isDimensional) {
-                // 创造模式次元蓝图：转为 BuildBlueprintItem，动画完成后 onServerTick() 自动恢复为次元蓝图。
-                // captureMin/Max 告诉 BuildBlueprintItem 放置范围，sourceType="void_dimensional" 触发恢复逻辑。
+                // 创造模式次元蓝图：与生存模式走同一套流程 —— 打「已放置」标记、
+                // 转为 BuildBlueprintItem，动画完成后恢复为空置次元蓝图。
+                // 唯一差别是不消耗次元袋（创造模式本就不消耗材料，袋子留着供重新储存后复用）。
+                //
+                // 结构已经还原回世界，蓝图内容就是空的，因此标记必须打上：
+                // 不打的话列表里那条仍显示「未放置」且可反复取出，等于无限复制结构。
+                markPlacedAndSync(player, blueprintIdForBag);
+
                 BlockPos placedMin = actualPos;
                 BlockPos placedMax = (msg.rotation == Rotation.CLOCKWISE_90 || msg.rotation == Rotation.COUNTERCLOCKWISE_90)
                         ? actualPos.offset(data.size.getZ() - 1, data.size.getY() - 1, data.size.getX() - 1)
@@ -333,25 +410,42 @@ public class PlaceBlueprintMessage {
                 ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
                 CompoundTag buildNbt = new CompoundTag();
                 buildNbt.putString("blueprintName", data.name);
+                buildNbt.putInt("saveMode", data.saveMode.ordinal());
                 buildNbt.putLong("completionTime",
                         player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
                 buildNbt.putString("sourceType", "void_dimensional");
+                // 空置次元蓝图必须携带 blueprintId，否则「重新储存」找不到要覆盖写回的文件，
+                // 右键时还会被判定为失效直接换成空白蓝图。
+                if (!blueprintIdForBag.isEmpty()) buildNbt.putString("blueprintId", blueprintIdForBag);
                 buildNbt.put("captureMin", NbtUtils.writeBlockPos(placedMin));
                 buildNbt.put("captureMax", NbtUtils.writeBlockPos(placedMax));
                 buildNbt.putDouble("tpX", player.getX());
                 buildNbt.putDouble("tpY", player.getY());
                 buildNbt.putDouble("tpZ", player.getZ());
                 buildNbt.putString("tpDimension", player.serverLevel().dimension().location().toString());
+                // 存档身份：空置次元蓝图的坐标只在本档有意义，带到别的档里必须能认出来
+                buildNbt.putString("worldUuid", com.xioyim.spatialblueprint.util.WorldIdentity
+                        .get(player.serverLevel()).uuid().toString());
+                buildNbt.putString("worldName", com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
                 if (stack.hasTag() && stack.getTag().contains("creatorName"))
                     buildNbt.putString("creatorName", stack.getTag().getString("creatorName"));
                 buildStack.setTag(buildNbt);
                 player.setItemInHand(hand, buildStack);
                 ItemSyncUtil.syncHand(player, hand);
+            } else if (isProjection && (isReward || isEngineering)) {
+                // 奖励 / 工程蓝图：用后销毁，不还给玩家。
+                // 工程蓝图创造模式原来会转成 BuildBlueprintItem、动画结束后变回一枚**空的**
+                // 工程蓝图；现在与生存模式统一为「无论哪个模式，用完都直接消失」——
+                // 子工程的完成判定就挂在这一步之前，物品清空后再想读 taskSetId 已经晚了。
+                recordSubProjectCompletion(player, stack);
+                player.setItemInHand(hand, ItemStack.EMPTY);
+                ItemSyncUtil.syncHand(player, hand);
             } else if (isProjection) {
-                // 创造模式投影/工程蓝图：同样转为 BuildBlueprintItem（防止动画期间重复放置）
+                // 创造模式投影蓝图：转为 BuildBlueprintItem（防止动画期间重复放置）
                 ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
                 CompoundTag buildNbt = new CompoundTag();
                 buildNbt.putString("blueprintName", data.name);
+                buildNbt.putInt("saveMode", data.saveMode.ordinal());
                 if (stack.hasTag()) {
                     CompoundTag src = stack.getTag();
                     if (src.contains("blueprintId"))   buildNbt.putString("blueprintId", src.getString("blueprintId"));
@@ -359,7 +453,7 @@ public class PlaceBlueprintMessage {
                 }
                 buildNbt.putLong("completionTime",
                         player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
-                buildNbt.putString("sourceType", isEngineering ? "engineering" : "project");
+                buildNbt.putString("sourceType", "project");
                 buildStack.setTag(buildNbt);
                 player.setItemInHand(hand, buildStack);
                 ItemSyncUtil.syncHand(player, hand);
@@ -376,6 +470,36 @@ public class PlaceBlueprintMessage {
                                 com.xioyim.spatialblueprint.BlueprintConfig.MAX_UNDO_HISTORY.get());
                 com.xioyim.spatialblueprint.util.SBUndoCooldown
                         .setPlacementCooldown(player.getUUID(), animDuration);
+            }
+
+            // ── 磁盘日志（只记成功）──────────────────────────────────────
+            // 位置很关键：必须在领地插件预检（precheckPlacement）与材料扣除之后。
+            // 放在前面的话，被领地拦下或材料不足而中止的放置也会被记成一次成功。
+            // FORCE 捕获的蓝图内容从未净化，走管理员通道，不混进常规放置日志。
+            {
+                BlockPos logSize = data.size;
+                boolean logSwap = (msg.rotation == Rotation.CLOCKWISE_90
+                        || msg.rotation == Rotation.COUNTERCLOCKWISE_90);
+                BlockPos logEnd = actualPos.offset(
+                        (logSwap ? logSize.getZ() : logSize.getX()) - 1,
+                        logSize.getY() - 1,
+                        (logSwap ? logSize.getX() : logSize.getZ()) - 1);
+                int logBlocks = data.normalBlocks.size() + data.dependentBlocks.size()
+                        + data.lateBlocks.size();
+                String logDim = player.serverLevel().dimension().location().toString();
+                String logCat = data.category == null ? "" : data.category;
+
+                if (data.saveMode == com.xioyim.spatialblueprint.util.CaptureMode.FORCE
+                        || data.opBypassCapture) {
+                    com.xioyim.spatialblueprint.log.BlueprintFileLogger.forcePlace(
+                            player, blueprintIdForBag, data.name, logCat, logDim,
+                            actualPos, logEnd, logBlocks);
+                } else {
+                    com.xioyim.spatialblueprint.log.BlueprintFileLogger.placement(
+                            player, blueprintIdForBag, data.name, logCat,
+                            data.saveMode == null ? "SAFE" : data.saveMode.name(),
+                            logDim, actualPos, logEnd, logBlocks);
+                }
             }
 
             // ── 执行放置（物品已替换，无法再重复触发）────────────────────
@@ -405,10 +529,103 @@ public class PlaceBlueprintMessage {
         ctx.get().setPacketHandled(true);
     }
 
+    /**
+     * 子工程放置成功 → 记账。
+     *
+     * <p>必须在物品被清空之前读 NBT —— 清空之后 taskSetId / entryIndex 就没了。</p>
+     */
+    private static void recordSubProjectCompletion(ServerPlayer player, ItemStack stack) {
+        String taskSetId = EngineeringBlueprintItem.getTaskSetId(stack);
+        if (taskSetId == null || taskSetId.isEmpty()) return;   // 不是子工程，直接返回
+        int entryIndex = EngineeringBlueprintItem.getEntryIndex(stack);
+        if (entryIndex <= 0) return;
+
+        ProjectProgressData progress = ProjectProgressData.get(player.serverLevel());
+        if (progress.isCompleted(taskSetId, entryIndex)) return;   // 重复放置不重复触发指令
+        progress.markCompleted(taskSetId, entryIndex);
+        runCompletionCommand(player, taskSetId, entryIndex);
+    }
+
+    /** 项目配置的子工程完成指令：以服务器身份、权限等级 2 执行。 */
+    private static void runCompletionCommand(ServerPlayer player, String taskSetId, int entryIndex) {
+        ProjectClaimRegistry.Claim claim = ProjectClaimRegistry.get(player.serverLevel())
+                .findByTaskSet(taskSetId);
+        if (claim == null || claim.projectId == null || claim.projectId.isEmpty()) return;
+
+        ProjectData project;
+        try {
+            project = ProjectStorage.loadProject(UUID.fromString(claim.projectId));
+        } catch (IllegalArgumentException e) {
+            return;
+        }
+        if (project == null || project.onSubProjectComplete == null
+                || project.onSubProjectComplete.isBlank()) return;
+
+        String command = project.onSubProjectComplete
+                .replace("{player}", player.getGameProfile().getName())
+                .replace("{project_id}", claim.projectId)
+                .replace("{entry_index}", String.valueOf(entryIndex));
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+
+        try {
+            CommandSourceStack source = server.createCommandSourceStack()
+                    .withPermission(2)
+                    .withSuppressedOutput();
+            server.getCommands().performPrefixedCommand(source, command);
+            SpatialBlueprintMod.LOGGER.info(
+                    "[Project] Completion command executed taskSet='{}' project='{}' entry={} player='{}' command='{}'",
+                    taskSetId, claim.projectId, entryIndex,
+                    player.getGameProfile().getName(), command);
+        } catch (Exception e) {
+            SpatialBlueprintMod.LOGGER.warn(
+                    "[Project] Completion command failed taskSet='{}' project='{}' entry={}: {}",
+                    taskSetId, claim.projectId, entryIndex, e.getMessage());
+        }
+    }
+
     private static void sendResult(ServerPlayer player, boolean success, String messageKey) {
         BlueprintNetwork.CHANNEL.send(
                 PacketDistributor.PLAYER.with(() -> player),
                 new S2C_OperationResult(success, messageKey)
         );
+        if (!success) {
+            sendPlacementCancelled(player);
+        }
+    }
+
+    private static void sendPlacementCancelled(ServerPlayer player) {
+        BlueprintNetwork.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> player),
+                new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(-1f));
+    }
+
+    /**
+     * 给次元蓝图打上「已放置」标记并把最新列表推给客户端。
+     *
+     * <p>生存与创造两条放置路径共用 —— 结构已经还原回世界，蓝图内容就是空的，
+     * 两种模式下都必须打标记。不打的话列表里那条仍显示「未放置」且 ✔ 取出按钮不置灰，
+     * 玩家能取出同一份结构反复放置。</p>
+     *
+     * <p>推送列表这一步同样不能省：客户端 {@code ClientLibraryCache} 不会自己知道文件变了。</p>
+     */
+    private static void markPlacedAndSync(ServerPlayer player, String blueprintId) {
+        if (blueprintId == null || blueprintId.isEmpty()) return;
+        BlueprintStorage.setPlaced(blueprintId,
+                (int) Math.floor(player.getX()),
+                (int) Math.floor(player.getY()),
+                (int) Math.floor(player.getZ()),
+                player.serverLevel().dimension().location().toString());
+        BlueprintNetwork.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> player),
+                // H2：过滤后再推，避免放置一次就把全量列表泄一次。
+                new S2C_LibrarySyncMessage(C2S_RequestLibraryMessage.buildFilteredSummaries(player)));
+        // 同时刷新客户端的 BlueprintData 缓存：玩家可能还持有其他指向同一文件的次元蓝图，
+        // 右键时要靠这份数据的 placed 标记在门口拦住（见 SpatialBlueprintItem.openPlacementScreen）。
+        // 只推列表是不够的 —— 那只更新 ClientLibraryCache，不更新 ClientBlueprintCache。
+        BlueprintData fresh = BlueprintStorage.load(blueprintId);
+        if (fresh != null) {
+            BlueprintNetwork.sendBlueprintTo(player, blueprintId, fresh);
+        }
     }
 }

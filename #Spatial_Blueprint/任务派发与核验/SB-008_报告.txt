@@ -1,0 +1,94 @@
+任务        SB-008
+状态        PASS
+结论        规划模式迷你行改成「▲▼✎◎☄✖ + [提交修改]」：删除标记 / 顺序 / 材料清单三类改动
+            全部本地暂存、点 [提交修改] 由一条新 C2S 整单提交（服务端先全验后写）；新增子工程
+            预览线（◎，12 条边 / 条目颜色 / 深度测试）与材料编辑界面（☄，无独立保存按钮）。
+
+发现
+- 手册背景事实「2.7.10 尚未构建部署」已过时：2.7.10（含 e17+e18）已于 2026-09-18 18:35:20
+  构建、18:36:08 部署三端（见 开发日志.html e18 尾）。本任务的 wire 改动已按手册要求不 bump，
+  停在 2.7.10；主会话发版前需先 bump（建议 2.7.11），否则 2.7.10 会出现两个产物（T3）。
+  · gradle.properties:16
+- 规划模式界面对「已激活」项目本就打不开（ProjectBlueprintItem.use 里 !isActivated 才开），
+  所以本界面里 status.activated 恒 false —— 领取相关按钮（✔）删除后没有行为损失。
+  · item/ProjectBlueprintItem.java:54
+- 「编号校验在写盘之前」的边界位置：最后一条校验（前置引用检查）在 C2S_SubmitProjectChangesMessage.java:204，
+  第一次写盘（forgetEntry / deleteEntryFile）在 :220-:221。
+
+改动
+- | 2026-09-18 19:58 | `Spatial_Blueprint_20260918_195854` | `D897AC53` | SB-008 执行前 |
+- 改了 ProjectBlueprintScreen.java · 迷你行改 ▲▼✎◎☄✖ + [提交修改]；✖ 改删除暂存（行灰 + 删除线）；
+  序号列按条目颜色着色、悬停出颜色块 tooltip；◎ 开/关子工程预览线（按钮文字随条目颜色）；
+  ☄ 打开材料界面（缓存缺数据时先下载、下载中置灰、失败横幅）；三类暂存统一到
+  hasPendingChanges / clearPendingChanges，提交改发 C2S_SubmitProjectChangesMessage。
+- 改了 S2C_ProjectStatusMessage.java · EntryStatus 末尾追加 int color / String engId（encode/decode 对称）。
+- 改了 C2S_RequestProjectStatusMessage.java · 填 color 与由 filename 截出的 engId（不合规发空串），新增 engIdOf。
+- 改了 BlueprintSelectionRenderer.java · 新增 renderSubProjectPreviews（12 条边、条目颜色、深度测试、
+  不画贴图/文字），在 renderProjectPreviews(mc, player) 旁相邻调用一次。
+- 改了 ClientProjectPreview.java · onClientTick 背包核查后加 ClientSubProjectPreview.retainProjects(held)。
+- 改了 ClientProjectStatusCache.java · onReceive 加 onStatus 钩子、onLoggingOut 加 clear 钩子。
+- 改了 BlueprintNetwork.java · register() 末尾追加一条 c2s（C2S_SubmitProjectChangesMessage）。
+- 改了 lang 两份 · 新增 6 个项目界面 tooltip + 7 个 subproject_material 键 + message/detail changes.prereq_ref；
+  tooltip_submit / tooltip_order_locked / close_pending.title 文案改为覆盖三类改动；键数 976/976。
+- 新建 ClientSubProjectPreview.java · 客户端预览线状态（(pid,index)→Box），含 onStatus / retainProjects / clear。
+- 新建 SubProjectMaterialScreen.java · 材料编辑界面（4 列×6 行、格 70×17、图标 16、数量 0.75 缩放、
+  面板宽 298；✚ 新增 / 左键改数量 / 右键删除确认 / 滚轮翻页 / [确定][取消]，实现 ErrorToastSupport）。
+- 新建 C2S_SubmitProjectChangesMessage.java · 载荷 projectId + order + deletes + materials；
+  六道校验（OP / 主手 / 项目 / 无 claim / 序号集合 / 前置引用）全过才写：删除三清 → 材料整份覆盖 →
+  重排重编号 + 前置重映射 → saveProject → sendStatus → LOGGER.info。
+
+测试
+- 1 PASS 编译：编译时刻 2026-09-18 20:09:13（class），最后一次源码改动 ProjectBlueprintScreen.java
+  20:08:40，编译在其后。BUILD SUCCESSFUL；按 \.java:\d+: 计数 = 20（全量重编），与基线 20 行逐条一致
+  （无新行；手册说的 21 是增量跑法多打 BlueprintSelectionRenderer.java:64 的差异）。
+- 2 PASS javap：SpatialBlueprintMod / C2S_SubmitProjectChangesMessage / S2C_ProjectStatusMessage /
+  S2C_ProjectStatusMessage$EntryStatus / C2S_RequestProjectStatusMessage 的 net/minecraft/client 命中 = 0。
+- 3 PASS mtime 窗口（起点 2026-09-18 19:58:54）：窗口内 12 个文件 = 第三节「改」的 10 个 java + 2 个 lang；
+  其余源文件 0 命中。
+- 4 PASS BlueprintNetwork.java 与备份逐行 diff = 仅 +4 行（注释 + 3 行 c2s 注册）；新注册是 register() 最后一条。
+- 5 PASS gradle.properties 与备份逐行 diff = 0 行；mtime 2026-09-17 23:39:23（不在窗口）。
+- 6 PASS S2C_ProjectStatusMessage：EntryStatus 每条 encode 18 个字段（index/label/note/sizeX/sizeY/sizeZ/
+  blockCount/completed/cooldownRemainSec/requiresEntry/prereqMet/animDuration/creatorName/createdAt/
+  absMin/absMax/color/engId），decode 同数同序；新字段在每条条目末尾。
+- 7 PASS ProjectBlueprintScreen.java grep：C2S_ClaimSubProjectMessage=0、C2S_DeleteSubProjectMessage=0、
+  C2S_SubmitProjectOrderMessage=0、armedDelete=0、C2S_SubmitProjectChangesMessage=3、ClientSubProjectPreview=3、
+  SubProjectMaterialScreen=2；字面量 ◎=1、☄=1、✎=1、✔=0（▲=1、▼=1、✖=5：字面量 + setMessage 两分支 + 注释两处）。
+- 8 PASS renderSubProjectPreviews 方法体内 noDepth=0、withFaceTextures=0、drawString/renderText=0；
+  renderProjectPreviews(mc, player) 与 renderSubProjectPreviews(mc, player) 相邻调用各 1 处。
+- 9 PASS 校验与写盘边界：最后一条校验 C2S_SubmitProjectChangesMessage.java:204（prereq_ref sendFail），
+  第一次写盘 :220-:221；六道校验全在 :220 之前。
+- 10 PASS lang：两份 JSON 解析通过、各 976 键、互差 0；三个新文件引用的 59 个 spatial_blueprint 键在两份里
+  各恰好 1 条（脚本逐键核对）。
+- 11 PASS PlacementScreen / EngineeringBlueprintScreen / ProjectData / ProjectStorage / 五个禁改 network 类
+  mtime 均不在窗口（窗口清单里没有它们）。
+- 12 PASS 开发日志只新增一节 aux：与备份逐行 diff = +24 / −3，其中 3 行是头部 chips 与 footer 的
+  「更新」时间（锚注释要求改），其余全是新增的 e-SB-008 一节（<details class="entry aux">）；aux 节数 2 → 3。
+
+风险
+- 子工程预览线是纯客户端状态：换服清空（LoggingOut 钩子）、背包核查移除，但「项目文件被删」时状态包
+  found=false 不带 projectId，无法定位是哪条，此时不清理（由背包核查 / 维度判断兜底）。
+- 材料编辑界面是 1:1 照 PlacementScreen 的画法写的副本，两边以后各自改动可能分叉（手册明确不抽公共组件）。
+- 提交时若服务端在同刻被别的界面改过（极少），整单以「数据过期」拒绝，界面保留暂存，不丢改动。
+- [提交修改] 成功没有聊天提示（手册未要求键），反馈只有界面刷新 + 暂存清空。
+
+未完成
+- 建造模式 UI、✎ 子工程设定界面（手册明确不做）。
+- 实机验证（手册划归主会话）。
+
+建议记入踩坑记录
+- 派任务手册里的「版本现状」类事实会随时间过期：本手册写「2.7.10 未部署」，实际部署于执行前 38 分钟；
+  执行方遇到冲突时按「不 bump + 报告里写明」处理，由主会话收尾。（见 发现 第 1 条）
+- 新增 UI 文案里的符号（◎☄✎）若同时出现在注释 / javadoc 里，会让验收用的字面量计数对不上；
+  注释里改用中文名、字面量只留在 Button.builder。
+
+待复核
+- 1 迷你行六键几何：6×18+5×2=118px + [提交修改]，面板 364 内不挤（实机看眼缘）。
+- 2 ✖ 暂存删除：标记行灰 + 名称删除线；再点撤销；提交后行消失、序号重排。
+- 3 ◎ 预览线：一条 = 12 条边（无面贴图、无文字、深度测试）；同时开多条；换维度 / 走远自动关；
+  蓝图不在背包 5 秒内整项目关。
+- 4 ☄ 材料：第一次点会先下载（按钮灰、tooltip 显示下载中），到货再点开；界面内 ✚ / 左键 / 右键 /
+  滚轮；[确定] 后回列表，[提交修改] 才落盘；不改动直接 [确定] 不算暂存。
+- 5 [提交修改] 整单：只删、只排序、只改材料、三者混合各试一次；被拒时（数据过期）界面保留暂存。
+- 6 关闭提示：有任一类未提交时 ESC / [关闭] 弹 [提交修改][放弃修改]，ESC 取消提示留在界面。
+- 7 有 claim 的项目（构造一个已激活项目再打开）四类按钮全灰、tooltip 为「已被激活占用」。
+- 8 旧数据兼容：没有 color / filename 不合规的旧条目，序号列颜色兜底、☄ 置灰不崩。

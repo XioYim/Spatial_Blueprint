@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spatial_Blueprint · 待办事项</title>
+<style>
+  :root{
+    --bg:#f6f5f2; --card:#ffffff; --ink:#1f2328; --muted:#6b7280; --line:#e8e4dc;
+    --accent:#d97706; --accent-soft:#fdf3e3; --accent-line:#f0dcb4;
+    --code-bg:#f4f2ee; --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12110f; --card:#1b1916; --ink:#e8e5e0; --muted:#a09a90; --line:#2c2823;
+      --accent:#fbbf24; --accent-soft:#2a2212; --accent-line:#4a3a16;
+      --code-bg:#232019; --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:40px 20px 72px}
+  .hero{
+    position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; box-shadow:var(--shadow); padding:28px 30px 24px; overflow:hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; left:0; right:0; top:0; height:4px;
+    background:linear-gradient(90deg,var(--accent),#fcd34d);
+  }
+  h1{margin:0 0 6px; font-size:26px; letter-spacing:.5px}
+  h1 .dot{color:var(--accent)}
+  .sub{color:var(--muted); font-size:13.5px}
+  .chips{margin-top:14px; display:flex; flex-wrap:wrap; gap:8px}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 11px; border-radius:999px;
+    font-size:12.5px; background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
+    font-variant-numeric:tabular-nums;
+  }
+  .chip.gray{background:var(--code-bg); color:var(--muted); border-color:var(--line)}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); padding:22px 26px; margin-top:18px;
+  }
+  h2{font-size:16.5px; margin:0 0 14px; padding-left:12px; line-height:1.5; border-left:4px solid var(--accent)}
+  p{margin:8px 0}
+  .muted{color:var(--muted); font-size:13.5px}
+  code{
+    font:.88em/1.6 ui-monospace,"Cascadia Code",Consolas,"JetBrains Mono",monospace;
+    background:var(--code-bg); border:1px solid var(--line); border-radius:6px; padding:1px 6px;
+  }
+  /* 一条待办 = 一个 .task；状态靠类名：无 = 未开始，doing = 进行中，done = 已完成，dropped = 已取消 */
+  .task{display:flex; gap:13px; padding:14px 0; border-top:1px dashed var(--line)}
+  .task:first-of-type{border-top:none; padding-top:4px}
+  .box{
+    flex:0 0 auto; width:20px; height:20px; margin-top:5px; border-radius:6px;
+    border:2px solid var(--accent); background:transparent; position:relative;
+  }
+  .box::after{content:""; position:absolute; inset:3px; border-radius:3px; background:var(--accent-soft)}
+  .task.doing .box::after{background:linear-gradient(90deg,var(--accent) 0 50%,var(--accent-soft) 50% 100%)}
+  .task.done .box{background:var(--accent)}
+  .task.done .box::after{
+    content:"✓"; inset:0; background:none; color:#fff; font-size:13px; font-weight:700;
+    line-height:16px; text-align:center;
+  }
+  .task.done .title{color:var(--muted)}
+  .task.done .title .t{text-decoration:line-through}
+  .task.dropped .box{border-color:var(--muted); border-style:dashed}
+  .task.dropped .box::after{background:none}
+  .task.dropped .title{color:var(--muted)}
+  .task.dropped .title .t{text-decoration:line-through}
+  .task .body{flex:1; min-width:0}
+  .task .title{font-weight:600}
+  .tag{
+    margin-left:8px; font-size:11.5px; font-weight:500; color:var(--accent);
+    background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:999px; padding:1px 9px;
+    vertical-align:1px; white-space:nowrap;
+  }
+  .tag.gray{background:var(--code-bg); color:var(--muted); border-color:var(--line)}
+  .task .meta{color:var(--muted); font-size:12.5px; margin-top:2px; font-variant-numeric:tabular-nums}
+  .task .meta b{color:var(--ink); font-weight:600}
+  .task .meta .sep{margin:0 6px; opacity:.5}
+  .task ul{margin:6px 0 0; padding:0 0 0 2px; list-style:none}
+  .task ul li{position:relative; padding:2px 0 2px 18px; color:var(--ink)}
+  .task ul li::before{content:"▹"; position:absolute; left:2px; color:var(--accent)}
+  .task ul li.ok{color:var(--muted)}
+  .task ul li.ok::before{content:"✓"}
+  .task .note{color:var(--muted); font-size:13.5px; margin-top:4px}
+  table{border-collapse:separate; border-spacing:0; width:100%; margin:4px 0; font-size:14px}
+  th,td{padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  thead th{background:var(--code-bg); color:var(--muted); font-weight:600; font-size:12.5px; letter-spacing:.4px}
+  thead th:first-child{border-top-left-radius:10px} thead th:last-child{border-top-right-radius:10px}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--accent-soft)}
+  td .box{display:inline-block; margin:0; vertical-align:middle}
+  td .task{display:inline-flex; padding:0; border:none}
+  footer{margin-top:26px; text-align:center; color:var(--muted); font-size:12.5px; line-height:2; font-variant-numeric:tabular-nums}
+  footer .sep{margin:0 8px; opacity:.5}
+  @media print{
+    :root{--bg:#fff; --shadow:none}
+    .wrap{max-width:none; padding:0}
+    .card,.hero{border-color:#ddd; box-shadow:none; break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+    <h1>Spatial_Blueprint <span class="dot">·</span> 待办事项</h1>
+    <div class="sub">用户维护的清单 · AI 不得私自写入；AI 认为该增 / 删 / 改时先在对话里提出，用户授权后才动</div>
+    <div class="chips">
+      <span class="chip gray">更新：2026-09-23 20:32:15</span>
+    </div>
+  </header>
+
+<section class="card">
+    <h2>规矩</h2>
+    <p class="muted" style="margin-top:0;">
+      本文件由<strong style="color:var(--ink);">用户</strong>维护。AI 读它决定做什么；AI 认为某条该新增、该改状态、该删除，
+      <strong style="color:var(--ink);">在对话里提出，等用户授权</strong>，未授权一个字都不写。要不要提出，由 AI 自己判断
+      （做完了的、发现的新问题、已经失效的条目都该提）。
+    </p>
+    <p class="muted">
+      每条带时间：<b>登记</b>（写进来的时刻）、<b>更新</b>（最近一次改动）、<b>完成 / 取消</b>。
+      一律 <code>YYYY-MM-DD HH:mm:ss</code>，精确到秒，不写「上午」「14:1x」这类模糊值。
+    </p>
+    <p class="muted">
+      职责边界：做了什么、为什么、踩了什么坑 → <code>开发日志.md</code>（AI 做完即写）；
+      测没测、测的结果 → <code>测试清单.txt</code>（AI 写前先问）；
+      本文件只回答「还有什么要做、卡在谁那里」，不记经过、不记结果，不收测试清单的内容（铁律 T11）。
+    </p>
+    <table>
+      <thead><tr><th style="width:18%">状态</th><th style="width:12%">框</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>未开始</td><td><span class="task"><span class="box"></span></span></td><td>登记了，还没有人动</td></tr>
+        <tr><td>进行中</td><td><span class="task doing"><span class="box"></span></span></td><td>有人在做；子项里 ✓ 的是已完成的步骤</td></tr>
+        <tr><td>已完成</td><td><span class="task done"><span class="box"></span></span></td><td>做完，并且开发日志里有对应条目（标签写编号）；留在清单上直到用户清理</td></tr>
+        <tr><td>已取消</td><td><span class="task dropped"><span class="box"></span></span></td><td>用户决定不做；留一行原因，免得下次再提</td></tr>
+        <tr><td>等拍板</td><td>—</td><td>可叠加在任何状态上的标签：AI 给了方案与代价，等用户决定</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>待办</h2>
+
+    <p class="muted"><strong>A. 小 / 明确可直接做</strong></p>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t"><code>.litematic</code> / <code>.schematic</code> 失败原因未接上</span><span class="tag">已完成</span><span class="tag">e75</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>完成 <b>2026-09-25 22:03:16</b></div>
+        <p>—— 两个 Importer 仍 <code>return null</code> （<code>LitematicaImporter.java:75/83/88/160</code>、<code>SchematicImporter.java:62/70/77/91</code>），没抛 <code>StructureImportException</code>；界面只能报笼统的「解析失败」。改法：让它们也抛异常。—— 已修：两入口改 <code>throws</code>（文件缺失 / 读失败 / 格式不对各一套 key，读失败带 cause），新增 lang <code>not_litematic</code> / <code>not_schematic</code>（中英）；调用方本来就接异常，无需改（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t"><code>.schem</code> / <code>.litematic</code> / <code>.schematic</code> 不导入实体</span><span class="tag">已完成</span><span class="tag">e75</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>完成 <b>2026-09-25 22:03:16</b></div>
+        <p>—— 只有 <code>.nbt</code> 做了。—— 已修：三格式都读 Entities（litematic 按区域局部坐标走方块同款换算；schematic 单盒直落；schem 兼容 Id/Data 两层写法），只搬运、不过滤（沿用 sanitizer 白名单），面朝向复用 <code>readFacing</code>，UUID 去掉，越界跳过（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    
+
+    
+
+    <p class="muted"><strong>B. 中 / 需先定方案</strong></p>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t"><code>force</code> 上传不重算 <code>size</code> / <code>materialList</code></span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 非 force 路径净化后调 <code>recalcSizeAndMaterials</code>，force 分支原样落盘，信任客户端声明的值。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t"><code>convertCategory</code>（♻ 类型互转）不检查槽位</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 操作者是 OP（豁免槽位）， 但转换后<strong>蓝图主人</strong>可能超额（如 31/30）。要拦得按主人而非执行者判定。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">抽公共 <code>MaterialPanel</code> 组件</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 投影与工程两处材料面板约 300 行重复，布局常量已对齐。（验收含三线回归）</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">蓝图导出到 <code>schematics/</code> 目录</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 本 mod 从不往 <code>schematics/</code> 写文件， 上传界面「空间蓝图」/「投影蓝图」两个 tab 对大多数人是空的，缺一个「导出」入口。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">严格取出机制（中长期）</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 取出功能已整体删除（<code>-</code> 按钮、一键取出、<code>OP_WITHDRAW</code> / <code>OP_QUICK_WITHDRAW</code>、<code>computeWithdrawXpCost</code> 及配置与 lang key）。目标形态「严格到几乎不能取」， 次元分区材料<strong>永久不可取出</strong>，避免材料空间沦为免费无限仓库；需先定方案。</p>
+      </div>
+    </div>
+
+    <p class="muted"><strong>C. 上传检测方案书未落地（源自已归档的《上传文件检测细节和方案计划.md》）</strong></p>
+
+    <p class="muted"><strong>仍未做</strong></p>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">§5 <code>ReviewQueue</code> 手动审核系统</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 10 分钟 TTL、6 位审核码、通知在线 OP、 OP approve/reject/download 原始文件。<code>BlueprintFileLogger.uploadApproved()</code> 已预留但无调用方。 属大件，先明确「是否真需要人工审核」再投入。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">§6 危险放置全服广播</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>更新 <b>2026-09-25 16:21:34</b>（并入 SB-014 C2）</div>
+        <p>—— 放置未净化来源（FORCE 上传 / FORCE 捕获）的蓝图时全服警示。 ⚠ 方案书要的 <code>hasIllegalBlocks</code> 服务器索引<strong>可以省掉</strong>：现成标记 <code>data.uploadMode==2</code>（FORCE 上传） 与 <code>data.opBypassCapture</code> 已能识别这类蓝图，直接拿它们做触发即可。另并入原 C2（2026-09-25 取消独立条目）：<code>PlaceBlueprintMessage:361</code> 的 <code>skipConsume</code> 只看 <code>opBypassCapture</code> 不看放置者是否 OP，OP 把 FORCE 蓝图转交给生存玩家后，对方放置免材料且危险 NBT 原样落地、无任何告警；可达性限 OP 主动转交，判低。做本条时一并定：免材料是否仅限 OP 放置者，或对非 OP 重走净化。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">§7.2 日志补坐标 / 物品清单</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 现 <code>uploadFlagged</code> / <code>uploadForced</code> 只记数量。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">§11.6 流体合并 / 无意义方块可配置过滤</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— water→桶等已有部分； 「草/花/树叶不计材料消耗」这类可配置过滤没做。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">§11.9 模组方块 TE 白名单</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）</div>
+        <p>—— 服主配置哪些模组 TE 的 NBT 默认放行，未做。</p>
+      </div>
+    </div>
+
+    <p class="muted"><strong>方案书里值得借鉴（原则 / 格式）</strong></p>
+
+    <ul>
+      <li>日志格式模板（§7.2–7.5）：<code>UPLOAD_REVIEW</code> / <code>DANGEROUS_PLACE</code> / <code>REVIEW_RESULT</code> / <code>MARK_CLEARED</code> 多行结构。</li>
+      <li>危险放置广播文案（§6.1）：玩家名 + 维度 + 坐标 + 方块数 + 原始上传者 + 警示。</li>
+      <li>审核设计约束（§5.1）：单玩家仅 1 个待审、无 OP 在线立即提示、验证码单次使用防重放、内存队列重启清空。</li>
+      <li>报告可复制（§3.5）：玩家可点复制删除坐标，自行核对。</li>
+      <li>分离关注点：内容净化（<code>BlueprintSanitizer</code>）与来源追溯（索引 / 日志）分层。</li>
+    </ul>
+
+    <p class="muted"><strong>D. 项目蓝图（2026-09-15 起重做；经过见开发日志 e03 ～ e10 与 SB-004 / SB-005）</strong></p>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">项目从蓝图站发布到共用 / 自用（kind / stage 流转）没有入口</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-17 13:14:44</b></div>
+        <p>—— 新建项目永远是 <code>STATION + PREPARING</code>，共用 / 自用两个 tab 恒空；「规划中」「已拆除」两个阶段也没有操作能进。要定：谁在哪个界面点什么把它发布出去、能不能撤回、(已拆除) 后玩家自己删除的入口放哪。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">私人项目丢失物品的补领入口</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b></div>
+        <p>—— 进度在服务端还在（<code>Claim.ownerUuid</code> + 私人任务集），但没有入口拿回蓝图。建议放导入界面：自己已激活的私人项目行显示「补领」。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">玩家主动「放弃项目」</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b></div>
+        <p>—— 放项目界面底部，只允许放弃自己的私人任务集：释放占用 + 清进度。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">线框全服可见（广播 + 距离剔除 + 登录全量下发 + 总数上限）</span><span class="tag">未开始</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b><span class="sep">·</span>更新 <b>2026-09-17 13:14:44</b></div>
+        <p>—— 持有者自己的预览已做（e07 / SB-004：脱手常显、走远 / 换维度自动关）；广播给所有人这一层未做。用户 2026-09-15 拍板要「全服可见」，方案待写。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">建造模式 UI</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-18 20:34:42</b></div>
+        <p>—— 已激活（构建中 / 已完成）的项目蓝图归它：现在右键无反应（规划模式界面只在未激活 + OP 时开）；玩家侧的 ✔ 领取子工程也归它（已从规划模式移除）。数据现状见 开发日志 e15–e19 与 SB-008。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">已删除项目的残留项目蓝图应替换为空白蓝图</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-20 16:29:43</b></div>
+        <p>—— e34 目前只弹横幅拦截（<code>missing_blocked</code>「该项目已被删除，这枚项目蓝图已失效」），残留蓝图一直占着背包。用户 2026-09-20 实测（测试清单 #109）后提议：检出到残留时直接替换为空白蓝图（先例：<code>void_blueprint_orphaned</code>「已替换为空白蓝图」）。要定：替换时机（右键检出时 / 状态回来时）、服务端要不要同步。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">激活态 / 建造模式 UI 要不要也按项目维度拦</span><span class="tag">未开始</span><span class="tag">等拍板</span></div>
+        <div class="meta">登记 <b>2026-09-20 17:59:42</b></div>
+        <p>—— e37 起项目维度创建时固定（<code>ProjectData.dimension</code>，随状态包与物品 NBT <code>projectDim</code> 下发），但只拦了<b>规划手柄</b>（未激活 + OP：右键 / 项目页 / 范围页 / 设点 / 保存范围 / 建子工程）。已激活（构建中 / 已完成）的项目蓝图现在右键无反应，建造模式 UI 做的时候要定：打开界面 / 领取子工程 / 放置是否同样限定在项目维度，以及跨维度时的提示。同时待定：<code>C2S_SubmitProjectChangesMessage</code> 等只改元数据的消息要不要也加维度门禁（现未加，不依赖世界）。</p>
+      </div>
+    </div>
+
+    <div class="task dropped">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">全服项目「已完成的子工程」是否要保护</span><span class="tag">已取消</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b><span class="sep">·</span>取消 <b>2026-09-17 13:14:44</b>（拍板于 2026-09-15）</div>
+        <p>—— 用户拍板不保护：拆除 + 材料成本已是门槛，实测被滥用再说。</p>
+      </div>
+    </div>
+
+    <div class="task dropped">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">子工程数量上限 <code>maxProjectEntries</code></span><span class="tag">已取消</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b><span class="sep">·</span>取消 <b>2026-09-17 13:14:44</b>（拍板于 2026-09-15）</div>
+        <p>—— 用户拍板不加上限。</p>
+      </div>
+    </div>
+
+
+    <p class="muted"><strong>安全审查剩余条目</strong></p>
+
+    <p class="muted">完整分析在 <code>安全审查_双端同步_20260907.md</code>。<strong>M1 / M2 / H1 / H3 已修</strong>，其余：</p>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">H2</span><span class="tag">已完成</span><span class="tag">e69</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间） · 完成 <b>2026-09-25 14:05:26</b></div>
+        <p>（定级已更正，见下）蓝图库的归属过滤<strong>只做在客户端</strong>。 界面本身是有门禁的：<code>serverMode</code> 默认私人模式、按 <code>creatorName</code> 只显示自己的， 切「服务器模式」的开关带 <code>isOp()</code>，<strong>正常玩家看不到别人的蓝图</strong>。 但服务端 <code>C2S_RequestLibraryMessage</code> 对任何请求者都回全量 <code>listSummaries()</code>， 数据落在每个玩家的 <code>ClientLibraryCache</code> 里 —— 改包绕过界面过滤即可读到全服摘要 （含 placedX/Y/Z = 基地坐标），再用不查归属的 <code>C2S_RequestBlueprintDataMessage</code> 逐个下载完整结构。<strong>需改包，不是任何人点两下就能做到</strong>。 修法：过滤下沉到服务端（<code>hasPermissions(2)</code> 才给全量）， <code>RequestBlueprintData</code> 复用 <code>canManageBlueprint</code> 的归属语义。 ⚠ 顺带：私人模式过滤用的是 <code>creatorName</code> 而非 <code>ownerUuid</code>，玩家改名后蓝图会从列表消失。 ✅ 这条改名 bug 已单独修掉（<code>isMineForListing()</code>），H2 本身已随 e69 修复（过滤下沉服务端 + 下载查归属，7 处推送同口径，未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">L1</span><span class="tag">未开始</span><span class="tag gray">等拍板</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>更新 <b>2026-09-25 16:16:52</b>（补详细说明，未开工）</div>
+        <p>预览状态（locked/offset/rotation/alignMode）靠「服务端故意不写 NBT」维持， 任何 <code>ItemSyncUtil.syncHand</code> 都会抹掉它 —— 全仓 30+ 处调用，只有一处做了回写补丁。—— 详述：预览框的对齐模式 / 偏移 / 旋转 / 锁定只存在<strong>客户端手里那份物品 NBT</strong>，服务端不知道；<code>syncHand</code>（<code>util/ItemSyncUtil.java:36</code>，发 <code>ClientboundContainerSetSlotPacket</code>）是把<strong>服务端那份整个覆盖下来</strong>而非合并，服务端那份没有这几个键，所以每次服务端操作后同步都会把摆好的预览抹掉 / 复位（渲染器切回 OFF）。现有补救仅两处：<code>C2S_MaterialDepositMessage:137-144</code> 回写补丁（客户端发包时夹带预览态、服务端同步前写回去）与放置 / 工程两界面每 tick 重读；其余 30 余处无处理。修法二选一：给 <code>syncHand</code> 加通用保留逻辑（服务端拿不到客户端值，得像存材料那样由客户端上报，改动面大），或逐调用处补回写（与 E1 偏移量钳制同类活）。体验 bug，不丢东西、不越权，优先级低。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">L2</span><span class="tag">已完成</span><span class="tag">e72</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>完成 <b>2026-09-25 15:55:44</b></div>
+        <p>存材料遍历 <code>inv.getContainerSize()</code>(41) 含盔甲槽 → 会把身上的南瓜头扒下来。—— 已修：<code>takeFromInventory</code> 跳过 36–39 盔甲槽（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task dropped">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">L3</span><span class="tag">已取消</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>取消 <b>2026-09-25 15:48:41</b>（主会话核实为误报，用户拍板移除）</div>
+        <p><code>returnToInventory</code> 用 <code>getItem().getMaxStackSize()</code>，忽略 NBT 对堆叠的影响。—— 误报：1.20.1 原版 <code>ItemStack.getMaxStackSize()</code> 透传 <code>Item</code>，NBT 不影响上限，并堆由 <code>Inventory.add</code> 卡 tag，行为正确，无需改。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">L4</span><span class="tag">已完成</span><span class="tag">e72</span></div>
+        <div class="meta">迁入 <b>2026-09-14 18:45:34</b>（原文件未记登记时间）<span class="sep">·</span>完成 <b>2026-09-25 15:55:44</b></div>
+        <p><code>C2S_VoidTeleportMessage</code> 无目标区块加载 / 安全落点检查（有 tpperm 门禁，风险低）。—— 未做落点检查，用户拍板改落地给 5 秒保护（抗性提升 5 / 缓降 / 抗火），次元与工程两处传送同款（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <p class="muted"><strong>SB-014 全 mod 分区审查发现</strong></p>
+
+    <p class="muted">报告 <code>任务派发与核验\SB-014_报告.txt</code>，验收见开发日志 e64（J1 为误报，不登记）。编号沿用报告的区域编号。</p>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">G1 空置次元蓝图「重置并删除」无归属校验</span><span class="tag">已完成</span><span class="tag">e65</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b> · 完成 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>C2S_VoidResetMessage</code> 改包可删他人蓝图文件并清空其次元袋。已照 <code>C2S_VoidRecaptureMessage</code> 补存档归属 + 主人校验（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">A2 蓝图库请求每次作废摘要缓存且无限流</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>C2S_RequestLibraryMessage:35</code> 每次都 <code>invalidateSummaryCache</code> 后全盘重扫，没有同人冷却，连发即主线程反复读盘。改法：删掉 handle 里的作废（写盘处已自行作废），加与 <code>RequestBlueprintData</code> 同口径的 500ms 冷却。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">H1 手持预览换维度后旧维度残影</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>ServerPreviewTracker</code> 条目不记维度，全仓无换维度处理；客户端缓存也不按维度清。改法：条目记维度，换维度向旧维度发 clear；客户端换维度清 <code>ClientOtherPreviewCache</code>。详见 <code>服务器线框查询报告.md</code> 第一章缺陷 2。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">手持预览清除包按半径下发 → 永久残影</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>ServerPreviewTracker:101-103</code> 清除时以源玩家当前位置为中心按半径发，目标走出半径 / 源玩家把框放远处后走开，残影留到下线（客户端缓存无 TTL）。SB-014 漏报，主会话验收补。线框报告缺陷 1。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">手持预览锁定模式丢最后一次移动</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— 客户端发送即记 <code>lastBroadcastOrigin</code>（<code>BlueprintSelectionRenderer:1048-1051</code>），服务端 2 tick 冷却直接丢包不补发（<code>ServerPreviewTracker:73</code>），2 tick 内连按两次偏移，别人看到的框停在上一格。SB-014 漏报，主会话验收补。线框报告缺陷 3。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">H2 手持预览去重不比 blueprintId / category</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>ServerPreviewTracker:64-67</code> 同位置换同尺寸蓝图不广播，别人的框颜色与 <code>fullData</code> 停在旧蓝图。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">B1 捕获最多三遍全量遍历跑主线程</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>CaptureAreaMessage</code> 计数 / 非法预扫 / 领地 BreakEvent / 实际捕获多遍三重循环，逐格 <code>new BlockPos</code>；上限 1.6M 格仍可卡数秒。改法：合并遍数或分 tick，至少用 <code>MutableBlockPos</code>。</p>
+      </div>
+    </div>
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">B2 跨未加载区块捕获未判 hasChunk（疑似）</span><span class="tag">未开始</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b></div>
+        <p>—— <code>CaptureAreaMessage:257</code> 逐格 <code>getBlockState</code>，可能同步加载 / 生成区块或捕获缺块，需实机确认。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">A1 材料清单请求无归属校验</span><span class="tag">已完成</span><span class="tag">e69</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b> · 完成 <b>2026-09-25 14:05:26</b></div>
+        <p>—— <code>C2S_RequestBlueprintMaterialsMessage</code> 任意 blueprintId 都回材料清单。H2 的弱化同类，与 H2 一起修（复用 <code>canManageBlueprint</code> 语义）。已随 e69 修复（未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">项目 PRIVATE 列表 / 条目 / 导入无归属校验（项目版 H2）</span><span class="tag">已完成</span><span class="tag">e69</span></div>
+        <div class="meta">登记 <b>2026-09-25 14:05:26</b> · 完成 <b>2026-09-25 14:05:26</b></div>
+        <p>—— 查 H2 时顺带发现：<code>C2S_RequestProjectListMessage.buildList</code> 对 PRIVATE 全量下发、<code>C2S_RequestProjectEntriesMessage</code> 与 <code>C2S_TakeProjectMessage</code>（PRIVATE 导入）无归属校验，任意玩家可枚举他人私人项目并导入。已随 e69 修复：PRIVATE 列表只给主人（OP 全量，无主回退按名认）；条目与导入要主人或 OP（无主非 OP 一律拒，T5）。蓝图站 tab 本有 OP 门禁，未动。未部署。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">E1 存材料消息的偏移量未钳制就写 NBT</span><span class="tag">已完成</span><span class="tag">e73</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b><span class="sep">·</span>完成 <b>2026-09-25 16:33:53</b></div>
+        <p>—— <code>C2S_MaterialDepositMessage:137-144</code> 直接 <code>setXOffset</code> 等，而 <code>UpdateOffsetMessage:50-52</code> 走 <code>clampOffset</code>。放置距离校验兜底，利用价值低；改法：同样 <code>clampOffset</code>，<code>alignMode</code> 白名单。—— 已修：回写前偏移走 <code>clampOffset</code>（±512），<code>alignMode</code> 仅认 OFF/CENTER/START/END（其余按 OFF），<code>rotation</code> 原有 <code>valueOf</code> 兜底未动（源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">A3 S2C decode 列表计数无上限</span><span class="tag">已完成</span><span class="tag">e73</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b><span class="sep">·</span>完成 <b>2026-09-25 16:33:53</b></div>
+        <p>—— <code>S2C_OperationResult:60-61</code> 的 argCount 等直接建数组；同类见 <code>S2C_IllegalBlocksListMessage</code>、<code>S2C_UploadReportMessage</code>。发包方是服务端，只是纵深防御。—— 已修：三文件 decode 计数全加 cap（<code>OperationResult</code> 参数 16；扫描/方块/实体/转换/ free/盒实体 4096；区块表 1048576），超限截断读、余字节随包丢弃（源码已改，未 bump、未部署；encode 未动，wire 兼容）。—— e74 扩到全 S2C：口径改超限整包拒收（<code>DecoderException</code>，与分片/整包消息一致），守卫收敛到 <code>S2C_OperationResult.checkedCount</code> 一处；项目列表/条目/状态、配置值、库摘要、材料空间、次元袋全加上，材料消息已有 300 钳制、分片/整包已有守卫、广播与冷却属标量未动。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">C1 动画放置中途下线，完成时对离线玩家发通知（疑似）</span><span class="tag">已完成</span><span class="tag">e73</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b><span class="sep">·</span>完成 <b>2026-09-25 16:33:53</b></div>
+        <p>—— <code>BlueprintPlacementHandler:594-598</code>，需实机看是否刷 warn；改法：完成分支判玩家已离线就跳过通知，放置本身照常收尾。—— 已修：完成分支加 <code>!hasDisconnected()</code>（通知 + 音效同跳过，落块与关服强制收尾未动；是否真刷过 warn 未实机验证，源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">I1 蓝图库 render 内逐行测宽 + 逐字符截断</span><span class="tag">已完成</span><span class="tag">e73</span></div>
+        <div class="meta">登记 <b>2026-09-23 20:32:15</b><span class="sep">·</span>完成 <b>2026-09-25 16:33:53</b></div>
+        <p>—— <code>BlueprintLibraryScreen:885-985</code>、<code>:1503-1504</code>，条目多时每帧浪费；改法：截断结果按文本缓存，挪到 tick 的脏重建里。—— 已修：<code>truncate</code> 加 <code>truncateCache</code>（键 = 宽度|文本），<code>rebuildFiltered</code> 开头清掉；单次 <code>font.width</code> 未动（O(1)，可忽略）；行为与原来逐字一致（源码已改，未 bump、未部署）。—— e74：<code>ProjectBrowserScreen</code> 同款 <code>truncate</code> 同样加缓存。</p>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">放置中下线重进增长线框残留（171 实测发现）</span><span class="tag">已完成</span><span class="tag">e78</span></div>
+        <div class="meta">登记 <b>2026-09-26 23:01:39</b><span class="sep">·</span>完成 <b>2026-09-26 23:01:39</b></div>
+        <p>—— 171 专服实测：9600 块大蓝图动画中下线，方块照常放完、无 warn，但增长线框冻在退出那一帧、重进清不掉。根因：客户端 <code>placementAnimActive</code> 静态状态靠服务端推完成包才清除，下线后完成包发给已断开的旧连接、重进永远收不到。已修：<code>onLevelUnload</code> 里调一次 <code>stopPlacementAnimation()</code>（小修；中途重进剩下的动画不再显示、服务端静默收尾；登录重绑 + 重推进度的大修没做，源码已改，未 bump、未部署）。</p>
+      </div>
+    </div>
+
+    <!-- 新条目插在此行之上。只有用户、或拿到用户授权的 AI 才能改这一段；改完更新头部 chips 与 footer 的时间 -->
+  </section>
+
+  <section class="card">
+    <h2>协议版本</h2>
+    <p style="margin-top:0;">
+      协议版本 = mod 版本，当前部署 <code>2.8.1</code>；部署认 SHA256，<strong>三端必须一起换</strong>（服务端 + 测试客户端 + 整合包实例；同一版本号下出现过两个产物）。
+    </p>
+    <p class="muted">
+      <strong>发版必须 bump mod_version</strong>：2.4.0 这个号下曾经存在两个不同产物（718KB 有 bug / 1024KB 已修），线上出问题时光看版本号根本分辨不出手上是哪份。
+    </p>
+    <p class="muted">
+      <strong>新增消息必须走 <code>BlueprintNetwork.c2s()</code> / <code>s2c()</code>，且只能追加在 <code>register()</code> 末尾。</strong> 注册顺序就是线上的消息序号，插队 / 删除 / 改方向都必须 bump mod_version 并同时更新三端。 方向标反的后果是玩家一发那条消息就被踢下线（「Illegal packet received」），不是静默失败。
+    </p>
+    <p class="muted">
+      新增 S2C 字段：encode/decode 对称、客户端缓存整份替换、wire 变了 bump mod_version。
+    </p>
+    <div class="callout">
+      <span class="ico">⚠</span>
+      <div><strong>协议版本 = mod 版本，三端必须一起换</strong>：只更一端会因版本不符被拒或行为半残。</div>
+    </div>
+  </section>
+
+  <footer>
+    Spatial_Blueprint<span class="sep">·</span>维护：用户（AI 提出，用户授权）<span class="sep">·</span>更新：2026-09-23 20:32:15
+  </footer>
+
+</div>
+</body>
+</html>

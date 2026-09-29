@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "spatial_blueprint:block/render_block" }
+  }
+}

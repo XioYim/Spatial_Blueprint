@@ -1,0 +1,142 @@
+SB-006 · 项目蓝图重做第七步：中心点（anchor）可见 —— 范围界面标题下一行「中心点：x y z」+ 世界里一格金框 + 一条竖线
+派发：2026-09-17 13:19:08（主会话 Claude）
+【状态】2026-09-17 13:23 用户改为主会话自做，未派出；执行与验收记录见 开发日志.html e11。本手册留作设计说明。
+
+执行方就是正在读这份手册的你。直接按下面各节做，不要转派给任何 worker 会话 / 子代理 / 技能，做完写报告即可；不要就「由谁执行」向用户提问。
+
+════════════════════════════════════════════════════════════════════
+〇、执行前必做：备份
+════════════════════════════════════════════════════════════════════
+
+动任何代码之前，先按 `D:\Mods\项目工具\安全手册.MD` 备份。直接跑：
+D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint -Note "SB-006 执行前"
+
+脚本最后打印一行 Markdown 表格行，原样抄进报告「改了什么」段第一行（主会话负责插进 项目记忆.md，你不要碰那个文件）。
+
+备份完出一份开工前哈希表：
+  Get-ChildItem -Recurse -File D:\Mods\Spatial_Blueprint\src | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash | Export-Csv -Encoding UTF8 -NoTypeInformation "D:\Mods\Spatial_Blueprint\#Spatial_Blueprint\任务派发与核验\SB-006_hash_before.csv"
+
+⚠ 编译 / after 哈希 / javap 必须在你**最后一次保存文件之后**跑（SB-004 的教训，已记 K3）。报告里写编译时刻与最晚源码 mtime。
+
+════════════════════════════════════════════════════════════════════
+一、项目接入
+════════════════════════════════════════════════════════════════════
+
+先读 D:\Mods\Spatial_Blueprint\#Spatial_Blueprint\记忆与注意事项\项目记忆.md，按里面的「读取顺序」走完再动手。
+记忆先读 注意事项_目录.md 找编号，再按行号只读 注意事项_分类.md 对应那一段；不要整读分类文件（目录 2026-09-17 13:17 已重生成，行号是准的）。
+
+本任务要读的：铁律 T1–T10 整读（T3 新增 S2C 字段只能放末尾、encode/decode 对称；T4 javap 验产物）；K1 一屏；K2 的 PowerShell / node 两条。
+项目蓝图现状：开发日志.html 的 e10 + e-SB-005（anchor 模型就是那里定的），用
+  D:\Mods\项目工具\html2text.ps1 -Path "D:\Mods\Spatial_Blueprint\#Spatial_Blueprint\开发日志.html" -Card e10
+读。
+
+════════════════════════════════════════════════════════════════════
+二、任务类型
+════════════════════════════════════════════════════════════════════
+
+IMPLEMENT。只改第三节列出的文件。
+
+════════════════════════════════════════════════════════════════════
+三、允许修改的文件（绝对路径；没列的一律禁区）
+════════════════════════════════════════════════════════════════════
+
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\s2c\S2C_ProjectStatusMessage.java
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\network\C2S_RequestProjectStatusMessage.java
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\ProjectRangeScreen.java
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\gui\ProjectBlueprintScreen.java
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\client\ClientProjectPreview.java
+  D:\Mods\Spatial_Blueprint\src\main\java\com\xioyim\spatialblueprint\client\BlueprintSelectionRenderer.java
+  D:\Mods\Spatial_Blueprint\src\main\resources\assets\spatial_blueprint\lang\zh_cn.json
+  D:\Mods\Spatial_Blueprint\src\main\resources\assets\spatial_blueprint\lang\en_us.json
+
+明确禁区：gradle.properties（2.7.5 已相对线上 2.7.4 bump、未部署，本任务的 S2C 追加字段算在 2.7.5 里，**不要再 bump**）；network\BlueprintNetwork.java（不新增消息）；util\*、server\*、command\*、其余 gui\*、client\outliner\*；#Spatial_Blueprint\待办事项.html、测试清单.html、记忆与注意事项\。
+
+════════════════════════════════════════════════════════════════════
+四、要改什么
+════════════════════════════════════════════════════════════════════
+
+背景：SB-005 引入 anchor —— **一格方块**（BlockPos，整数坐标），= 第一次 [保存布局] 时范围的 min 角，此后永不改；子工程 rel 相对它，激活时 Claim 记世界 anchor（`Claim.anchorX/Y/Z`，旧 claim 用 `ProjectClaimRegistry.anchorOf` 补算）。现在客户端完全看不到它。要做三件事：状态消息带上 anchor；范围界面标题下加一行；世界里画出来。
+
+──────────────────────────────────────────────
+A. 状态消息带 anchor
+──────────────────────────────────────────────
+
+A1  network\s2c\S2C_ProjectStatusMessage.java：**末尾追加**三个字段 `boolean hasAnchor`、`BlockPos authorAnchor`、`BlockPos worldAnchor`（字段 :33-34 之后、encode :95 之后、decode :117 之后；现有 11 参构造器保留并转发 false/ZERO/ZERO，新增 14 参构造器）。
+A2  network\C2S_RequestProjectStatusMessage.java sendStatus（:110-121 那段之后）：
+      hasAnchor = project.size 三轴 > 0（与 ProjectData.hasAnchor() 同判据）；
+      authorAnchor = project.anchor（无则 ZERO）；
+      worldAnchor = 已激活且 claim != null ? ProjectClaimRegistry.anchorOf(claim, project) : authorAnchor。
+    传给新构造器。
+
+──────────────────────────────────────────────
+B. 范围界面标题下一行「中心点：x y z」
+──────────────────────────────────────────────
+
+B1  gui\ProjectRangeScreen.java：构造器（:77-78 五参那个）再加 `@Nullable BlockPos anchor`（三参 / 五参旧构造器保留转发 null）；存字段。
+B2  render() 里标题（:342 `titleY = cy - 130`，:363 画标题）之后、坐标行（:366）之前，加第二行居中灰字（`titleY + 12`）：
+      · anchor != null（项目已有基准点）→ lang `spatial_blueprint.gui.project_range.anchor`（zh「中心点：%s %s %s」/ en "Anchor: %s %s %s"），三参 = anchor 的 X Y Z，颜色 0xFFD54F（金，与世界里的框同色）。
+      · anchor == null 且两点都在 → `spatial_blueprint.gui.project_range.anchor_pending`（zh「中心点（保存后锁定）：%s %s %s」/ en "Anchor (locked on save): %s %s %s"），三参 = 当前两点各轴 min（这就是首次保存会写进去的 anchor），颜色 0xAAAAAA。
+      · 两点不齐 → `spatial_blueprint.gui.project_range.anchor_none`（zh「中心点：未设定」/ en "Anchor: not set"），0xAAAAAA。
+    检查 `titleY + 12` 不压到第一排坐标行 `rowY - 13`（cy + 38）：cy − 118 与 cy + 38 差 156px，没问题。
+B3  gui\ProjectBlueprintScreen.java:162-165 [规划项目] 的调用：多传 `status.hasAnchor ? status.authorAnchor : null`（作者盒 anchor；范围界面编辑的是作者盒）。
+
+──────────────────────────────────────────────
+C. 世界里画中心点：一格金框 + 一条竖线
+──────────────────────────────────────────────
+
+Outliner 没有 showLine；`showCorner(slot, corner, length, sx, sy, sz)` 画的是从 corner 出发沿三轴的三条线，`sx = 0, sz = 0, sy = 1` 时就只剩一条竖线（另两条长度 0，看不见）—— 用它。参考 client\outliner\CornerOutline.java:47-53（禁区文件，只读）。
+
+C1  client\BlueprintSelectionRenderer.java 加一个私有静态方法 `renderAnchorMarker(String slotPrefix, BlockPos anchor, int heightAbove)`：
+      · 金框：`chaseAABB(slotPrefix + "_anchor_box", new AABB(ax, ay, az, ax+1, ay+1, az+1)).colored(0xFFD54F).noDepth().lineWidth(GHOST_BOX_LINE_WIDTH)`；
+      · 竖线：`showCorner(slotPrefix + "_anchor_line", new Vec3(ax + 0.5, ay + 1, az + 0.5), heightAbove, 0, 1, 0).colored(0xFFD54F).noDepth().lineWidth(GHOST_POINT_LINE_WIDTH).renderPriority(2)` —— 从格顶中心往上 heightAbove 格。
+    heightAbove 由调用方给：有盒子时 = 盒顶到 anchor 格顶的高度 + 4（线冒出盒顶 4 格，远处也认得出）；没盒子时 = 16。最小 4。
+    颜色常量抽成 `GHOST_COLOR_ANCHOR = 0xFFD54F` 放在 :83 附近。
+C2  编辑态（主手项目蓝图，`renderProjectBlueprint` :1258 那段）：从 `ClientProjectStatusCache.get()` 取状态，`status.found && status.projectId.equals(该物品 projectId) && status.hasAnchor` 时 → `renderAnchorMarker("project_range", status.authorAnchor, h)`，h 按作者盒（status.authorOrigin/authorSize）算。状态不匹配或无 anchor → 两个 slot 各 `remove` 一次。
+    ⚠ 主手拿的是**未激活**手柄时作者盒与 anchor 是一回事；拿**已激活**的蓝图时编辑态也仍按作者盒画（范围界面改的是作者盒）——写进注释。
+C3  预览态（`renderProjectPreviews` :2228）：`ClientProjectPreview.Range` 加 `@Nullable BlockPos anchor`（第四个分量；enable / onStatus 时从 status.worldAnchor 填，hasAnchor=false 填 null），每个开着预览且 `range.anchor != null` 的项目 → `renderAnchorMarker("project_preview_" + pid, range.anchor, h)`，h 按该 claim 盒（range.origin/size）算。预览的 anchor 用 **worldAnchor**（已激活 = 实例的基准点，未激活 = 作者 anchor）。
+    ClientProjectPreview 是禁区外允许改的文件（第三节有）；enable 的调用点在 ProjectBlueprintScreen:207-210，一并传。
+C4  两处 slot 前缀不同（`project_range` / `project_preview_<pid>`），互不覆盖；Outliner 条目不刷新自动淡出，disable / 换手后不必手动 remove（C2 那两句 remove 只是编辑态状态不匹配时的即时清理）。
+
+──────────────────────────────────────────────
+D. lang（两份，键名一字不差）
+──────────────────────────────────────────────
+  加：gui.project_range.anchor、gui.project_range.anchor_pending、gui.project_range.anchor_none
+  改完两份键数相等；node 解析验证；不用 PowerShell 写 JSON。
+
+════════════════════════════════════════════════════════════════════
+五、验收标准
+════════════════════════════════════════════════════════════════════
+
+1. `.\gradlew.bat compileJava --offline --rerun` → BUILD SUCCESSFUL；警告 ≤ 21（写数字）；编译时刻 > 最晚源码 mtime。
+2. `javap -p -c` 对 SpatialBlueprintMod.class、network\C2S_RequestProjectStatusMessage.class、network\s2c\S2C_ProjectStatusMessage.class 的 `net/minecraft/client` 命中均 0。
+3. 哈希对照：只有第三节 8 个文件变化；gradle.properties 与 BlueprintNetwork.java 前后哈希相同（贴出来）。
+4. S2C_ProjectStatusMessage：新三字段在字段区 / encode / decode 各自末尾（贴 file:line）；旧 11 参构造器仍在且转发默认值。
+5. `grep -n "showCorner" client/BlueprintSelectionRenderer.java` 里新增的调用参数是 `0, 1, 0`（只画竖线）；`grep -c "GHOST_COLOR_ANCHOR"` ≥ 3（定义 + 框 + 线）。
+6. `grep -n "anchor" gui/ProjectRangeScreen.java` 能看到三分支（有 / 待锁定 / 未设定）各自用了对应 lang 键。
+7. lang 两份 node 解析通过、键数相等、3 个新键都在；本任务改过的 Java 文件里的 `"spatial_blueprint.xxx"` 字面量 0 缺失。
+
+本任务不写测试清单、不部署、不构建 jar。
+
+════════════════════════════════════════════════════════════════════
+六、写入权限
+════════════════════════════════════════════════════════════════════
+
+只能写：#Spatial_Blueprint\任务派发与核验\SB-006_报告.txt（及两个哈希 csv）、#Spatial_Blueprint\开发日志.html（在文末注释锚 `<!-- 新条目插在此行之上 -->` 之前追加一节 `<details class="entry aux" open id="e-SB-006">`，标题「SB-006 执行记录（辅助AI，2026-09-17）」，标签 `<span class="stag aux">辅助 AI 执行记录</span>`，不许占主序列编号，不许改已有小节；改完把头部 chips 的「共 N 条」加 1、更新时间与 footer 时间改成你写完的时刻）。
+禁止：待办事项.html、记忆与注意事项\、记忆目录、测试清单.html。
+踩到的坑写进报告「建议记入踩坑记录」段，由主会话合并。
+开发日志是 HTML：先用 html2text.ps1 -Card e-SB-005 看上一节，再看原文件里那段的标签怎么写，照格式追加；不要改已有文字。
+
+════════════════════════════════════════════════════════════════════
+七、报告模板（写到 SB-006_报告.txt；禁止代码块，只给「主张 + file:line」）
+════════════════════════════════════════════════════════════════════
+
+任务：SB-006
+状态：完成 / 部分完成 / 失败
+结论：三句话以内。
+发现：与手册不符之处，逐条。
+改了什么：第一行贴备份表格行；按文件列「改了什么 + 为什么」+ file:line。
+测试：第五节 1–7 逐条给结果。
+风险：没把握的地方（showCorner 零长度分量是否会画出一个点、竖线高度取值、编辑态与预览态同时开时两组 slot 是否互相盖住）。
+未完成：明确没做的。
+待复核（可勾选）：范围界面标题下第二行三种状态各出现一次 / 主手拿手柄时世界里有金框 + 竖线且位置 = 第一次保存的 min 角 / 扩建后金框与竖线不动 / 预览开着换手仍有金框竖线、走远自动消失 / 已激活的蓝图预览里金框在实例的基准点上（不是作者盒）。
+建议记入踩坑记录：一句话一条。

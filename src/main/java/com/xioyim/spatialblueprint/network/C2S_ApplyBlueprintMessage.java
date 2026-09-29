@@ -1,6 +1,6 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.item.DimensionalBlueprintItem;
+import com.xioyim.spatialblueprint.item.BlankBlueprintItem;
 import com.xioyim.spatialblueprint.item.EngineeringBlueprintItem;
 import com.xioyim.spatialblueprint.item.ProjectionBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
@@ -21,12 +21,14 @@ import java.util.function.Supplier;
 /**
  * 客户端 → 服务端：从蓝图库应用指定蓝图，替换玩家手中的蓝图物品。
  *
- * <p>根据蓝图的 {@code category} 字段决定物品类型：
+ * <p>物品类型只由蓝图的 {@code category} 决定，与手里拿的是哪种蓝图无关：
  * <ul>
- *   <li>{@code "project"} → {@link ProjectionBlueprintItem}</li>
- *   <li>其余（{@code "create"}、{@code "store"}、旧格式空字符串）→ {@link SpatialBlueprintItem}</li>
+ *   <li>{@code "project"} / {@code "template"} → {@link ProjectionBlueprintItem}</li>
+ *   <li>{@code "dimensional"} → 次元蓝图（仅主人）</li>
+ *   <li>{@code "engineering"} → {@link EngineeringBlueprintItem}（带固定坐标绑定）</li>
+ *   <li>其余（{@code "create"}、旧格式空字符串）→ {@link SpatialBlueprintItem}</li>
  * </ul>
- * 优先替换手中已有蓝图物品的那只手；若均无，默认替换主手。</p>
+ * 优先替换主手（空白 / 空间 / 投影 / 工程蓝图之一），主手不是蓝图而副手是时替副手。</p>
  */
 public class C2S_ApplyBlueprintMessage {
 
@@ -58,76 +60,87 @@ public class C2S_ApplyBlueprintMessage {
             }
 
             // ── 先找到合适的手 ────────────────────────────────────────────
-            // （需要先确定手，才能判断是否持有工程蓝图并保留物品类型）
-            // SpatialBlueprintItem 是 DimensionalBlueprintItem 的父类，instanceof 自动覆盖
-            InteractionHand targetHand = InteractionHand.MAIN_HAND;
-            boolean mainHasBP = player.getMainHandItem().getItem() instanceof SpatialBlueprintItem
-                    || player.getMainHandItem().getItem() instanceof ProjectionBlueprintItem
-                    || player.getMainHandItem().getItem() instanceof EngineeringBlueprintItem;
-            boolean offHasBP  = player.getOffhandItem().getItem()  instanceof SpatialBlueprintItem
-                    || player.getOffhandItem().getItem()  instanceof ProjectionBlueprintItem
-                    || player.getOffhandItem().getItem()  instanceof EngineeringBlueprintItem;
-            if (!mainHasBP && offHasBP) {
-                targetHand = InteractionHand.OFF_HAND;
+            // 蓝图库只能从选点 / 放置 / 工程三个界面打开，主手必是空白 / 空间 / 次元 /
+            // 投影 / 奖励 / 工程蓝图之一；空白蓝图也要算进来，否则主手拿空白、副手恰好
+            // 拿着别的蓝图时会误替副手。SpatialBlueprintItem 是 DimensionalBlueprintItem
+            // 的父类、ProjectionBlueprintItem 是 RewardBlueprintItem 的父类，instanceof 自动覆盖。
+            InteractionHand targetHand = replaceTargetHand(player);
+
+            // ── 已放置的次元蓝图禁止取出 ──────────────────────────────────
+            // 结构已经还原回世界、材料已从次元袋扣除，此时再取出一份就是白嫖同一份结构。
+            if (data.placed) {
+                sendResult(player, false, "spatial_blueprint.error.blueprint_already_placed");
+                return;
             }
 
-            // ── 根据分类（或持有物品）创建对应物品 ──────────────────────
-            boolean holdingEngineering =
-                    player.getItemInHand(targetHand).getItem() instanceof EngineeringBlueprintItem;
-
-            // 持有工程蓝图时：若源文件不是 engineering 分类，
-            // 复制全部结构/方块数据到 engineering/ 子目录，生成独立工程文件。
-            String effectiveBpId = msg.blueprintId;
-            if (holdingEngineering && !"engineering".equals(data.category)) {
-                data.category = "engineering";
-                java.util.UUID newId = java.util.UUID.randomUUID();
-                BlueprintStorage.save(newId, data);
-                effectiveBpId = newId.toString();
+            // ── 次元蓝图归属校验：任何人（含 OP）都不能取出别人的 ──────────────
+            // 次元蓝图与主人的次元袋一一绑定；别人取走后材料仍锁在原主人的袋子里，
+            // 蓝图归属与材料空间会彻底对不上。无主的旧蓝图同样不允许取出。
+            if ("dimensional".equals(data.category) && !data.isOwnedBy(player.getUUID())) {
+                sendResult(player, false, "spatial_blueprint.message.void_blueprint.not_owner");
+                return;
             }
 
-            net.minecraft.world.item.Item targetItem = holdingEngineering
-                    ? SpatialBlueprintItems.ENGINEERING_BLUEPRINT.get()
-                    : switch (data.category == null ? "" : data.category) {
+            // ── 物品类型只看所选蓝图的分类，与手里拿的是什么无关 ──────────────
+            // 曾有一条「持工程蓝图时把任意分类复制成一份新 engineering 文件」的路：绕过报告页
+            // 与净化、不带固定坐标、还占工程槽位，玩家拿到的是一枚「未绑定工程坐标」的废件。
+            // 工程蓝图只能经 C2S_CreateEngineeringBlueprintMessage（报告 → 创建页）产生，
+            // 这里只负责把已有文件换到手上。
+            net.minecraft.world.item.Item targetItem =
+                    switch (data.category == null ? "" : data.category) {
                         case "project", "template" -> SpatialBlueprintItems.PROJECTION_BLUEPRINT.get();
                         case "dimensional"  -> SpatialBlueprintItems.DIMENSIONAL_BLUEPRINT.get();
                         case "engineering"  -> SpatialBlueprintItems.ENGINEERING_BLUEPRINT.get();
                         default             -> SpatialBlueprintItems.SPATIAL_BLUEPRINT.get();
                     };
+            String effectiveBpId = msg.blueprintId;
             ItemStack newStack = new ItemStack(targetItem);
             net.minecraft.nbt.CompoundTag nTag = newStack.getOrCreateTag();
             nTag.putString("blueprintName", data.name);
             nTag.putString("blueprintId",   effectiveBpId);
+            SpatialBlueprintItem.setSaveMode(newStack, data.saveMode);
             if (data.animDuration > 0) nTag.putInt("animDuration", data.animDuration);
 
-            // 次元蓝图：捕捉时方块已从世界清除（材料已由玩家支付），从库重新应用时恢复满额存入记录
-            if (targetItem == SpatialBlueprintItems.DIMENSIONAL_BLUEPRINT.get()
-                    && data.materialList != null && !data.materialList.blockCounts.isEmpty()) {
-                net.minecraft.nbt.CompoundTag depTag = new net.minecraft.nbt.CompoundTag();
-                for (java.util.Map.Entry<String, Integer> entry : data.materialList.blockCounts.entrySet()) {
-                    depTag.putInt(entry.getKey(), entry.getValue());
-                }
-                nTag.put("depositedMaterials", depTag);
-            }
+            // 次元蓝图无需在此恢复"已存入"记录：材料存在世界级材料空间的次元袋里，
+            // 按蓝图 ID 绑定，重新应用时 blueprintId 不变，袋子自然还在。
+            // （旧版会往物品 NBT 写 depositedMaterials，该字段已随材料空间重构废弃。）
 
             // ── 工程蓝图：写入固定坐标绑定数据 ─────────────────────────────
             if (targetItem == SpatialBlueprintItems.ENGINEERING_BLUEPRINT.get()
                     && !data.fixedDimension.isEmpty()
                     && data.fixedStartPos != null && data.fixedEndPos != null) {
                 EngineeringBlueprintItem.setBoundProject(newStack, effectiveBpId,
-                        data.fixedDimension, data.fixedStartPos, data.fixedEndPos,
-                        data.maxDistance >= 0 ? data.maxDistance : 64);
+                        data.fixedDimension, data.fixedStartPos, data.fixedEndPos);
             }
 
             player.setItemInHand(targetHand, newStack);
             ItemSyncUtil.syncHand(player, targetHand);
 
             // 主动推送蓝图数据到客户端缓存，使其无需手动点击"下载数据"
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_BlueprintDataMessage(effectiveBpId, data));
+            BlueprintNetwork.sendBlueprintTo(player, effectiveBpId, data);
             sendResult(player, true, "");
         });
         ctx.get().setPacketHandled(true);
+    }
+
+    /**
+     * 「换手上的物品」类操作（蓝图库 ✔ 应用、项目浏览 [规划项目]）要替哪只手：
+     * 主手是蓝图类物品就替主手；主手不是而副手是 → 替副手；都不是 → 主手。
+     * 这些界面都只能从手持蓝图的界面打开，所以正常走不到「都不是」。
+     */
+    public static InteractionHand replaceTargetHand(ServerPlayer player) {
+        return !isBlueprintLike(player.getMainHandItem()) && isBlueprintLike(player.getOffhandItem())
+                ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+    }
+
+    /** 可被替换的手持物：空白 / 空间（含次元）/ 投影（含奖励）/ 工程 / 项目（公用 / 自用）蓝图。 */
+    private static boolean isBlueprintLike(ItemStack stack) {
+        net.minecraft.world.item.Item item = stack.getItem();
+        return item instanceof BlankBlueprintItem
+                || item instanceof SpatialBlueprintItem
+                || item instanceof ProjectionBlueprintItem
+                || item instanceof EngineeringBlueprintItem
+                || item instanceof com.xioyim.spatialblueprint.item.ProjectBlueprintItem;
     }
 
     private static void sendResult(ServerPlayer player, boolean success, String messageKey) {

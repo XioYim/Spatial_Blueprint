@@ -1,0 +1,54 @@
+SB-009 报告 · 删除工程蓝图「安全传送坐标」与「生存放行开关」—— 传送只看 tpperm
+报告时刻：2026-09-20 19:42:00
+
+任务        SB-009
+状态        PASS
+结论        工程蓝图传送权限现完全由 TeleportPermissions.canTeleport 决定（OP / 创造模式 / /sb tpperm 名单），不再有按蓝图的生存放行开关；落点固定为绑定工程起点 / 终点中离玩家近的那个；安全坐标三个类、C2S_SafeCoordMessage 注册、摘要 5 字段、工程 Tab 入口与提示、12 个 lang 键全部删除。wire 变更两处（注册少一条 + 摘要少 5 字段），待主会话 bump 2.7.28 后三端一起换。
+
+发现        - 三个被删类的引用只在任务 4.2~4.7 列出的文件里；删除前全仓 grep 复核过 · gui\SafeCoordScreen.java:4 / util\SBSafeCoordData.java:17 / network\C2S_SafeCoordMessage.java:14
+            - S2C_LibrarySyncMessage.writeSummary / readSummary 还被 network\S2C_VoidBagSyncMessage.java:66、:80 复用；删 5 字段后复用点无需改动，虚空袋同步 wire 随主消息一并收窄
+            - lang 里 point_selection.tooltip.create_engineering 等遗留键与本任务无关，未动（任务只授权删 12 键）
+
+改动        - 备份：| 2026-09-20 19:35 | `Spatial_Blueprint_20260920_193504` | `4823B09D` | SB-009 执行前 |（备份结尾提示 run 目录未压缩属预期）
+            - 删除（整文件）：gui\SafeCoordScreen.java、util\SBSafeCoordData.java、network\C2S_SafeCoordMessage.java —— 安全坐标页 / SavedData / 上行消息
+            - network\BlueprintNetwork.java：register() 删 C2S_SafeCoordMessage 注册两行（c2s 51 → 50，其后消息序号前移 1）
+            - network\C2S_EngineeringTeleportMessage.java：删 allowSurvival 第二道门与安全坐标落点，判定顺序对齐 C2S_VoidTeleportMessage，javadoc 同步，SBSafeCoordData import 清理
+            - network\C2S_RequestLibraryMessage.java：不再把 SBSafeCoordData 贴进摘要，直接发 listSummaries()，去掉已无用的 List import
+            - network\S2C_LibrarySyncMessage.java：单条摘要 encode / decode 对称删 5 字段（1 bool + 3 int + 1 bool）
+            - util\BlueprintStorage.java：BlueprintSummary 删 5 个组件（30 → 25），listSummaries 构造实参同步
+            - gui\BlueprintTooltips.java：build 删 engHintTab 参数与安全坐标提示行，@Nullable import 清理
+            - gui\BlueprintLibraryScreen.java：删工程 Tab 双击开 SafeCoordScreen 的分支（再点已选中行 = 取消选中，与其他 Tab 一致）、renderSummaryTooltip 删 showEngHint
+            - gui\VoidBagSpaceScreen.java：build 调用实参 3 → 2
+            - lang zh_cn.json / en_us.json：各删 12 键（safe_coord 11 + tp.no_survival），989 → 977
+            - wire 变更清单（主会话据此 bump 2.7.28）：BlueprintNetwork.register() 少 C2S_SafeCoordMessage 一条，其后全部消息线上序号前移 1；S2C_LibrarySyncMessage 每条摘要少 1 bool + 3 int + 1 bool
+
+测试        1. PASS —— 最后一次改动（network\C2S_EngineeringTeleportMessage.java，mtime 2026-09-20 19:39:07）之后编译，时刻 2026-09-20 19:39:34，BUILD SUCCESSFUL；按 \.java:\d+: 计数警告 20（全量重编基线口径），20 条 file:line 全在既有未改文件：BlueprintSelectionRenderer 66/87/293/304/314、ClientModSetup 41、SBOutlinerRenderTypes 29/42、SBJeiPlugin 26、BlockSubstitutionsScreen 479/498、BlueprintReportScreen 749/754/889/893/897、BulkConversionScreen 545/564、ReferenceSubstitutionsScreen 567/586，无新增「文件:行号」
+            2. PASS —— javap -p -c 反编译（classpath build\classes\java\main）：SpatialBlueprintMod、network\C2S_EngineeringTeleportMessage、network\C2S_RequestLibraryMessage、network\S2C_LibrarySyncMessage、util\BlueprintStorage、util\BlueprintStorage$BlueprintSummary，net/minecraft/client 命中依次 0 / 0 / 0 / 0 / 0 / 0
+            3. PASS —— mtime 窗口（> 2026-09-20 19:35:03）内 src 下共 10 个文件：BlueprintLibraryScreen.java 19:37:03、BlueprintTooltips.java 19:36:49、VoidBagSpaceScreen.java 19:37:03、BlueprintNetwork.java 19:36:10、C2S_EngineeringTeleportMessage.java 19:39:07、C2S_RequestLibraryMessage.java 19:36:38、S2C_LibrarySyncMessage.java 19:36:44、BlueprintStorage.java 19:36:31、lang\en_us.json 19:37:15、lang\zh_cn.json 19:37:14 —— 全部 ⊆ 第三节「改」清单；git status 里三个删除文件显示为 D，无第三个来源的源文件改动
+            4. PASS —— src\main 下 .java + .json 全量、大小写不敏感 grep safecoord / allowSurvival / safe_coord / no_survival / engHintTab / showEngHint / sb_safe_coord，合计 0 命中
+            5. PASS —— BlueprintNetwork.java 与备份副本逐行 diff（--ignore-cr-at-eol）为 0 增 2 删，正是 C2S_SafeCoordMessage 两行；c2s( 计数改前 51、改后 50，s2c( 改前 25、改后 25
+            6. PASS —— S2C_LibrarySyncMessage 单条摘要 write 26 次 == read 26 次（其中 writeBlockPos ×2 在 hasFixed 分支内，read 侧对称）；BlueprintSummary 组件数 25；三处构造（BlueprintStorage.java:525 附近、C2S_RequestLibraryMessage、S2C_LibrarySyncMessage.decode）实参个数由编译器保证与 record 一致，编译通过
+            7. PASS —— C2S_EngineeringTeleportMessage.java：isCreative 0 处、SBSafeCoordData 0 处、no_survival 0 处、TeleportPermissions.canTeleport 1 处；判定顺序（file:line）：持有并 hasBoundProject（:35-47）→ canTeleport（:50）→ 维度（:56-61）→ 落点起点 / 终点取近（:64-71）→ teleportTo（:73）；与 C2S_VoidTeleportMessage.handle 的顺序（持有 :35-43 → canTeleport :46 → 维度 :52-57 → 落点 :60-78 → teleportTo :80）一一对应
+            8. PASS —— node 解析两份 JSON 通过；zh 977 键 / en 977 键，改前各 989，各少 12；仍被代码引用的 tp.tip / tp.no_op / tp.wrong_dim / tp.no_bound 与 message.teleport.no_permission 在两份 lang 里各 1 条
+            9. PASS —— BlueprintLibraryScreen.java：SafeCoordScreen 0 处、showEngHint 0 处；全仓 BlueprintTooltips.build( 恰 2 处调用（BlueprintLibraryScreen.java:1012 附近、VoidBagSpaceScreen.java:218），实参均 2 个
+            10. PASS —— gradle.properties mtime 2026-09-20 16:21:03（不在窗口内）；build\libs 最新仍为 spatial_blueprint-2.7.27.jar（16:22:27），无新 jar
+            11. PASS —— 开发日志.md 与备份副本 diff（--ignore-cr-at-eol）只有 20 行插入（文末追加「## SB-009 执行记录」一节），0 行删除
+            12. PASS —— 测试清单.txt 与备份副本 diff 只有 25 行插入（#120 下一行说明 + 第二十组 121~124），0 行删除
+
+风险        - 旧客户端（2.7.27）连新服（2.7.28）会因消息序号错位被踢，属预期，由主会话 bump 版本 + 三端一起换兜住
+            - 旧存档 data\sb_safe_coord.dat 残留为死数据：类已删、没有任何 computeIfAbsent 再加载它，无害；测试第四步会实际验证启动无报错
+            - network\S2C_VoidBagSyncMessage 复用摘要编解码，虚空袋同步 wire 同步收窄 —— 与 2.7.27 混用同样不兼容，属同一次版本变更
+            - 本任务无实机、无 jar 构建、未 bump 版本（按任务规定留给主会话）
+
+未完成      - 不 bump mod_version / 不构建 jar / 不部署 / 不实机（任务明确排除，主会话统一处理）
+            - 不清理存档里已有的 sb_safe_coord.dat（任务明确不动，属死数据）
+
+建议记入踩坑记录  - 传送门禁只保留在 TeleportPermissions 一处；不要再按蓝图加 allowSurvival 之类的第二道门，两处判定必然分叉（本次就是删掉分叉）
+            - S2C_LibrarySyncMessage.writeSummary / readSummary 被 S2C_VoidBagSyncMessage 复用：改摘要字段时虚空袋同步 wire 同步收窄，版本必须一起换
+            - 删除 register() 中间一条消息 = 其后所有消息线上序号前移，属 wire 变更（T3 已有铁律，本次按它执行并交主会话 bump）
+
+待复核      - (1) 主会话按 T3 bump 2.7.28 并三端一起换（wire 变更清单见「改动」段）
+            - (2) 换包后跑 测试清单.txt 第二十组 121~124；121/122 关注 [Tp] 灰化与 grant / revoke 即时性（依赖既有 ClientTeleportPermCache，未改动）
+            - (3) 实机确认 123：OP 切生存不再被「管理员已关闭生存模式传送」挡住（该文案已删，2.7.28 上不应再出现）
+            - (4) 实机确认 124：工程 Tab 再点取消选中；带旧 sb_safe_coord.dat 的专服启动日志无相关报错
+            - (5) 验收第 3 条只看 mtime 窗口与三个 D；仓库其余 M / ?? 均为任务前既有脏文件（备份时 206 项），非本次改动

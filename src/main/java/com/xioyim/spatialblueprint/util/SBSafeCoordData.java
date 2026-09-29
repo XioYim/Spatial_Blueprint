@@ -11,14 +11,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Per-world persistent storage for engineering blueprint safe teleport coordinates.
- * Keyed by blueprint ID (UUID string). Stored in world's saveddata as "sb_safe_coord".
+ * 工程蓝图的「安全传送坐标」：按 blueprintId 存一个可选的 XYZ，[Tp] 有它就传到这个点，
+ * 没有才传到起点 / 终点里离玩家近的那个。世界级 SavedData（键 {@code sb_safe_coord}），
+ * 不写进蓝图文件 —— 传送时 O(1) 查，不用为一个坐标加载整份蓝图。
+ *
+ * <p>只有坐标。传送权限完全归 {@code /sb tpperm}（{@code TeleportPermissions}），
+ * 这里不再有按蓝图的放行开关；SB-009 前旧存档里的 {@code allowSurvival} 键读时忽略。</p>
  */
 public class SBSafeCoordData extends SavedData {
 
     private static final String SAVE_KEY = "sb_safe_coord";
 
-    public record SafeEntry(boolean hasCoord, int x, int y, int z, boolean allowSurvival) {}
+    public record SafeEntry(boolean hasCoord, int x, int y, int z) {}
 
     private final Map<String, SafeEntry> entries = new HashMap<>();
 
@@ -30,8 +34,8 @@ public class SBSafeCoordData extends SavedData {
 
     private SBSafeCoordData() {}
 
-    public void setEntry(String blueprintId, boolean hasCoord, int x, int y, int z, boolean allowSurvival) {
-        entries.put(blueprintId, new SafeEntry(hasCoord, x, y, z, allowSurvival));
+    public void setEntry(String blueprintId, boolean hasCoord, int x, int y, int z) {
+        entries.put(blueprintId, new SafeEntry(hasCoord, x, y, z));
         setDirty();
     }
 
@@ -49,11 +53,7 @@ public class SBSafeCoordData extends SavedData {
             CompoundTag e = list.getCompound(i);
             String id = e.getString("id");
             boolean hasCoord = e.getBoolean("hasCoord");
-            int x = e.getInt("x");
-            int y = e.getInt("y");
-            int z = e.getInt("z");
-            boolean allowSurvival = e.getBoolean("allowSurvival");
-            data.entries.put(id, new SafeEntry(hasCoord, x, y, z, allowSurvival));
+            data.entries.put(id, new SafeEntry(hasCoord, e.getInt("x"), e.getInt("y"), e.getInt("z")));
         }
         return data;
     }
@@ -68,7 +68,6 @@ public class SBSafeCoordData extends SavedData {
             entry.putInt("x", e.getValue().x());
             entry.putInt("y", e.getValue().y());
             entry.putInt("z", e.getValue().z());
-            entry.putBoolean("allowSurvival", e.getValue().allowSurvival());
             list.add(entry);
         }
         tag.put("entries", list);

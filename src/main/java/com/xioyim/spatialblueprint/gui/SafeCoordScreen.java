@@ -17,8 +17,11 @@ import org.lwjgl.glfw.GLFW;
 import javax.annotation.Nullable;
 
 /**
- * UI for setting the safe teleport coordinate for an engineering blueprint.
- * OP-only. Opened from the engineering menu by clicking a project name.
+ * 工程蓝图「安全传送坐标」设定页：蓝图库工程 Tab 选中一行 → [TP] 打开，仅 OP。
+ *
+ * <p>三个数字框留空 = 不设（[Tp] 传起 / 终点取近）；[设定当前坐标] 填玩家脚下；
+ * [保存] 发 {@link C2S_SafeCoordMessage} 存服务端 SavedData。传送权限不在这里管
+ * （完全归 {@code /sb tpperm}），所以没有放行开关。</p>
  */
 @OnlyIn(Dist.CLIENT)
 public class SafeCoordScreen extends Screen implements ErrorToastSupport {
@@ -27,20 +30,17 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
     private final String  blueprintId;
     private final String  fixedDimension;
 
-    // Initial values from existing saved data
+    // 打开时摘要里的现值（服务端 C2S_RequestLibraryMessage 合并进摘要）
     private final boolean initCoordSet;
     private final int     initX, initY, initZ;
-    private final boolean initAllowSurvival;
 
     private EditBox boxX, boxY, boxZ;
-    private boolean allowSurvival;
 
     @Nullable private Component errorToast;
 
-    // Panel dimensions — wide enough for "Allow survival teleport: OFF" to fit fully
     private static final int PAD       = 15;
     private static final int W         = 310;
-    private static final int H         = 132;
+    private static final int H         = 118;   // 标题 / 维度 / 提示 / 三框 / 一排按钮（原有放行开关那排去掉后收窄）
     private static final int BTN_H     = 18;
     private static final int B_GAP     = 5;
     private static final int CONTENT_W = W - PAD * 2;          // 280
@@ -49,15 +49,13 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
 
     public SafeCoordScreen(Screen parent, BlueprintStorage.BlueprintSummary summary) {
         super(Component.translatable("spatial_blueprint.gui.safe_coord.title"));
-        this.parent          = parent;
-        this.blueprintId     = summary.id();
-        this.fixedDimension  = summary.fixedDimension() != null ? summary.fixedDimension() : "";
-        this.initCoordSet    = summary.safeCoordSet();
-        this.initX           = summary.safeX();
-        this.initY           = summary.safeY();
-        this.initZ           = summary.safeZ();
-        this.initAllowSurvival = summary.safeAllowSurvival();
-        this.allowSurvival   = initAllowSurvival;
+        this.parent         = parent;
+        this.blueprintId    = summary.id();
+        this.fixedDimension = summary.fixedDimension() != null ? summary.fixedDimension() : "";
+        this.initCoordSet   = summary.safeCoordSet();
+        this.initX          = summary.safeX();
+        this.initY          = summary.safeY();
+        this.initZ          = summary.safeZ();
     }
 
     @Override
@@ -68,14 +66,14 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
         int px = cx - W / 2;
         int py = cy - H / 2;
 
-        // ── X / Y / Z edit boxes ──────────────────────────────────────────
+        // ── X / Y / Z 输入框 ─────────────────────────────────────────────
         int fieldGap = 6;
         int fieldW   = (CONTENT_W - fieldGap * 2) / 3;
         int fieldH   = 20;
         int fieldY   = py + 54;
         int fStartX  = px + PAD;
 
-        // Preserve typed values across re-init (toggle causes clearWidgets+init)
+        // 窗口缩放会重跑 init：保留已输入的值
         String prevX = boxX != null ? boxX.getValue() : (initCoordSet ? String.valueOf(initX) : "");
         String prevY = boxY != null ? boxY.getValue() : (initCoordSet ? String.valueOf(initY) : "");
         String prevZ = boxZ != null ? boxZ.getValue() : (initCoordSet ? String.valueOf(initZ) : "");
@@ -91,40 +89,26 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
         }
         if (getFocused() == null) setFocused(boxX);
 
-        // ── Row 1: [设定为当前坐标]  [保存]  [取消] ─────────────────────
-        int row1Y = py + H - 44;
-        int row1X = px + PAD;
+        // ── 底排：[设定当前坐标] [保存] [取消] ───────────────────────────
+        int rowY = py + H - PAD - BTN_H;
+        int rowX = px + PAD;
 
         addRenderableWidget(Button.builder(
                 Component.translatable("spatial_blueprint.gui.safe_coord.set_current"),
                 b -> setCurrentCoord())
-            .bounds(row1X, row1Y, BTN_SET_W, BTN_H).build());
-        row1X += BTN_SET_W + B_GAP;
+            .bounds(rowX, rowY, BTN_SET_W, BTN_H).build());
+        rowX += BTN_SET_W + B_GAP;
 
         addRenderableWidget(Button.builder(
                 Component.translatable("spatial_blueprint.gui.safe_coord.save"),
                 b -> save())
-            .bounds(row1X, row1Y, BTN_SMALL, BTN_H).build());
-        row1X += BTN_SMALL + B_GAP;
+            .bounds(rowX, rowY, BTN_SMALL, BTN_H).build());
+        rowX += BTN_SMALL + B_GAP;
 
         addRenderableWidget(Button.builder(
                 Component.translatable("spatial_blueprint.gui.safe_coord.cancel"),
                 b -> onClose())
-            .bounds(row1X, row1Y, BTN_SMALL, BTN_H).build());
-
-        // ── Row 2: [允许生存玩家传送:开/关] full-width ───────────────────
-        int row2Y = row1Y + BTN_H + B_GAP;
-        addRenderableWidget(Button.builder(
-                buildAllowSurvivalLabel(),
-                b -> { allowSurvival = !allowSurvival; clearWidgets(); init(); })
-            .bounds(px + PAD, row2Y, CONTENT_W, BTN_H).build());
-    }
-
-    private Component buildAllowSurvivalLabel() {
-        String state = allowSurvival
-                ? Component.translatable("spatial_blueprint.gui.safe_coord.allow_survival.on").getString()
-                : Component.translatable("spatial_blueprint.gui.safe_coord.allow_survival.off").getString();
-        return Component.translatable("spatial_blueprint.gui.safe_coord.allow_survival", state);
+            .bounds(rowX, rowY, BTN_SMALL, BTN_H).build());
     }
 
     private void setCurrentCoord() {
@@ -135,6 +119,7 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
         boxZ.setValue(String.valueOf((int) Math.floor(player.getZ())));
     }
 
+    /** 三框齐全且都是整数才算「设了」；任一为空或解析失败 = 清除（服务端 hasCoord=false）。 */
     private void save() {
         String sx = boxX.getValue().trim();
         String sy = boxY.getValue().trim();
@@ -150,8 +135,10 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
                 hasCoord = false;
             }
         }
-        BlueprintNetwork.CHANNEL.sendToServer(
-                new C2S_SafeCoordMessage(blueprintId, hasCoord, x, y, z, allowSurvival));
+        BlueprintNetwork.CHANNEL.sendToServer(new C2S_SafeCoordMessage(blueprintId, hasCoord, x, y, z));
+        // 蓝图库只在切 Tab 时拉列表，这里主动再拉一次：服务端按顺序处理，新列表已带刚存的坐标，
+        // 库界面按 id 重解析选中行，[TP] tooltip 的「当前：x, y, z」随之刷新
+        BlueprintNetwork.CHANNEL.sendToServer(new com.xioyim.spatialblueprint.network.C2S_RequestLibraryMessage());
         onClose();
     }
 
@@ -199,23 +186,20 @@ public class SafeCoordScreen extends Screen implements ErrorToastSupport {
         graphics.fill(px, py, px + W, py + H, 0xD0101010);
         drawBorder(graphics, px, py, W, H);
 
-        // Title
         graphics.drawCenteredString(font, this.title, cx, py + 6, 0xFFFFAA);
 
-        // Dimension row
-        String dimKey = "spatial_blueprint.dimension." + fixedDimension.replace("minecraft:", "");
-        String dimDisplay = fixedDimension.isEmpty() ? "?" : Component.translatable(dimKey).getString();
-        if (dimDisplay.equals(dimKey)) dimDisplay = fixedDimension;
+        // 维度名与项目维度横幅同一份映射（ProjectData.dimensionName）
+        String dimDisplay = fixedDimension.isEmpty() ? "?"
+                : com.xioyim.spatialblueprint.util.ProjectData.dimensionName(fixedDimension).getString();
         graphics.drawCenteredString(font,
                 Component.translatable("spatial_blueprint.gui.safe_coord.dimension", dimDisplay).getString(),
                 cx, py + 20, 0xAAAAAA);
 
-        // Coord label
         graphics.drawCenteredString(font,
                 Component.translatable("spatial_blueprint.gui.safe_coord.coord_label").getString(),
                 cx, py + 38, 0x777777);
 
-        // X / Y / Z inline labels (left-edge of each box)
+        // 框内左缘的 X / Y / Z 标签
         int fieldGap = 6;
         int fieldW   = (CONTENT_W - fieldGap * 2) / 3;
         int fieldY   = py + 54;

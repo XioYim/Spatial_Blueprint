@@ -1,0 +1,56 @@
+任务：SB-004 · 项目蓝图重做第五步：划定工程（子工程新流程 + 报告页抽接口）、预览脱离手持、规划项目自动导入范围
+状态：完成
+结论：按手册 A–I 全部落地：报告页抽 ReportHost、子工程老路（主手空白 + 副手项目）整体拆除并改由范围界面 [划定工程] 发起、服务端收包改为从物品 NBT 读两点、工程 / 项目预览脱手常显（走远 / 换维度 / 登出自动关）、规划项目自动灌入已保存范围。compileJava --rerun BUILD SUCCESSFUL，警告 20（基线 21）。开工前后哈希对照：只有第三节列出的 12 个改动文件 + 2 个新文件变化，其余 235 个源文件一字节未动（含 BlueprintNetwork.java 与 gradle.properties）。
+发现：
+  1. 手册第五节第 5 条「getOffhandItem 在 PointSelectionScreen 应 0 命中」不成立：该文件仍有 2 处 getOffhandItem（PointSelectionScreen.java:181 getStack() 的副手空白蓝图回退、PointSelectionScreen.java:399 validateStillHoldingBlankBlueprint 的按钮可用性判定），都是空白蓝图通用逻辑、与子工程老路无关，不在本任务允许修改范围（B1 只列了指定删除段），未动。
+  2. 手册 H1 说「onStatus 刷新范围时沿用原 dimension」，但原实现里 enable(projectId, null)（开着但还没范围）存的就是 null，没有维度可沿用。实现时把存储值改成永远存一个 Range（origin/size 可空）来带上维度，否则「先开预览、后保存范围」这条路径状态下发时拿不到维度、预览打不开。接口语义未变（isEnabled/get/all 照旧）。
+  3. 手册 D3 要求标题下的「尺寸 X×Z×Y · 体积 N」灰字行，I 节不列对应 lang 键，按现有版式惯例（ProjectRangeScreen 标题的尺寸/体积也是 literal 拼）用 Component.literal 实现，Null 分支用现成键 gui.point_selection.count.null。
+  4. 其余行号与手册基本一致（BlueprintReportScreen 的 73/163/172-174/519/578-581、PointSelectionScreen 的 132-133/334-353/887/892-902、renderer 的 716-726/751/938-956 都对得上），无漂移。
+改了什么：
+  | 2026-09-16 20:32 | `Spatial_Blueprint_20260916_203205` | `DFAA864D` | SB-004 执行前 |
+  - 新建 gui/ReportHost.java：两个点来源 + onReportConfirmed(mode, targetCategory) 的接口，写法对照 PointHost.java。
+  - gui/BlueprintReportScreen.java:73/163/172-174：字段与构造器参数 PointSelectionScreen → ReportHost，两点改 host.point1()/point2()；import BlankBlueprintItem 删除（ItemStack 仍有其它用途，保留）。
+  - gui/BlueprintReportScreen.java:519：OP 强制创建按钮的条件改为 opAllowed && !"subproject".equals(category)（子工程没有空白蓝图，出现即坑）；updateButtons 的 null 判断原样兜住。
+  - gui/BlueprintReportScreen.java:578-581：出口改 host.onReportConfirmed(mode, targetCategory)。
+  - gui/PointSelectionScreen.java:35：implements ErrorToastSupport, ReportHost；新增 point1()/point2()/onReportConfirmed()（放在 startCapture 之后，onReportConfirmed 写 captureMode + startCapture）。
+  - gui/PointSelectionScreen.java：删 [创建] 里的「副手项目蓝图 = 建子工程」整段（原 334-353）、case "subproject"（原 887）、createSubProject() 方法（原 892-902）、字段 pendingSubProjectId/pendingSubIndex（原 132-133）；import ProjectBlueprintItem 与 C2S_CreateSubProjectMessage 已无人用，删除；startCapture javadoc 里的子工程字样随之去掉。
+  - item/ProjectBlueprintItem.java:48-49：注释改成「只认主手：副手的项目蓝图不接管右键，交给主手物品」，判定逻辑保留。
+  - network/C2S_CreateSubProjectMessage.java：载荷去掉 p1/p2，改 (name(128), duration(int), index(int), projectId(64))，encode/decode/构造器三处同序；handle 重排为 1 OP → 2 主手须持该项目蓝图（need_item）→ 3 冻结（手里已激活 或 ProjectClaimRegistry.hasAnyClaimForProject）→ 4 项目存在 → 5 size 三轴 > 0（no_range）→ 6 两点从 ProjectBlueprintItem.getRangePoint(主手) 读、缺则 project.range.missing_points → 7 序号 → 8 选区在项目盒内（detail 保留）→ 9 扫描 / 上限 / 落盘（原样）→ 10 不清临时两点、聊天栏 created、追发 C2S_RequestProjectStatusMessage.sendStatus(player)（:244）；类 javadoc 重写。
+  - gui/SubProjectCreateScreen.java：构造器改 (Screen, Player, projectId)；两点改从主手项目蓝图读（rangePoint(1/2)）；删方块数判定与 gui.subproject.too_large 分支；tooltip 成功分支改尺寸/体积/序号（新 ok 文案，参数 sX,sZ,sY,volume,index）；标题下加尺寸/体积灰字行（titleY 预留 28px 防压名称框）；时长框默认空 + auto_hint；删两个备注框与 parent.pending* 写回；implements ReportHost，proceedToReport 改 new BlueprintReportScreen(this, player, 0, "subproject")，onReportConfirmed 发 C2S_CreateSubProjectMessage 后回范围界面；[查看项目] 恒禁用保留。
+  - gui/ProjectRangeScreen.java：构造器加 (rangeOrigin, rangeSize) 可空参数（三参转发 null），init() 首次且无临时两点时自动灌入（applyPoint 会发服务端）；[创建] 按钮接线 SubProjectCreateScreen(this, player, pid)，projectId 为空弹 ErrorToast need_item，active 随 refreshSaveButton 一起刷；tooltip 换 gui.project_range.tooltip.create；类 javadoc 更新。
+  - gui/ProjectBlueprintScreen.java:133-135：[规划项目] 传 status.hasRange ? origin/size : null；togglePreview 的 enable 增加当前维度参数（H3）。
+  - 新建 client/ClientEngineeringPreview.java：单格登记（blueprintId/min/max/dimension）+ set/clear/isActive/isFor/getter + LoggingOut 清空。
+  - client/ClientProjectPreview.java：Range 加 dimension（origin/size 可空）+ hasBounds()；enable(projectId, range, dimension)；onStatus 沿用原维度；all() 返回不可变视图；LoggingOut 原样。
+  - client/BlueprintSelectionRenderer.java:718-723：setEngineeringPreview 签名改 (String, BlockPos, BlockPos, String) 转发 ClientEngineeringPreview；:751 主手分派里的工程预览调用删除（分支留空）；分派后新增 renderEngineeringPreviewIfActive（每帧：数据在 → 维度对 → 盒中心距离 > 半对角线 + RENDER_CANCEL_MARGIN 才关（关时若工程界面开着顺手 setScreen(null)））；新增 renderProjectPreviews（遍历 all()，多个项目各自一对 "project_preview_<pid>" / "<pid>_glow"）；renderEngineeringPreview 签名改 (mc, player, data, min, max, event)；onClientTick 里旧的「工程蓝图自动取消」段删除；renderProjectBlueprint 只留临时两点编辑态，预览半段与两行 remove("project_preview_box") 删除，javadoc 更新。
+  - gui/EngineeringBlueprintScreen.java：init() 开头对齐一次（AlignMode != OFF 但 !ClientEngineeringPreview.isFor(bpId) → 置 OFF，:205-213）；:291 预览开关文案条件改 ClientEngineeringPreview.isFor(bpId)；togglePreview 开启时传 bpId + 当前维度（:524-533）。
+  - lang/zh_cn.json、en_us.json：删 gui.subproject.too_large、message.subproject.need_blank / unbound、gui.project_range.tooltip.create_todo；加 message.subproject.need_item / no_range、gui.subproject.duration.auto_hint、gui.project_range.tooltip.create；改 gui.subproject.ok（§7尺寸 %s×%s×%s　体积 %s　序号 %s / §7Size %s×%s×%s  Volume %s  Index %s）与 gui.project_screen.tooltip_preview（去掉「手持本蓝图时」，补自动关说明）。两份各 938 键，node 解析通过。
+测试：
+  1. 编译：compileJava --offline --rerun → BUILD SUCCESSFUL；按 `\.java:\d+:` 计数 20（≤21，少的那条在删掉的旧代码里）。
+  2. javap -p -c 对 SpatialBlueprintMod.class / network\C2S_CreateSubProjectMessage.class / network\BlueprintNetwork.class 的 net/minecraft/client 命中数分别为 0 / 0 / 0。
+  3. 哈希对照（SB-004_hash_before.csv 235 行 / after 237 行）：changed 12、added 2、removed 0；changed = BlueprintSelectionRenderer、ClientProjectPreview、BlueprintReportScreen、EngineeringBlueprintScreen、PointSelectionScreen、ProjectBlueprintScreen、ProjectRangeScreen、SubProjectCreateScreen、ProjectBlueprintItem、C2S_CreateSubProjectMessage、zh_cn.json、en_us.json；added = ClientEngineeringPreview.java、ReportHost.java。与手册第三节清单一一对应。
+  4. BlueprintNetwork.java 与 gradle.properties 不在变化清单里（哈希逐字相同），wire 注册与版本号未动。
+  5. 老路拆净：pendingSubProjectId|pendingSubIndex|createSubProject|need_blank|subproject.unbound|tooltip.create_todo|gui.subproject.too_large 在 src 全树 0 命中；getOffhandItem 的三文件核查中 SubProjectCreateScreen.java 0、C2S_CreateSubProjectMessage.java 0、PointSelectionScreen.java 2 处（见「发现 1」，既有空白蓝图逻辑）。
+  6. 报告页解耦：BlueprintReportScreen.java 对 PointSelectionScreen / parent 均 0 命中；implements ReportHost 在 PointSelectionScreen.java:35、SubProjectCreateScreen.java:37 各 1。
+  7. 预览脱手：renderEngineeringPreview(mc, player, mainHand, event) 0 命中；BlueprintSelectionRenderer.java 里 checkProjectBounds 0 命中；RENDER_CANCEL_MARGIN 计数 5（原 2 处 + 工程 + 项目 + void 已有，≥4）。
+  8. lang：两份 JSON node 解析通过、键数相等（938/938）；本任务 12 个 Java 文件里的 "spatial_blueprint.*" 字面量抽出后逐个核对两份均在（唯一告警是 PointSelectionScreen.java 的 fluid_capture. 前缀拼接动态后缀，4 个最终键 all/no_water/no_lava/none 两份都有，非真缺失）。
+  9. 逻辑不变式：a) C2S_CreateSubProjectMessage.java:117-118 读 ProjectBlueprintItem.getRangePoint(主手)，全文件无 clearRangePoints（grep 0）；b) BlueprintReportScreen.java:519 子工程时不添加 OP 覆盖按钮；c) EngineeringBlueprintScreen.java:546 deploy 仍以 AlignMode != OFF 为门槛；d) ClientEngineeringPreview.java:80 与 ClientProjectPreview.java:61 都挂了 LoggingOut 清空；e) 工程（BlueprintSelectionRenderer.java:2212 段）与项目（同文件 :2248 段）自动关闭都是「盒中心距离 > 半对角线 + RENDER_CANCEL_MARGIN」且维度不符即关。
+风险：
+  - ClientEngineeringPreview 单格（开新的顶掉旧的）与现有单个 engSlot VBO 匹配；若以后要同时显示多个工程预览，需要连 VBO 一起改。
+  - renderProjectPreviews 里 disable 只依赖 Outliner 条目不刷新自动淡出；若 Outliner 以后改成 persist 语义，需要在 disable 时显式 remove。
+  - SubProjectCreateScreen 的尺寸/体积灰字行是 literal 中文（手册未给 lang 键、I 节禁止新增键），EN 界面会显示中文，等有需要再补键。
+  - 报告页 OP 按钮隐藏后 opButton/opRewardButton 保持 null，updateButtons 已有 null 判断（BlueprintReportScreen.java:244-245）；若以后有别的路径给 subproject 传 category，仍会走同一判断。
+未完成：无（A–I 全做；明确不做的：不写测试清单、不部署、不构建 jar）。
+待复核：
+  [ ] 工程蓝图开预览后换手仍显示（脱手）
+  [ ] 工程预览走远自动关，且工程界面开着时被关掉
+  [ ] 工程预览换维度即关
+  [ ] 划定工程：范围界面 [创建] → 子工程界面 → [创建] → 检测报告 → 确认后回范围界面，两点仍在、临时两点未被清
+  [ ] 子工程创建成功后项目界面回来能看到新条目（sendStatus 已推）
+  [ ] 子工程报告页看不到两个 OP 覆盖按钮（非 subproject 时仍可见）
+  [ ] 规划项目打开即带已保存范围（两点自动灌入）；ESC 后再进不覆盖玩家改过的两点
+  [ ] 项目预览换手仍显示、走远自动关、换维度即关
+  [ ] 服务端拒绝矩阵：非 OP / 主手不是该项目蓝图 / 已激活或任何人激活过 / 项目没有布局 / 两点不齐 → 5 种横幅各验一条
+建议记入踩坑记录：
+  - 预览脱手后 ClientProjectPreview 的 Range 必须连"还没有范围"的情况也带上维度，否则后到的 status 无从沿用维度、预览打不开。
+  - Outliner 条目不刷新会自动淡出 —— 预览的 disable 不需要手动 remove；但反过来，多项目预览要用各自独立的 key（project_preview_<pid>），不能共用一个 key。
+  - SubProjectCreateScreen 标题上方有第二行灰字时，titleY 要按两行预留（startY-28），只留 16px 会压到名称框。

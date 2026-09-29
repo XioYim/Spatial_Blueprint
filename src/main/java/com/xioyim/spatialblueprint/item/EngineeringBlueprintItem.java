@@ -11,7 +11,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -38,6 +37,8 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        // 蓝图一律只认主手 —— 副手要留给「主手空白蓝图 + 副手项目蓝图」这类组合用法
+        if (hand != InteractionHand.MAIN_HAND) return InteractionResultHolder.pass(player.getItemInHand(hand));
         ItemStack stack = player.getItemInHand(hand);
         if (level.isClientSide) {
             openEngineeringScreen(player, stack);
@@ -49,16 +50,18 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
     private static void openEngineeringScreen(Player player, ItemStack stack) {
         // 生存模式：无 blueprintId（空白工程蓝图）才拒绝打开界面
         // 有 blueprintId 但数据未缓存时仍允许打开（玩家可点击"下载数据"获取）
-        if (!player.isCreative() && getBlueprintData(stack) == null && getBlueprintId(stack) == null) {
+        if (!player.isCreative() && getBlueprintDataClient(stack) == null && getBlueprintId(stack) == null) {
             NotifySound.clientError();
-            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-            if (mc.screen instanceof com.xioyim.spatialblueprint.gui.ErrorToastSupport ts) {
-                ts.setErrorToast(Component.translatable("spatial_blueprint.message.no_data"));
-            } else {
-                player.displayClientMessage(Component.translatable("spatial_blueprint.message.no_data"), false);
-            }
+            com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(
+                    Component.translatable("spatial_blueprint.message.no_data"));
             return;
         }
+        // 强制捕获(FORCE)的蓝图：仅 OP 创造模式可用
+        if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard.intercept(
+                player, stack, getBlueprintDataClient(stack))) return;
+        // 存档归属校验：不属于本档的工程蓝图直接销毁，OP 也不例外
+        if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard.interceptForeignWorld(
+                player, stack, getBlueprintDataClient(stack))) return;
         net.minecraft.client.Minecraft.getInstance().setScreen(
                 new com.xioyim.spatialblueprint.gui.EngineeringBlueprintScreen(player, stack));
     }
@@ -68,10 +71,11 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
     @Override
     public Component getName(ItemStack stack) {
         String name = getBlueprintName(stack);
-        if (!name.isEmpty()) return Component.translatable(getDescriptionId())
+        if (!name.isEmpty()) return SpatialBlueprintItem.applySaveModeColor(stack,
+                Component.translatable(getDescriptionId())
                 .append(" - ")
-                .append(name);
-        return super.getName(stack);
+                .append(name));
+        return SpatialBlueprintItem.applySaveModeColor(stack, super.getName(stack));
     }
 
     // ── Tooltip ───────────────────────────────────────────────────────────────
@@ -79,7 +83,7 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
     @Override
     public void appendHoverText(ItemStack stack, @Nullable Level level,
                                 List<Component> tooltip, TooltipFlag flag) {
-        MaterialList ml = getMaterialList(stack);
+        MaterialList ml = getMaterialListForTooltip(stack);
         if (ml != null) {
             tooltip.add(Component.translatable(
                     "spatial_blueprint.item.engineering_blueprint.tooltip",
@@ -135,13 +139,8 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
         return new BlockPos(t.getInt("engEndX"), t.getInt("engEndY"), t.getInt("engEndZ"));
     }
 
-    public static int getBoundMaxDistance(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("engMaxDistance")
-                ? stack.getTag().getInt("engMaxDistance") : 100;
-    }
-
     public static void setBoundProject(ItemStack stack, String projectId, String projectName,
-                                       String dimension, BlockPos startPos, BlockPos endPos, int maxDistance) {
+                                       String dimension, BlockPos startPos, BlockPos endPos) {
         net.minecraft.nbt.CompoundTag tag = stack.getOrCreateTag();
         tag.putString("engProjectId",   projectId);
         tag.putString("engProjectName", projectName);
@@ -152,13 +151,12 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
         tag.putInt("engEndX",   endPos.getX());
         tag.putInt("engEndY",   endPos.getY());
         tag.putInt("engEndZ",   endPos.getZ());
-        tag.putInt("engMaxDistance", maxDistance);
     }
 
     /** Overload used by C2S_SaveEngineeringProjectMessage (name not yet in item before save). */
     public static void setBoundProject(ItemStack stack, String projectId, String dimension,
-                                       BlockPos startPos, BlockPos endPos, int maxDistance) {
-        setBoundProject(stack, projectId, "", dimension, startPos, endPos, maxDistance);
+                                       BlockPos startPos, BlockPos endPos) {
+        setBoundProject(stack, projectId, "", dimension, startPos, endPos);
     }
 
     public static void clearBoundProject(ItemStack stack) {
@@ -169,17 +167,38 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
         tag.remove("engDimension");
         tag.remove("engStartX"); tag.remove("engStartY"); tag.remove("engStartZ");
         tag.remove("engEndX");   tag.remove("engEndY");   tag.remove("engEndZ");
-        tag.remove("engMaxDistance");
+    }
+
+    /** 子工程所属任务集；普通独立工程蓝图没有该字段。 */
+    @Nullable
+    public static String getTaskSetId(ItemStack stack) {
+        if (!stack.hasTag() || !stack.getTag().contains("sbTaskSetId")) return null;
+        String taskSetId = stack.getTag().getString("sbTaskSetId");
+        return taskSetId.isEmpty() ? null : taskSetId;
+    }
+
+    public static void setTaskSetId(ItemStack stack, String taskSetId) {
+        stack.getOrCreateTag().putString("sbTaskSetId", taskSetId);
+    }
+
+    /** 子工程在项目中的条目编号；普通独立工程蓝图返回 0。 */
+    public static int getEntryIndex(ItemStack stack) {
+        return stack.hasTag() ? stack.getTag().getInt("sbEntryIndex") : 0;
+    }
+
+    public static void setEntryIndex(ItemStack stack, int entryIndex) {
+        stack.getOrCreateTag().putInt("sbEntryIndex", entryIndex);
     }
 
     // ── 工程项目边界检查 ──────────────────────────────────────────────────────
 
-    public enum ProjectBoundsResult { OK, WRONG_DIM, TOO_FAR }
+    public enum ProjectBoundsResult { OK, WRONG_DIM }
 
     /**
-     * Checks whether the player satisfies the engineering project's dimension and
-     * distance constraints.  Returns {@link ProjectBoundsResult#OK} when either
-     * no project is bound or all constraints pass.
+     * Checks whether the player satisfies the engineering project's dimension constraint.
+     * Returns {@link ProjectBoundsResult#OK} when either no project is bound or the
+     * constraint passes. 距离不再是这里的判定项 —— 唯一的距离口径是全局
+     * previewDistance（见 EngineeringBlueprintScreen 的 [开启预览] 置灰）。
      */
     public static ProjectBoundsResult checkProjectBounds(ItemStack stack, Player player, Level level) {
         if (!hasBoundProject(stack)) return ProjectBoundsResult.OK;
@@ -190,23 +209,11 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
             if (!boundDim.equals(currentDim)) return ProjectBoundsResult.WRONG_DIM;
         }
 
-        int maxDist = getBoundMaxDistance(stack);
-        if (maxDist > 0) {
-            BlockPos start = getBoundStartPos(stack);
-            BlockPos end   = getBoundEndPos(stack);
-            Vec3 pos = player.position();
-            double distToStart = pos.distanceTo(Vec3.atCenterOf(start));
-            double distToEnd   = pos.distanceTo(Vec3.atCenterOf(end));
-            if (Math.min(distToStart, distToEnd) > maxDist) return ProjectBoundsResult.TOO_FAR;
-        }
-
         return ProjectBoundsResult.OK;
     }
 
     // ── NBT 辅助（共用方法继承自 AbstractBlueprintItem）──────────────────────
     // getBlueprintName / setBlueprintName / getBlueprintId / setBlueprintId /
     // getBlueprintData / getMaterialList / getDepositedMaterials / getDepositedCount /
-    // setDepositedCount / clearDepositedMaterials / hasSufficientMaterials /
-    // getWithdrawCount / setWithdrawCount / incrementWithdrawCount /
-    // getCustomWithdrawXp / setCustomWithdrawXp / getCustomWithdrawLimit / setCustomWithdrawLimit
+    // setDepositedCount / clearDepositedMaterials / hasSufficientMaterials
 }

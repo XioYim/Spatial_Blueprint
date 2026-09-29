@@ -2,6 +2,7 @@ package com.xioyim.spatialblueprint.network;
 
 import com.xioyim.spatialblueprint.client.ClientBlueprintCache;
 import com.xioyim.spatialblueprint.util.BlueprintData;
+import com.xioyim.spatialblueprint.util.SafeNbtIo;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
@@ -22,6 +23,14 @@ import java.util.function.Supplier;
  * significantly smaller than the raw NBT size.</p>
  */
 public class S2C_BlueprintDataMessage {
+
+    /**
+     * Maximum accepted compressed payload size (1 MiB), matching Minecraft's custom-payload
+     * cap for this un-chunked path. Guards {@link #decode} against a hostile or corrupt packet
+     * whose declared length would trigger a huge allocation. Blueprints too large for a single
+     * packet are delivered through {@link S2C_BlueprintChunkMessage} instead.
+     */
+    private static final int MAX_PAYLOAD_BYTES = 1_048_576;
 
     private final String      blueprintId;
     private final CompoundTag serializedData;
@@ -56,9 +65,13 @@ public class S2C_BlueprintDataMessage {
         String id = buf.readUtf(64);
         try {
             int length = buf.readInt();
+            if (length < 0 || length > MAX_PAYLOAD_BYTES || length > buf.readableBytes()) {
+                throw new io.netty.handler.codec.DecoderException(
+                        "Blueprint payload length out of range: " + length);
+            }
             byte[] bytes = new byte[length];
             buf.readBytes(bytes);
-            CompoundTag tag = net.minecraft.nbt.NbtIo.readCompressed(
+            CompoundTag tag = SafeNbtIo.readCompressed(
                     new java.io.ByteArrayInputStream(bytes));
             return new S2C_BlueprintDataMessage(id, tag != null ? tag : new CompoundTag());
         } catch (java.io.IOException e) {

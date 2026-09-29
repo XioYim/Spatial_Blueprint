@@ -13,8 +13,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -34,35 +32,95 @@ public class VoidDimensionalBlueprintItem extends Item {
     public Component getName(ItemStack stack) {
         String bpName = getBlueprintName(stack);
         if (!bpName.isEmpty()) {
-            return Component.literal("[" + bpName + "]").withStyle(ChatFormatting.GOLD)
-                    .append(Component.literal(" - ").withStyle(ChatFormatting.WHITE))
-                    .append(Component.translatable("spatial_blueprint.item.void_dimensional_blueprint.base_name")
-                            .withStyle(ChatFormatting.WHITE));
+            return SpatialBlueprintItem.applySaveModeColor(stack,
+                    Component.literal("[" + bpName + "] - ")
+                            .append(Component.translatable(
+                                    "spatial_blueprint.item.void_dimensional_blueprint.base_name")));
         }
-        return Component.translatable("spatial_blueprint.item.void_dimensional_blueprint.base_name")
-                .withStyle(ChatFormatting.WHITE);
+        return SpatialBlueprintItem.applySaveModeColor(stack,
+                Component.translatable("spatial_blueprint.item.void_dimensional_blueprint.base_name"));
     }
+
+    // 右键一律由【服务端】决定：文件还在才让客户端开界面，已失效则直接换成空白蓝图。
+    //
+    // 早先的写法是客户端自己 openScreen()、服务端并行判定，结果失效时界面已经开出来了，
+    // 提示横幅只是盖在上面 —— 关掉横幅就露出本该被拦截的界面。
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        if (level.isClientSide) {
-            openScreen(player.getItemInHand(hand));
+        // 蓝图一律只认主手 —— 副手要留给「主手空白蓝图 + 副手项目蓝图」这类组合用法
+        if (hand != InteractionHand.MAIN_HAND) return InteractionResultHolder.pass(player.getItemInHand(hand));
+        if (!level.isClientSide) {
+            handleServerUse(player, hand);
         }
         return InteractionResultHolder.success(player.getItemInHand(hand));
     }
 
     @Override
     public InteractionResult useOn(UseOnContext context) {
-        if (context.getLevel().isClientSide) {
-            openScreen(context.getItemInHand());
+        if (context.getHand() != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
+        Player player = context.getPlayer();
+        if (!context.getLevel().isClientSide && player != null) {
+            handleServerUse(player, context.getHand());
         }
         return InteractionResult.SUCCESS;
     }
 
-    @OnlyIn(Dist.CLIENT)
-    private static void openScreen(ItemStack stack) {
-        net.minecraft.client.Minecraft.getInstance().setScreen(
-                new com.xioyim.spatialblueprint.gui.VoidDimensionalScreen(stack));
+    /**
+     * 服务端处理右键：校验该空置次元蓝图指向的蓝图文件是否仍然存在。
+     *
+     * <p>文件被 OP 清理（或「重置并删除」）后，这枚空置蓝图永远无法再回收结构，
+     * 留在背包里只会误导玩家 —— 直接换成空白蓝图，与「重置」的处理一致，物品不白丢。
+     * 没有 {@code blueprintId} 的旧物品同样按失效处理。</p>
+     *
+     * <p>文件有效时才发指令让客户端打开界面。</p>
+     */
+    private static void handleServerUse(Player player, InteractionHand hand) {
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer sp)) return;
+        ItemStack stack = player.getItemInHand(hand);
+        String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+
+        boolean valid = !bpId.isEmpty()
+                && com.xioyim.spatialblueprint.util.BlueprintStorage.findFile(bpId) != null;
+
+        if (!valid) {
+            player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
+            com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.error.void_blueprint_orphaned"));
+            return;
+        }
+
+        // ── 存档归属校验：不属于本档的空置次元蓝图直接销毁，OP 也不例外 ────
+        // 它记录的是「结构放在世界里的哪个坐标」，换个存档那串坐标指向的是完全不相干的地方；
+        // 更要命的是「重新储存」会把本档的方块覆盖写进另一个存档的蓝图文件里。
+        if (!com.xioyim.spatialblueprint.util.WorldIdentity.belongsToCurrentWorld(getWorldUuid(stack))) {
+            player.setItemInHand(hand, ItemStack.EMPTY);
+            com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.error.foreign_world.discarded"));
+            return;
+        }
+
+        // ── 归属校验：不能用别人的空置次元蓝图 ────────────────────────────
+        // 「重新储存」会覆盖写回原蓝图文件，别人拿到这枚物品就等于能篡改他人的蓝图。
+        // 这里只拦截、不换空白蓝图 —— 物品本身对它真正的主人仍然有效。
+        String owner = com.xioyim.spatialblueprint.util.BlueprintStorage.ownerUuidOf(bpId);
+        if (!sp.getUUID().toString().equals(owner)) {
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.message.void_blueprint.not_owner"));
+            return;
+        }
+
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                new com.xioyim.spatialblueprint.network.s2c.S2C_OpenVoidScreenMessage());
     }
 
     // ── Tooltip ───────────────────────────────────────────────────────────────
@@ -134,6 +192,16 @@ public class VoidDimensionalBlueprintItem extends Item {
     public static double getTpX(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpX") : 0; }
     public static double getTpY(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpY") : 0; }
     public static double getTpZ(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpZ") : 0; }
+
+    /** 生成这枚空置次元蓝图时所在存档的 UUID；空串 = 本机制加入前生成的旧物品。 */
+    public static String getWorldUuid(ItemStack stack) {
+        return stack.hasTag() ? stack.getTag().getString("worldUuid") : "";
+    }
+
+    /** 生成时所在的存档名，仅用于提示文案。 */
+    public static String getWorldName(ItemStack stack) {
+        return stack.hasTag() ? stack.getTag().getString("worldName") : "";
+    }
 
     public static String getTpDimension(ItemStack stack) {
         return stack.hasTag() ? stack.getTag().getString("tpDimension") : "";

@@ -18,9 +18,9 @@ import java.util.List;
  * Client-side pre-validation of a blueprint placement.
  * Mirrors the checks in Capsule's {@code StructureSaver.checkDestination()}:
  * <ul>
- *   <li>CREATIVE  — creative mode bypasses everything</li>
- *   <li>EXTRA_BLOCKS — a non-replaceable block exists in the target volume</li>
- *   <li>ENTITY_BLOCKING — a non-player LivingEntity occupies the target volume</li>
+ *   <li>CREATIVE  — OP + 创造：跳过全部校验，界面给红字警告</li>
+ *   <li>EXTRA_BLOCKS — a non-replaceable block exists in the target volume（仅生存）</li>
+ *   <li>ENTITY_BLOCKING — a non-player LivingEntity occupies the target volume（仅生存）</li>
  *   <li>OUT_OF_BOUNDS — a target Y position exceeds world build limits</li>
  *   <li>CHUNK_NOT_LOADED — a target chunk is not loaded on the client</li>
  *   <li>OK — all checks passed</li>
@@ -61,8 +61,20 @@ public class PlacementPreValidator {
                                                   @Nullable BlockPos origin,
                                                   BlueprintData data, Rotation rotation,
                                                   boolean clearFirst) {
-        // Creative mode: bypass all restrictions (force-place)
-        if (player.isCreative()) return new PlacementPreValidator(Status.CREATIVE);
+        // OP + 创造模式：强制放置，界面上给红字「无视任何限制」警告。
+        if (player.isCreative() && player.hasPermissions(2)) {
+            return new PlacementPreValidator(Status.CREATIVE);
+        }
+
+        // 非 OP 的创造模式玩家：同样不受「额外方块 / 实体阻挡」约束。
+        //
+        // 创造模式本来就能随手把挡路的方块拆掉，拿这两条拦他毫无意义 ——
+        // 真正能拦住他的是服务端的领地插件预检（precheckPlacement 会 post BreakEvent，
+        // 与游戏模式无关）。界面上不给红字「OP强制放置」，按钮走普通样式，
+        // 被领地拦下时由服务端回横幅说明。
+        //
+        // Y 越界与区块未加载仍然要查：那是物理上放不下，不是权限问题。
+        boolean creativeBypass = player.isCreative();
 
         // No target yet (AlignMode.OFF or no look target) — treat as OK
         if (origin == null) return new PlacementPreValidator(Status.OK);
@@ -81,7 +93,7 @@ public class PlacementPreValidator {
                 origin.getX(),        origin.getY(),        origin.getZ(),
                 origin.getX() + bbX,  origin.getY() + sY,   origin.getZ() + bbZ
         );
-        List<LivingEntity> entities = level.getEntitiesOfClass(
+        List<LivingEntity> entities = creativeBypass ? java.util.List.of() : level.getEntitiesOfClass(
                 LivingEntity.class, fullBox, e -> !(e instanceof Player));
         if (!entities.isEmpty()) return new PlacementPreValidator(Status.ENTITY_BLOCKING);
 
@@ -106,8 +118,9 @@ public class PlacementPreValidator {
                         return new PlacementPreValidator(Status.CHUNK_NOT_LOADED);
                     }
 
-                    // Non-replaceable block — always checked for survival players.
-                    // (Creative players already returned CREATIVE above.)
+                    // Non-replaceable block — survival only.
+                    // 创造模式（含非 OP）跳过：拆方块对他不是障碍，拦下来只会挡路。
+                    if (creativeBypass) continue;
                     BlockState existing = level.getBlockState(worldPos);
                     if (!existing.isAir() && !existing.canBeReplaced()) {
                         return new PlacementPreValidator(Status.EXTRA_BLOCKS);
