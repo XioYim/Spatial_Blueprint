@@ -35,7 +35,9 @@ public final class OrphanBlueprintGuard {
 
         player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
         ItemSyncUtil.syncHand(player, hand);
-        // SB-TODO(P3): S2C_OperationResult（蓝图文件缺失提示）
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
+                new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                        false, "spatial_blueprint.error.blueprint_file_missing"));
         return true;
     }
 

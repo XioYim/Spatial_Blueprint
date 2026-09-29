@@ -1,0 +1,82 @@
+SBN-005 报告
+执行：2026-09-29 20:56:00 ～ 2026-09-29 21:25:00
+提交：21c35c1（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 20:56 | Spatial_Blueprint_NeoForge_1.21.1_20260929_205640 | 7999DAE7 | SBN-005 执行前 |
+
+一、完成情况（对照任务书三.1～三.5）：
+1. BlueprintNetwork（network/BlueprintNetwork.java）：
+   a. register(RegisterPayloadHandlersEvent)：PayloadRegistrar r = event.registrar(protocolVersion())；C2S 两条 playToServer、S2C 六条 playToClient（方向全绑定）；不设 executesOn（默认 MAIN），handler 无 enqueueWork；1.20.1 的「注册顺序 = 线上序号」注释改写成「1.21 按 payload ID 区分，顺序无关；增删 / 改 wire format 仍须 bump mod_version」· BlueprintNetwork.java:71-95。
+   b. protocolVersion() = ModList.get().getModContainerById(MODID).map(getModInfo().getVersion().toString()).orElse("1.0.0")，public · :39-44。
+   c. sendToPlayer（FakePlayer → fakePlayerSink，默认丢弃；否则 PacketDistributor.sendToPlayer）/ sendToServer · :51-67；本任务所有发包点已改走封装。
+   d. sendBlueprintTo 逻辑原样（整份 writeCompressed → splitIntoChunks → 超上限 null 记原 warn → 逐个 sendToPlayer）；splitIntoChunks / chunkCount 抽为 public static · :97-150。
+2. 8 个消息按三.2 口径改写（TYPE + type() + STREAM_CODEC=ofMember；C2S 拆 handle/handleServer；S2C 打桩）：
+   - S2C_OperationResult（checkedCount / MAX_DETAIL_ARGS / 三构造器 / 工厂全保留；handleClient 整段 → SB-TODO(P5)）· network/s2c/S2C_OperationResult.java
+   - S2C_BlueprintChunkMessage（CHUNK_SIZE 512_000 / MAX_TOTAL_CHUNKS 256 / 三条 decode 校验原样；handle 打桩）
+   - S2C_BlueprintDataMessage（MAX_PAYLOAD_BYTES / SafeNbtIo 原样；handle 打桩）
+   - S2C_BlueprintDataFailMessage（handle 打桩）
+   - C2S_RequestBlueprintDataMessage（COOLDOWN_MS 500 / LAST_REQUEST 限流 / canManageBlueprint / 三种失败回包原样；handle → handleServer）
+   - C2S_DiscardInvalidBlueprintMessage（双手遍历 / 服务端重验 placed / 换空白 + syncHand 原样；handle → handleServer）
+   - S2C_OpenVoidScreenMessage（空消息，ofMember + 空 encode/decode；handle 打桩）
+   - S2C_IllegalBlocksListMessage（占位 → 完整：字段 / 四构造器 / encode / decode / client* 静态缓存 / hasCrossingBoxEntityIn / handle 写缓存，无客户端引用不打桩；7 个 record 原样）
+3. server/BlueprintValidator 原样搬（与 1.20.1 diff -w 零残差）。
+4. 拆桩：VoidDimensionalBlueprintItem 4 条（3× S2C_OperationResult + 1× S2C_OpenVoidScreenMessage）· VoidDimensionalBlueprintItem.java:92-119；OrphanBlueprintGuard 1 条 · util/OrphanBlueprintGuard.java:38-41。
+5. 主类：modEventBus.addListener(BlueprintNetwork::register)，删 SB-TODO(P3) · SpatialBlueprintMod.java:46。
+
+二、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）：
+- NetworkRegistry.newSimpleChannel + SimpleChannel.registerMessage(id++, …) → RegisterPayloadHandlersEvent + PayloadRegistrar.playToServer/playToClient（按 TYPE 注册，无序号） · BlueprintNetwork.java:71-95 · J31
+- net.minecraftforge.fml.ModList → net.neoforged.fml.ModList（FML loader jar） · BlueprintNetwork.java:12/40 · J31 本地核对
+- CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), m) → BlueprintNetwork.sendToPlayer(p, m)（内部 PacketDistributor.sendToPlayer） · 全发包点 · J33
+- CHANNEL.sendToServer(m) → BlueprintNetwork.sendToServer(m) · 无本任务调用点（封装已备）
+- encode/decode 静态方法 + SimpleChannel → CustomPacketPayload + Type + StreamCodec.ofMember · 8 个消息 · J32
+- ctx.get().enqueueWork + setPacketHandled + getSender() → IPayloadContext.player() instanceof ServerPlayer + 直接调用 · C2S 两个 · J31
+- @OnlyIn(Dist.CLIENT) 客户端处理体 → 整体一条 SB-TODO(P5)（1.21 不剥离代码） · 5 个 S2C · 三.2.d
+- StreamCodec.unit(INSTANCE)（任务书备选）→ 实测 unit 的 encode 要求同一实例（decode 返回新实例过不了），空消息改 ofMember + 空 encode/decode · S2C_OpenVoidScreenMessage.java:24-38 · J32 + t02 实测
+
+三、网络实测：
+1. 注册器版本字符串来源与值：event.registrar(BlueprintNetwork.protocolVersion())，protocolVersion() 从 ModList 取本 mod 容器 getModInfo().getVersion()；t01 断言其等于 ModList 版本字符串（gradle.properties 的 mod_version，本机为 3.0.0）。D4 效果 = 注册器版本即 mod 版本；版本不一致时 NeoForge 握手阶段拒绝连接（其行为在框架内，未在本任务实测双端不一致场景）。
+2. 8 个 payload 的 ID 与方向（file:line 均在各类的 TYPE / 注册处）：
+   c2s_request_blueprint_data_message · C2S · BlueprintNetwork.java:77
+   c2s_discard_invalid_blueprint_message · C2S · :79
+   s2c_operation_result · S2C · :83
+   s2c_blueprint_chunk_message · S2C · :85
+   s2c_blueprint_data_message · S2C · :87
+   s2c_blueprint_data_fail_message · S2C · :89
+   s2c_open_void_screen_message · S2C · :91
+   s2c_illegal_blocks_list_message · S2C · :93
+3. 最大块编码字节数：t04 对 512_000 字节块断言编码后 < 1_048_576（实测约 512_020 字节；J34 双上限内，NeoForge 拆包器不介入）。
+
+四、测试覆盖：
+A1 编译 0 警告；A2 runGameTestServer 41/41（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7，@GameTest 实数 41）；A3 专服 runServer Done (6.455s) → RCON stop 正常退出、0 ERROR；A4 grep 门禁 0 命中。
+t01～t07 全部通过（首跑 t02/t04 两处测试自身问题修复后通过，见证据/编译.txt）。
+证据：编译.txt、GameTest.txt、改动清单.txt（含 A4 grep 结果）、服务端.txt。run/ 已删。
+
+五、迁移桩清单：新 5（5 个 S2C 的 handle）+ 存量 24 = grep -rn "SB-TODO(" src 实数 29。新增逐条（file:line · 阶段）：
+network/S2C_BlueprintChunkMessage.java:84 P5（ClientBlueprintCache.receiveChunk）
+network/S2C_BlueprintDataMessage.java:89 P5（ClientBlueprintCache.put）
+network/S2C_BlueprintDataFailMessage.java:48 P5（ClientBlueprintCache.markFailed）
+network/s2c/S2C_OperationResult.java:96 P5（横幅 / 聊天提示）
+network/s2c/S2C_OpenVoidScreenMessage.java:41 P5（VoidDimensionalScreen）
+（S2C_IllegalBlocksListMessage 的 handle 只写 static 字段，不打桩。）
+存量 24 与 SBN-004 报告一致，减去本任务拆掉的 6 条（主类 1 + VoidDimensional 4 + Orphan 1）与占位文件 1 条。
+注：BlueprintNetwork 类注释里写「SB-TODO（P5）」用全角括号，避免被 grep 计数污染（V5 口径）。
+
+六、任务书出入：
+1. 三.3.g 说 S2C_OpenVoidScreenMessage 的编解码「unit 或 ofMember 均可」；实测 unit 的 encode 要求传入同一实例（decode 出来的新实例过不了），改 ofMember + 空 encode/decode。
+2. 三.3.i 说 BlueprintValidator「只改 1.21 API 残差（若有）」——实测零残差，原样搬（isInWorldBounds 等 API 1.21 全在）。
+3. 无其它出入。
+
+七、双端同步自查：
+- 方向绑定：8 条全部显式 playToServer/playToClient；NeoForge 对方向不符的包直接断开（1.20.1 的 Optional.empty 方向校验缺失问题在 1.21 结构上不存在）。
+- 专服类加载：A4 grep 门禁通过（network/ 与 server/ 无任何客户端类引用）；开发环境 runServer 类路径含客户端类，不能作为该门禁的证据，留到 P5 联机验证。
+- 协议版本不一致：注册器版本 = mod 版本，版本不同 NeoForge 在握手阶段拒绝（框架行为）；增删 payload / 改 wire format 须 bump mod_version（注释已写明）。
+- 客户端处理全部打桩：P5 接客户端缓存与界面之前，双端联机时 S2C 包会被静默忽略（不崩、不显示），属预期状态。
+
+八、教训同步：基线为 f9e6a16 的副本；原件 A、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+九、建议记入：
+1. [建议记入 C] 1.21 网络改写口径：CustomPacketPayload + TYPE（类名小写 snake_case）+ StreamCodec.ofMember(encode, decode)；C2S 拆 handle/handleServer；S2C 客户端体打桩（payload 类不得引用客户端类）；注册用 event.registrar(协议版本) + playToServer/playToClient 绑定方向。
+2. [建议记入 C] StreamCodec.unit(v) 的 encode 要求传入同一实例；空消息用 ofMember + 空 encode/decode。
+3. [建议记入 K] 类注释里写「SB-TODO(P5)」示例会被 grep "SB-TODO(" 计数污染（V5 口径）——示例文本用全角括号。
+4. [供云端问用户] P5 前双端联机时 S2C 包静默忽略是预期；联机握手测试留到 P5。
+
+十、需要用户做的事：无（本任务无手测项）。

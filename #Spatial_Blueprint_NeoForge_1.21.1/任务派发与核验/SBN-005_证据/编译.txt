@@ -1,0 +1,18 @@
+SBN-005 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 21:09（BUILD SUCCESSFUL in 8s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. SBN005Tests 首编译 6 错：S2C_BlueprintDataFailMessage 的 reason 无 getter（测试改从编码字节读回）；
+   SpatialBlueprintItem 没有 setBlueprintId（改直接 set BLUEPRINT_ID 组件）。
+2. 1 错：t05 里 SafeNbtIo.readCompressed 抛 IOException 未捕获（测试内捕获并 fail）。
+3. 运行时 2 处失败：t02 的 S2C_OpenVoidScreenMessage 用 StreamCodec.unit 时 encode 要求同一实例
+   （decode 返回新实例过不了）→ 改用 ofMember + 空 encode/decode（与 1.20.1 写法一致）；
+   t04 用 assertValueEqual 比 chunk 实例（无 equals）→ 改比编码字节。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 8s
+2 actionable tasks: 1 executed, 1 up-to-date
