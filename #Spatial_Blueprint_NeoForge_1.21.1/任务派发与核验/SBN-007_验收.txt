@@ -1,0 +1,22 @@
+SBN-007 验收
+验收：2026-09-30 01:30:00（云端主会话）
+对象：task/SBN-007 @ 5e55fca（内容主提交 c4ce490）
+结论：PASS → 合并进 neoforge-1.21.1
+
+V1 改动清单：6b58dd7..5e55fca 的 24 个 .java（21 消息 + ServerPreviewTracker + BlueprintNetwork + 测试）与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 56 进 56 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR）；A4 云端自跑 grep：network\、server\、log\ 无客户端 / gui 引用；注释里无 SB-TODO(（K10）—— 通过。
+V3 22 个搬迁文件 diff -w 滤样板后：残差只有发包封装、客户端体打桩，以及两处物品数据直读改走访问器 ——
+   C2S_VoidResetMessage 用 getOrDefault(BLUEPRINT_ID, "")；C2S_DestroyForceBlueprintMessage 保留 isBlueprint 过滤、访问器返回 null 按 "" 处理，
+   与 1.20.1「hasTag ? getString : ""」语义一致（报告出入 5）。三处 S2C_OperationResult 回包与 VoidReset 的 3 处发送逐一在位。
+   decode 上限 / 权限判定（hasPermissions、canTeleport、belongsToCurrentWorld、ownerUuidOf、isPrivateVisibleTo 等）逐文件计数与 1.20.1 全部相等 —— 通过。
+V4 53 条注册（30 C2S / 23 S2C）逐条与 1.20.1 c2s / s2c 归类比对，0 处不一致 —— 通过。
+V5 SB-TODO( 实数 44 = 35 + 9（全部为 S2C 客户端体 P5）—— 通过。
+V6 变异复核（K7）：
+   C2S_RequestVoidBagsMessage:77「查别人需 OP」短路 → t04 失败；
+   C2S_VoidTeleportMessage:65 canTeleport 短路 → t06 失败；
+   C2S_VoidResetMessage:86 主人判定短路 → t05 失败；三处均已还原 —— 通过。
+测试代码自建在场玩家（placeNewPlayer）与假玩家加入 level.players() 的，均在 finally 移除；OP 条目 finally 删除 —— 不污染其它用例。
+
+报告「任务书出入」1～5 接受（1：FakePlayer 的 teleport 是空实现，移动断言改用在场玩家；2：makeMockServerPlayerInLevel 待删会破 0 警告基线；
+3：ServerPreviewTracker 同一玩家 2 tick 速率限制；4：假玩家不在 level.players()；5：DestroyForce 原文带 hasTag 判断）。

@@ -1,0 +1,148 @@
+SBN-007 · P3b-2 轻量消息（次元袋 / 身份 / 传送 / 预览与进度 / 项目只读，21 个）
+派发：2026-09-30 00:50:00（云端主会话）
+分支：task/SBN-007（从 neoforge-1.21.1 @ 6902353 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-007 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、K11、C2、C12、C14、C15、C18；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-006_任务_P3b轻量消息一.txt 第三.2 节（补充口径，本任务沿用）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3 第三段。剩余 46 个消息里，云端去掉注释后逐个查过依赖，下面 21 个只互相引用、引用已迁的类、或只在 S2C 客户端体里引用客户端类（按口径打桩）：
+
+  次元袋 / 身份 / 传送（10）：S2C_TeleportPermMessage、S2C_WorldIdentityMessage、C2S_RequestVoidBagsMessage、C2S_DiscardOrphanBagMessage、
+                            C2S_DestroyForceBlueprintMessage、C2S_DiscardForeignBlueprintMessage、C2S_VoidResetMessage、
+                            C2S_VoidTeleportMessage、C2S_EngineeringTeleportMessage、C2S_SafeCoordMessage
+  预览 / 进度 / 冷却（5）：C2S_PreviewUpdateMessage、S2C_PreviewBroadcastMessage、s2c/S2C_PlacementProgressMessage、
+                          s2c/S2C_CaptureCooldownMessage、s2c/S2C_OpCaptureConfirmMessage
+  项目只读（6）：C2S_RequestProjectListMessage、s2c/S2C_ProjectListMessage、C2S_RequestProjectEntriesMessage、s2c/S2C_ProjectEntriesMessage、
+                C2S_RequestProjectStatusMessage、s2c/S2C_ProjectStatusMessage
+  依赖：server/ServerPreviewTracker（115 行，只依赖 BlueprintConfig 与本任务的 S2C_PreviewBroadcastMessage）
+
+留给 SBN-008（P3c）的 24 个：项目写操作（CreateProject / DeleteProject / TakeProject / SubmitProjectOrder / SubmitProjectChanges /
+DeleteSubProject / SaveProjectRange / ClaimSubProject / CreateSubProject）、捕获（CaptureArea / CaptureProjection / VoidRecapture /
+CreateEngineeringBlueprint / RequestIllegalBlocks）、放置（PlaceBlueprint / ApplyBlueprint / SaveMaterialList / RewardMaterials）、
+上传（UploadBegin / UploadChunk / UploadProjectionTemplate / ConfirmUpload / RequestEngineeringReport / S2C_UploadReport）。
+C2S_ReloadConfigMessage 仍在 P4。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  第一节列出的 21 个消息（1.20.1 同路径；注意 S2C_TeleportPermMessage、S2C_WorldIdentityMessage、S2C_PreviewBroadcastMessage 在 network\ 根下，
+      其余 S2C_* 按上面标的 s2c\ 子目录）
+  新  server/ServerPreviewTracker.java                                           ← 1.20.1 同路径
+  改  network/BlueprintNetwork.java                                              ← 只加 21 条注册
+  新  gametest/SBN007Tests.java
+
+交接件（规程允许范围）：SBN-007_报告.txt、SBN-007_证据\、开发日志.md 文末「## SBN-007 执行记录」、
+测试清单.txt 追加「七、SBN-007 轻量消息二」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（含主类 —— 登录登出事件里的 ServerPreviewTracker.clear / 传送权限 / 存档身份下发仍是 P4 桩，本任务不接）。
+若某个消息实测引用了第二节以外、尚未迁移的类：该调用按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005 / 006：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）与
+SBN-006 任务书三.2 的补充口径改写（物品数据走访问器 / 组件、MaterialKey 补 provider、S2C 客户端体打桩、只写本类 static 字段的不打桩）。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork：register 里追加 21 条，方向以 1.20.1 BlueprintNetwork.register 的 c2s / s2c 归类为准。其余零改动。
+
+2. 各簇要点（以 1.20.1 源码为准，只点风险处）
+   a. 物品数据直读：C2S_DestroyForceBlueprintMessage、C2S_VoidResetMessage 里 stack.getTag().getString("blueprintId") →
+      物品类的 getBlueprintId 访问器（C12）。缺省语义：1.20.1 缺键得 ""，访问器返回 null 的要照原逻辑补成 ""。
+   b. 传送：C2S_VoidTeleportMessage / C2S_EngineeringTeleportMessage 的 TeleportPermissions.canTeleport → tryAcquireTeleport（冷却）→
+      维度比对 → player.teleportTo(x, y, z) 顺序原样；teleportTo(double, double, double) 与 dimension().location() 在 1.21 仍在（J39）。
+   c. 次元袋：C2S_RequestVoidBagsMessage「查别人需 OP」、C2S_VoidResetMessage 的存档归属 + 主人判定、C2S_DiscardForeignBlueprintMessage 的
+      belongsToCurrentWorld、C2S_DestroyForceBlueprintMessage「OP 直接 return」、C2S_SafeCoordMessage 的 OP 判定 —— 全部原样。
+      C2S_DiscardOrphanBagMessage / C2S_DestroyForceBlueprintMessage 的 BlueprintFileLogger 调用原样（SBN-006 已迁）。
+   d. 项目只读：S2C_ProjectListMessage 的 writeEnum / readEnum（1.21 仍在，J39）原样；C2S_RequestProjectListMessage 的 STATION 需 OP、
+      PRIVATE 可见性（isPrivateVisibleTo，按 ownerUuid、无主回退 ownerName）原样。
+   e. 预览：server/ServerPreviewTracker 原样搬，内部 CHANNEL.send → BlueprintNetwork.sendToPlayer；C2S_PreviewUpdateMessage → ServerPreviewTracker.update
+      与广播范围（配置里的距离）原样。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged）
+========================================================
+
+  J39 FriendlyByteBuf#writeEnum(Enum) / readEnum(Class)；Entity / ServerPlayer#teleportTo(double, double, double)；
+      ServerPlayer#teleportTo(ServerLevel, double, double, double, float, float)（本任务不用，列出备查）
+  其余沿用 J31～J38。
+
+========================================================
+五、测试（新格式数据由真实对象产生；伪造 / 越界包是唯一允许手写处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～006 的 48 条照旧全过。
+    t01_registration         21 个 payload ID 符合命名规则，与已有 32 个合计 53 个互不重复；方向与 1.20.1 逐条一致（清单进证据）。
+    t02_codecRoundTrip       21 个各造一条真实实例（列表 / 枚举字段至少一项；ProjectList 带 kind / stage 枚举；ProjectStatus 带作者盒尺寸）
+                             → 编码 → 解码 → 再编码，字节逐字相等。
+    t03_decodeGuards         本批 decode 里的全部上限（计数、字符串长度、checkedCount 调用处）各手写一个越界包，按 1.20.1 语义断言（抛出 / 截断），
+                             逐个列进报告。
+    t04_voidBags             假玩家 A、B（非 OP）：B 请求 A 的次元袋 → 无回包（sink 为空）；A 请求自己 → 收到 S2C_VoidBagSyncMessage；
+                             OP 假玩家（K11：直接写 ServerOpListEntry 等级 4，finally 删）请求 A 的 → 收到。
+    t05_voidReset            BlueprintStorage.save 一份主人 = A、worldUuid = 当前存档的蓝图，A 主手持指向它的空置次元蓝图：
+                             B 持同一枚（物品复制给 B）→ 按 1.20.1 语义被拒、文件不变；A → 按 1.20.1 语义重置成功（文件 / 物品变化逐项断言）；
+                             worldUuid 为别的存档 → 走 foreign 分支。测试文件 finally 清理。
+    t06_teleport             TeleportPermissions 不允许的假玩家 → C2S_VoidTeleportMessage 不移动（坐标不变）且收到拒绝回包；
+                             允许的 → 坐标到目标；紧接着再发一次 → 冷却拒绝。EngineeringTeleport 同样走一遍允许 / 不允许。
+                             测试改过的 TeleportPermissions 状态 finally 复原。
+    t07_projectReadOnly      ProjectStorage 存一个 STATION 项目与一个 PRIVATE 项目（主人 = A）：非 OP 请求 STATION 列表 → 无回包；
+                             A 请求 PRIVATE → 列表含该项目；B 请求 PRIVATE → 列表不含；C2S_RequestProjectStatusMessage 请求不存在的项目 → found = false。
+    t08_previewBroadcast     两个假玩家在同一维度、距离在配置范围内：A 发 C2S_PreviewUpdateMessage → B 的 sink 收到 S2C_PreviewBroadcastMessage；
+                             B 移到范围外再发 → 不收到（按 ServerPreviewTracker 的 1.20.1 语义）。
+    测试 finally 恢复 fakePlayerSink、op 状态、配置、TeleportPermissions，删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR。
+A4  grep 门禁（必做）：network\、server\、log\ 下无 net.minecraft.client / 本 mod client / gui 引用；注释里无 SB-TODO( 字样（K10）。
+
+【手测】无。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  22 个搬迁文件与 1.20.1 源 diff -w 残差只在口径内；decode 上限与权限判定逐文件计数与 1.20.1 相等；BlueprintNetwork 只多 21 条注册。
+V4  53 条注册方向与 1.20.1 逐条一致；A4 为空。
+V5  SB-TODO 实数 = 35 + 本任务新桩，逐条列出。
+V6  变异复核（云端验收时做）：C2S_RequestVoidBagsMessage 的「查别人需 OP」、C2S_VoidTeleportMessage 的 canTeleport、
+    C2S_VoidResetMessage 的主人判定，各临时短路一次 → t04 / t06 / t05 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-007 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.2 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按簇分组）
+三、网络实测：21 个 payload 的 ID 与方向清单；本批 decode 上限清单（file:line · 语义）；本批权限判定清单（file:line）
+四、测试覆盖：A1～A4；t01～t08；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（传送：服务端移动后客户端位置同步；预览广播的收发范围；项目状态缓存打桩后的表现）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-007』」。

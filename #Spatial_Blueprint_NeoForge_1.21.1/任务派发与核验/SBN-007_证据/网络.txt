@@ -1,0 +1,74 @@
+SBN-007 网络实测证据
+
+一、21 个 payload 的 TYPE id 与注册方向
+（与 1.20.1 BlueprintNetwork.register 的 c2s / s2c 归类逐条一致；注册见 network/BlueprintNetwork.java）
+
+C2S（12 条 · playToServer）：
+  c2s_request_void_bags_message          C2S_RequestVoidBagsMessage          BlueprintNetwork.java:159
+  c2s_discard_orphan_bag_message         C2S_DiscardOrphanBagMessage         BlueprintNetwork.java:161
+  c2s_destroy_force_blueprint_message    C2S_DestroyForceBlueprintMessage    BlueprintNetwork.java:169
+  c2s_discard_foreign_blueprint_message  C2S_DiscardForeignBlueprintMessage  BlueprintNetwork.java:171
+  c2s_void_reset_message                 C2S_VoidResetMessage                BlueprintNetwork.java:173
+  c2s_void_teleport_message              C2S_VoidTeleportMessage             BlueprintNetwork.java:177
+  c2s_engineering_teleport_message       C2S_EngineeringTeleportMessage      BlueprintNetwork.java:179
+  c2s_safe_coord_message                 C2S_SafeCoordMessage                BlueprintNetwork.java:181
+  c2s_preview_update_message             C2S_PreviewUpdateMessage            BlueprintNetwork.java:185
+  c2s_request_project_list_message       C2S_RequestProjectListMessage       BlueprintNetwork.java:200
+  c2s_request_project_entries_message    C2S_RequestProjectEntriesMessage    BlueprintNetwork.java:205
+  c2s_request_project_status_message     C2S_RequestProjectStatusMessage     BlueprintNetwork.java:210
+
+S2C（9 条 · playToClient）：
+  s2c_teleport_perm_message              S2C_TeleportPermMessage             BlueprintNetwork.java:163
+  s2c_world_identity_message             S2C_WorldIdentityMessage            BlueprintNetwork.java:165
+  s2c_preview_broadcast_message          S2C_PreviewBroadcastMessage         BlueprintNetwork.java:187
+  s2c_placement_progress_message         s2c/S2C_PlacementProgressMessage    BlueprintNetwork.java:189
+  s2c_capture_cooldown_message           s2c/S2C_CaptureCooldownMessage      BlueprintNetwork.java:192
+  s2c_op_capture_confirm_message         s2c/S2C_OpCaptureConfirmMessage     BlueprintNetwork.java:195
+  s2c_project_list_message               s2c/S2C_ProjectListMessage          BlueprintNetwork.java:202
+  s2c_project_entries_message            s2c/S2C_ProjectEntriesMessage       BlueprintNetwork.java:207
+  s2c_project_status_message             s2c/S2C_ProjectStatusMessage        BlueprintNetwork.java:212
+
+t01 断言：53 个 TYPE id 与命名规则一致且互不重复（本批 21 + 已注册 32）。
+注册器版本仍为 protocolVersion()（D4，SBN-005 已验）。
+
+二、本批 decode 上限清单（file:line · 语义）
+计数守卫（S2C_OperationResult.checkedCount，超限抛 DecoderException，整包拒收）：
+  S2C_ProjectListMessage.java:75    checkedCount(buf, 4096, "projects")
+  S2C_ProjectEntriesMessage.java:76 checkedCount(buf, 4096, "entries")
+  S2C_ProjectStatusMessage.java:225 checkedCount(buf, 4096, "entryStatuses")
+字符串长度上限（FriendlyByteBuf.readUtf(cap)；1.21 按编码字节数判，超过 cap×3 字节抛 DecoderException）：
+  S2C_WorldIdentityMessage      readUtf 64 ×2
+  C2S_RequestVoidBagsMessage    readUtf 64 ×2
+  C2S_DiscardOrphanBagMessage   readUtf 64
+  C2S_SafeCoordMessage          readUtf 64
+  C2S_PreviewUpdateMessage      readUtf 64 / 32
+  S2C_PreviewBroadcastMessage   readUtf 40 / 64 / 32
+  S2C_OpCaptureConfirmMessage   readUtf 256
+  C2S_RequestProjectListMessage readUtf 16
+  S2C_ProjectListMessage        readUtf 16；每条 64 / 128 / 15 / 200 / 64
+  C2S_RequestProjectEntriesMessage readUtf 64
+  S2C_ProjectEntriesMessage     readUtf 64 / 128 / 128；每条 128
+  S2C_ProjectStatusMessage      readUtf 64 / 128 / 64；每条 128 / 128 / 64 / 64 / 200
+  其余 9 个消息无字符串或计数上限（仅 boolean / varint / long / blockPos / uuid）。
+t03 实测：3 个计数守卫各手写 4097 → 抛；字符串样本 2 个（RequestVoidBags cap 64 写 193 字节、
+PreviewBroadcast cap 40 写 121 字节）→ 抛。
+
+三、本批权限判定清单（file:line）
+  C2S_RequestVoidBagsMessage.java:77        查看他人需 hasPermissions(2)（否则静默丢弃）
+  C2S_DestroyForceBlueprintMessage.java:58  hasPermissions(2) 直接 return（OP 不该发此包）
+  C2S_VoidResetMessage.java:73 / 86         存档归属 belongsToCurrentWorld + 主人 ownerUuidOf 匹配
+  C2S_DiscardForeignBlueprintMessage.java:87 外档判定 belongsToCurrentWorld（服务端复核）
+  C2S_SafeCoordMessage.java:69              非 OP 回 need_op 横幅
+  C2S_VoidTeleportMessage.java:65 / 71      canTeleport + tryAcquireTeleport 冷却
+  C2S_EngineeringTeleportMessage.java:70 / 76 canTeleport + tryAcquireTeleport 冷却
+  C2S_RequestProjectListMessage.java:75 / 95 / 127 / 165 STATION 需 OP；PRIVATE 归属
+  C2S_RequestProjectEntriesMessage.java:76  STATION 需 OP；PRIVATE 走 canAccessPrivate
+  S2C_CaptureCooldownMessage.java:65（s2c） OP 不发冷却包
+  C2S_DiscardOrphanBagMessage                  只能操作自己（直接用发送者 UUID），文件仍在则不删
+
+四、服务器侧行为核对
+  ServerPreviewTracker.java:96-115  广播遍历 level.players()，半径 BlueprintConfig.PREVIEW_BROADCAST_RADIUS，
+                                    发包走 BlueprintNetwork.sendToPlayer（假玩家走 sink）
+  ServerPreviewTracker.java:47-54   尺寸 / 体积 / 单边 / rotation 校验与 1.20.1 原样
+  ServerPreviewTracker.java:58      放置距离校验 validatePlacementDistance
+  ServerPreviewTracker.java:70-76   2 tick 速率限制 + 去重（原样）

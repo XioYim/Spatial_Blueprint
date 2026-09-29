@@ -153,6 +153,65 @@ public class BlueprintNetwork {
         r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage.TYPE,
                 com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage.STREAM_CODEC,
                 com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage::handle);
+
+        // ── SBN-007（P3b-2）：次元袋 / 身份 / 传送 / 预览与进度 / 项目只读 21 条 ──────
+        // 次元袋 / 身份
+        r.playToServer(C2S_RequestVoidBagsMessage.TYPE, C2S_RequestVoidBagsMessage.STREAM_CODEC,
+                C2S_RequestVoidBagsMessage::handle);
+        r.playToServer(C2S_DiscardOrphanBagMessage.TYPE, C2S_DiscardOrphanBagMessage.STREAM_CODEC,
+                C2S_DiscardOrphanBagMessage::handle);
+        r.playToClient(S2C_TeleportPermMessage.TYPE, S2C_TeleportPermMessage.STREAM_CODEC,
+                S2C_TeleportPermMessage::handle);
+        r.playToClient(S2C_WorldIdentityMessage.TYPE, S2C_WorldIdentityMessage.STREAM_CODEC,
+                S2C_WorldIdentityMessage::handle);
+
+        // 次元 / 工程销毁与重置
+        r.playToServer(C2S_DestroyForceBlueprintMessage.TYPE, C2S_DestroyForceBlueprintMessage.STREAM_CODEC,
+                C2S_DestroyForceBlueprintMessage::handle);
+        r.playToServer(C2S_DiscardForeignBlueprintMessage.TYPE, C2S_DiscardForeignBlueprintMessage.STREAM_CODEC,
+                C2S_DiscardForeignBlueprintMessage::handle);
+        r.playToServer(C2S_VoidResetMessage.TYPE, C2S_VoidResetMessage.STREAM_CODEC,
+                C2S_VoidResetMessage::handle);
+
+        // 传送
+        r.playToServer(C2S_VoidTeleportMessage.TYPE, C2S_VoidTeleportMessage.STREAM_CODEC,
+                C2S_VoidTeleportMessage::handle);
+        r.playToServer(C2S_EngineeringTeleportMessage.TYPE, C2S_EngineeringTeleportMessage.STREAM_CODEC,
+                C2S_EngineeringTeleportMessage::handle);
+        r.playToServer(C2S_SafeCoordMessage.TYPE, C2S_SafeCoordMessage.STREAM_CODEC,
+                C2S_SafeCoordMessage::handle);
+
+        // 预览 / 进度 / 冷却
+        r.playToServer(C2S_PreviewUpdateMessage.TYPE, C2S_PreviewUpdateMessage.STREAM_CODEC,
+                C2S_PreviewUpdateMessage::handle);
+        r.playToClient(S2C_PreviewBroadcastMessage.TYPE, S2C_PreviewBroadcastMessage.STREAM_CODEC,
+                S2C_PreviewBroadcastMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_CaptureCooldownMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_CaptureCooldownMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_CaptureCooldownMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_OpCaptureConfirmMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_OpCaptureConfirmMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_OpCaptureConfirmMessage::handle);
+
+        // 项目只读
+        r.playToServer(C2S_RequestProjectListMessage.TYPE, C2S_RequestProjectListMessage.STREAM_CODEC,
+                C2S_RequestProjectListMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ProjectListMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectListMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectListMessage::handle);
+        r.playToServer(C2S_RequestProjectEntriesMessage.TYPE, C2S_RequestProjectEntriesMessage.STREAM_CODEC,
+                C2S_RequestProjectEntriesMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ProjectEntriesMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectEntriesMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectEntriesMessage::handle);
+        r.playToServer(C2S_RequestProjectStatusMessage.TYPE, C2S_RequestProjectStatusMessage.STREAM_CODEC,
+                C2S_RequestProjectStatusMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────
