@@ -2,7 +2,7 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-更新：2026-09-29 20:35:00
+更新：2026-09-29 21:20:00
 
 ========================================================
 【规矩】
@@ -226,3 +226,38 @@ H1. runClient 单人验证（构建 3.0.0，本地开发环境）：
     (4) 操作：执行 /give @s spatial_blueprint:spatial_blueprint[spatial_blueprint:blueprint_name="测试"]。
         预期：物品名字显示「空间蓝图 - 测试」。
     结果：[ ] 未测（等用户）
+
+--------------------------------------------------------
+五、SBN-005 网络骨架与蓝图传输 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 21:20:00 · 测于 2026-09-29 21:11:03
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 41 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7）
+    预期：41 进 41 出全过
+    实际：Running test batch 'defaultBatch:0' (41 tests)... [+++++++++++++++++++++++++++++++++++++++++] All 41 required tests passed :)
+    t01 协议版本 == ModList 里本 mod 版本
+    t02 8 个消息编码往返字节逐字相等 + TYPE id 命名
+    t03 6 组越界包全部 DecoderException
+    t04 分片 0/1/512000/512001/1500000 → 0/1/1/2/3 块、拼回相等、每块编码 < 1 MiB、上限 257/256
+    t05 请求蓝图：主人收分片拼回 = 原 NBT；限流 / 非主人 / 不存在均按预期回 Fail
+    t06 废蓝图回收：placed=true 换空白、false 不动
+    t07 桩接线：孤儿 / 空置次元蓝图三条路径的收包断言
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、无本 mod ERROR
+    实际：Done (6.455s)；RCON stop 后正常退出；0 条 ERROR；18 条 WARN 全为既有/无害项
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ 与 server\ 下无客户端类引用
+    实际：0 命中（net.minecraft.client / 本 mod client / gui；NotifySound 也 0）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。

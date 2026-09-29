@@ -89,7 +89,9 @@ public class VoidDimensionalBlueprintItem extends Item {
         if (!valid) {
             player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
             com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
-            // SB-TODO(P3): S2C_OperationResult（空置蓝图已失效提示）
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.error.void_blueprint_orphaned"));
             return;
         }
 
@@ -99,7 +101,9 @@ public class VoidDimensionalBlueprintItem extends Item {
         if (!com.xioyim.spatialblueprint.util.WorldIdentity.belongsToCurrentWorld(getWorldUuid(stack))) {
             player.setItemInHand(hand, ItemStack.EMPTY);
             com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
-            // SB-TODO(P3): S2C_OperationResult（不属于本存档，已销毁提示）
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.error.foreign_world.discarded"));
             return;
         }
 
@@ -108,11 +112,14 @@ public class VoidDimensionalBlueprintItem extends Item {
         // 这里只拦截、不换空白蓝图 —— 物品本身对它真正的主人仍然有效。
         String owner = com.xioyim.spatialblueprint.util.BlueprintStorage.ownerUuidOf(bpId);
         if (!sp.getUUID().toString().equals(owner)) {
-            // SB-TODO(P3): S2C_OperationResult（不是主人提示）
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
+                    new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                            false, "spatial_blueprint.message.void_blueprint.not_owner"));
             return;
         }
 
-        // SB-TODO(P3): S2C_OpenVoidScreenMessage（文件有效，让客户端打开空置次元蓝图界面）
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
+                new com.xioyim.spatialblueprint.network.s2c.S2C_OpenVoidScreenMessage());
     }
 
     // ── Tooltip ───────────────────────────────────────────────────────────────

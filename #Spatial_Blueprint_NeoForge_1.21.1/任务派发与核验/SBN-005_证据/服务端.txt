@@ -1,0 +1,19 @@
+SBN-005 专服冒烟证据（A3，必做）
+方式：run\ 预置 eula.txt 与 server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询日志到 Done，
+再用 RCON 发 `stop`，等待进程正常退出。未强杀进程树。
+
+关键日志（run/server-run.log 摘录，全文随 run/ 删除）：
+  [21:10:49] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: Spatial Blueprint mod loaded!
+  [21:10:50] [main/INFO] [minecraft/RecipeManager]: Loaded 1291 recipes
+  [21:10:58] [Server thread/INFO] [minecraft/DedicatedServer]: Done (6.455s)! For help, type "help"
+  [21:11:02] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+  [21:11:03] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+
+ERROR 统计：0 条（排除 Gradle 依赖扫描里 jar 路径含 error 字样的 DEBUG 行）。
+WARN 统计：18 条，全部为既有/无害项（配置 correction 7、命令歧义 5、offline 提示 4、assets URL 2）。
+本 mod 相关 ERROR / 注册失败：无。
+
+注意（任务书五.A3）：开发环境的 runServer 类路径里有客户端类，A3 **证明不了**「专服加载 payload 类不崩」——
+那条的门禁是 A4（grep 为空，已通过）。真正的专服类加载验证留到 P5 有客户端缓存后联机测试。
+run/ 已在取证后整目录删除。
