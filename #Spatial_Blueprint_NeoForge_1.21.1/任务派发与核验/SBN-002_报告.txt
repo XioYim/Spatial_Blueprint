@@ -1,0 +1,63 @@
+SBN-002 报告
+执行：2026-09-29 16:29:59 ～ 2026-09-29 17:10:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交 <COMMIT_B> 仅改本报告与规程表两处哈希字段）
+
+一、备份：| 2026-09-29 16:30 | Spatial_Blueprint_NeoForge_1.21.1_20260929_162959 | AFC2E86E | SBN-002 执行前 |
+   另：开工时工作区有 4 个未提交修改（旧版本回写事故），按用户指示先 stash 保留（stash@{0}，On task/SBN-001: SBN-001 成果被旧版本覆盖 2026-09-29 取证用），取证见第十一节。
+
+二、完成情况（对照任务书第三节 1～9）：
+1. 原样搬部分全部零改动（diff -w 残差证明）：exceedsMaxDepth / estimateNbtBytes / checkNbtBudget / effectiveNbtBytes / containsIllegalItemDeep / isIllegalItemId / HARDCODED_ILLEGAL_ITEMS / 告示牌四件 / UploadScan / ScanEntry / ScanEntity / scanBlueprintData / countBlocks / scanBlockList / sanitizeForUploadInPlace 及 stripOversized / stripDeep / 实体白名单 / sanitizePaintingNbt / 坐标范围 / isIllegalBlock / isIllegalBlockId / removeIllegalMaterialsInPlace / enforceTemplateFieldRules / entityHasIllegalItems / findEntityWithIllegalItems · util/BlueprintSanitizer.java（整体）
+   告示牌：s05 用真实 SignBlockEntity 序列化验证 front_text.messages 仍是 JSON 字符串、点击事件键仍是 clickEvent，与 1.20.1 一致，无需改。
+2. 容器组件槽位包层：listHoldsItemEntries 增加「元素含 compound 键 item 且 item 是物品条目」分支，命中整条删 · util/BlueprintSanitizer.java:429-440 · s02(a)(b) 验证（无 slot-only 残片、loadWithComponents 读回为空、components 夹带整条删）
+3. 蜂箱键名：STRIP_SKIP_KEYS = Set.of("Book","Bees","bees") · util/BlueprintSanitizer.java:352 · s08 真实蜂箱验证（bees 小写、stripped 后仍在）
+4. 讲台书：抽 bookPageJsons 收新旧全部页面（tag.pages / tag.filtered_pages / components."minecraft:written_book_content".pages 的裸串、raw、filtered）；hasDangerousBlockNbt 与 bookContainsCommand 走它；applySafetyStripInPlace 的书移除条件从 book.contains("tag") 改为 bookContainsCommand(book) · util/BlueprintSanitizer.java:507、599、672-710 · s04 新格式真实成书 + 旧格式手写样本
+5. 展示框物品净化：安全物品重建为 {id, count:int}（count ← count → Count → 1，components 与 tag 全丢），危险物品整条删 · util/BlueprintSanitizer.java:1230-1243 · s06 验证（{id,count} 形状、ItemStack.parse 成功、无组件）
+6. 试炼刷怪笼（D9 兜底）：hasDangerousBlockNbt 追加 spawn_data / normal_config / ominous_config 任一非空即危险；applySafetyStripInPlace 追加 remove 三键 · util/BlueprintSanitizer.java:513-515、606-608 · s07 真实 TrialSpawnerBlockEntity 验证
+7. 刷怪笼键名：SpawnData / SpawnPotentials 1.21.1 不变 · s07 真实 SpawnerBlockEntity 核对（样本见证据/nbt_样本.txt）
+8. D9 默认禁捕：excludedBlocks / excludedItems 默认列表各加 minecraft:trial_spawner、minecraft:vault（有意与 1.20.1 分叉）· BlueprintConfig.java:141-142、165-166 · s07 断言 + 新生成 toml 原文
+9. S2C record + BulkMaterialConverter：新建 network/s2c/S2C_IllegalBlocksListMessage.java（6 个嵌套 record 逐字照搬 + 类声明上方 1 条 // SB-TODO(P3) 消息本体）；BulkMaterialConverter.collectConversions 去桩恢复原样，与 1.20.1 源 diff -w 为零 · util/BulkMaterialConverter.java:79-105
+
+三、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）：
+- listHoldsItemEntries 只认「元素本身是物品」→ 加 {slot, item} 包层分支，命中整条删 · util/BlueprintSanitizer.java:429 · 任务书三.2 / s02 / J10
+- Set.of("Book","Bees") → Set.of("Book","Bees","bees") · util/BlueprintSanitizer.java:352 · 任务书三.3 / s08 / J12
+- 讲台书检测内联 tag.pages 遍历 → bookContainsCommand(nbt.getCompound("Book")) · util/BlueprintSanitizer.java:507 · 任务书三.4 / s04 / J11
+- applySafetyStrip 书条件 book.contains("tag") && bookContainsCommand → bookContainsCommand(book) · util/BlueprintSanitizer.java:599 · 任务书三.4 / s04
+- bookContainsCommand 内联旧 tag 遍历 → 拆出 bookPageJsons 收新旧页面；新增私有方法 · util/BlueprintSanitizer.java:672-710 · 任务书三.4 / s04 / J11
+- 展示框 cleaned.putByte("Count", getByte("Count")) → 读 count(int)→Count(byte)→1 并 cleaned.putInt("count", max(1,count)) · util/BlueprintSanitizer.java:1239-1241 · 任务书三.5 / s06 / J14
+- hasDangerousBlockNbt 刷怪笼段后 → 追加试炼刷怪笼三键判危险 · util/BlueprintSanitizer.java:513 · 任务书三.6 / s07 / J13
+- applySafetyStripInPlace 末段 → 追加 spawn_data / normal_config / ominous_config 三键 remove · util/BlueprintSanitizer.java:606 · 任务书三.6 / s07 / J13
+- 无 import 变化（com.google.gson / JsonParser / NbtUtils 等在 1.21.1 全在，编译即证）。
+
+四、真实 NBT 形状（与任务书预期对照，样本全文见证据/nbt_样本.txt）：
+- J10 容器组件：{slot:<int>, item:{id, count:int, components}} —— 一致（fromItems + Codec 源码核对）。
+- J11 成书页面：pages:[{raw:"<JSON 字符串>"}]（flatCodec 与 Filterable.passThrough；filtered 仅在有过滤文本时出现，可省略）—— 与预期一致（预期 {raw, filtered}，实测 raw 必有）；检测同时收裸串。
+- J12 蜂箱：bees（小写）数组，元素含 entity_data / min_ticks_in_hive / ticks_in_hive —— 一致。
+- J13 试炼刷怪笼：本次真实序列化只出现 spawn_data（setEntityId 只写它）；normal_config / ominous_config 由源码 codec（TrialSpawner，optionalFieldOf）确认存在，判定与清除三键都写了。另：TrialSpawnerData 的包是 net.minecraft.world.level.block.entity.trialspawner，不在 block.entity 包裹（任务书 J13 写法差包名，无影响）。
+- 补充（任务书未提）：1.21 方块实体 saveWithFullMetadata 出的 NBT 顶层带 data / palette 字段（原版新格式），以及可带 components 子标签（BlockEntity.COMPONENTS_CODEC）；样本里已原样保留。
+- J14 物品：{id, count:int, components}（frame-item-before 实测）；J15 saveWithFullMetadata / loadWithComponents 实测可用；J16 Entity.save 实测可用。
+
+五、测试覆盖：A1 编译 BUILD SUCCESSFUL、警告 0 条（源文件:行号: 命中 0）；A2 runGameTestServer 批次 19 进 19 出全过（@GameTest 注解实数 19 = SBN001Tests 8 + SBN002Tests 11）；s01～s11 全部通过（首跑 s05 因未进世界 setText 崩，加 sign.setLevel 后通过，过程记在证据/GameTest.txt）；A3 未做单独 runServer，等效证据由 gametest 启动覆盖（新生成 toml 两处默认值含 D9 两项，原文见证据/GameTest.txt）；A4 未做（本机无旧蓝图文件）。证据：编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt。run/ 已整目录删除；s11 的 live 配置改动 finally 恢复、未 save；临时取样用例 s99 已删（SNBT 存证据）。
+六、迁移桩清单：新 1（S2C 消息本体 P3）+ 去掉 1（BulkMaterialConverter 的 P3 桩） + 存量 15 = grep -rn "SB-TODO(" src 实数 15。逐条：
+SpatialBlueprintMod.java:36 P2 SpatialBlueprintItems；:37 P2 SpatialBlueprintRegistry；:38 P3 BlueprintNetwork；:39 P4 SBCommands；:40 P4 登录登出事件；:41 P2 创造物品栏；:42 P5 clientSetup；:43 P4 ForagersInsightCompat；:44 P2 Storage.init；:45 P4 FileLogger；network/s2c/S2C_IllegalBlocksListMessage.java:5 P3 消息本体（新）；util/BlueprintData.java:323 P4 DataFixer；util/MaterialKey.java:51 P2 D8；util/MaterialList.java:128 P2 D8；util/MaterialList.java:169 P2 D8。
+七、任务书出入：
+1. 任务书 J13 写 net.minecraft.world.level.block.entity.TrialSpawnerData；实际包是 net.minecraft.world.level.block.entity.trialspawner.TrialSpawnerData（javap 找不到）。无处理差异，仅包名。
+2. 任务书预期试炼刷怪笼「spawn_data、normal_config、ominous_config（后两者里有 spawn_potentials）」；实测 setEntityId 后只序列化出 spawn_data，normal_config/ominous_config 是 codec 可选字段（未设置时为默认值、不写盘）。判定与清除按三键都写；s07 用 spawn_data 实证。
+3. 任务书说「s07 都判危险，strip 后三个 / 两个键都不在」——落实为：spawner 清 SpawnData/SpawnPotentials 两键、trial 清三键，均断言。
+4. SignBlockEntity.setText 未进世界会调 level.sendBlockUpdated 空指针（任务书未提）；测试里先 setLevel，不改产品代码。
+5. PaintingVariants 实际在 net.minecraft.world.entity.decoration（不在 .paintings 子包），测试 import 按实际改（任务书未涉）。
+八、与 1.20.1 同样存在的问题（任务书三.10 实测记录）：
+a. 盔甲架 hasEquipment 恒真：stand-empty 实测 ArmorItems:[{},{},{},{}] / HandItems:[{},{}]——空槽也存 {}，列表恒 4/2 元素；armorStandHasEquipment→nonEmptyItemList 只看列表空不空 → 空盔甲架也判「带装备」。真实 NBT 见证据/nbt_样本.txt（stand-empty / stand-armed），代码点 util/BlueprintSanitizer.java:916-921。不改。
+b. 战利品表不清理：loot-before 实测 LootTable="minecraft:chests/simple_dungeon" + LootTableSeed=123L；stripItemContents 与 stripDangerousBlockNbt 之后两者都在（loot-after-items / loot-after-danger），loadWithComponents 读回正常——捕获没开过的箱子放进可重复放置的蓝图 = 每次放置都能重新刷战利品。键名与 1.20.1 相同（LootTable / LootTableSeed，源码 RandomizableContainerBlockEntity）。不改。
+c. 另发现：1.21 方块实体 NBT 顶层多出 data / palette 字段与可选 components 子标签（原版格式演进），两条 strip 都不动它们；components 里若夹带 minecraft:container（潜影盒）现在会被整条删（s02b 验证），无残留问题。
+九、双端同步自查：BlueprintSanitizer 只在服务端跑（上传 / 捕获路径），无客户端引用、无网络变化；BlueprintConfig 两处默认值改动双端同版生效（COMMON 型配置），旧 toml 不自动加项属 NeoForge 既有行为、无需迁移。结论：本任务不产生新的不同步点。
+十、教训同步：基线为 ad0c9b7 的副本；原件 A（本机总库）、副本 C、基线 B 三方逐字相同（cmd 原样导出后 SHA256 均 10C89E19…；PS 重定向会写成 UTF-16 导致误判，已按字节重导复核）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+十一、建议记入：
+1. [事故·请先决策是否记入 K] SBN-001 成果被旧版本回写：2026-09-29 执行 SBN-002 开工时发现工作区 4 个文件（SpatialBlueprintMod.java、开发日志.md、测试清单.txt、云端协作规程.md）被回写为 SBN-001 执行前的版本（四个文件均逐字等于 e97d824），4 个文件 mtime 同为 2026-09-29 15:22:13。当时分支 task/SBN-001 @ 36c2294，内容都在仓库且已合并，无丢失。取证后按用户指示 stash 保留（stash@{0}）。现查无编辑器 / IDE 进程（只有 OpenCode 本身）；原因未明。建议一句话要点记入后由云端定是否写 K。
+2. [建议记入 K] PS 5.1 的 Set-Content -Encoding UTF8 写 .java 会带 BOM → javac 报「需要 class、interface、enum 或 record」一片错误；改 .java 一律走 Edit 工具（与既有「含中文 .ps1 要带 BOM」互补：.java 反过来不能有 BOM）。
+3. [建议记入 C] 1.21 方块实体 NBT 顶层带 data / palette 字段与可选 components 子标签（BlockEntity.COMPONENTS_CODEC）；components 是 1.21 新夹带路径，已按整条删除处理（s02b）。
+4. [建议记入 C] SignBlockEntity.setText 需要 level（未进世界直接调会 NPE）——测试先 setBlockEntity 的 level 或 setLevel。
+5. [建议记入 C] 1.21 成书页面编码：pages 元素 {raw:"<JSON>"}（filtered 可选）+ 裸串兼容；js 侧检测需同时收 raw/filtered。
+6. [待用户拍板·云端问] 三.10 的 a / b 两条是否两条线一起修（hasEquipment 恒真、LootTable 不清理）。
+十二、需要用户做的事：无（本组无手测项）。等云端验收。
+
+证据目录 任务派发与核验/SBN-002_证据/：编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt。

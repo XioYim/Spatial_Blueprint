@@ -1,0 +1,56 @@
+SBN-002 javap 取证（J10～J16）
+merged.jar：build/moddev/artifacts/neoforge-21.1.252-merged.jar
+格式：类#成员 签名；NBT 形状以 GameTest 真实序列化结果为准（见 nbt_样本.txt）。
+
+J10 ItemContainerContents：
+  net.minecraft.world.item.component.ItemContainerContents#CODEC
+  net.minecraft.world.item.component.ItemContainerContents#fromItems(java.util.List<ItemStack>)
+  net.minecraft.world.item.component.ItemContainerContents#getSlots() / getStackInSlot(int)
+  槽位编码（源码 net/minecraft/world/item/component/ItemContainerContents.java）：
+  Codec.intRange(0,255).fieldOf("slot") + ItemStack.CODEC.fieldOf("item")
+  → 形状 [{slot:<int>, item:{id, count, components}}, …]，与任务书预期一致。
+
+J11 WrittenBookContent：
+  net.minecraft.world.item.component.WrittenBookContent#CONTENT_CODEC = ComponentSerialization.flatCodec(32767)
+  net.minecraft.world.item.component.WrittenBookContent#PAGES_CODEC：List<Filterable<Component>>
+  net.minecraft.server.network.Filterable#codec(Codec)（源码）：
+  p_codec.fieldOf("raw") + p_codec.optionalFieldOf("filtered")，withAlternative 允许裸值
+  → 页面形状 {raw:"<JSON>"} 或 {raw:"…", filtered:"…"}，也接受裸字符串；与任务书预期一致。
+  真实序列化（nbt_样本.txt lectern-before）：pages:[{raw:'{"clickEvent":…}'}]
+
+J12 BeehiveBlockEntity：
+  private static final String BEES = "bees"
+  protected void loadAdditional(CompoundTag, HolderLookup$Provider) / saveAdditional(…)
+  源码：tag.put("bees", Occupant.LIST_CODEC…)，元素为
+  record Occupant(CustomData entityData, int ticksInHive, int minTicksInHive)
+  → 键名 bees（小写），元素内 entity_data；真实样本见 nbt_样本.txt beehive。与任务书预期一致。
+
+J13 TrialSpawnerBlockEntity / TrialSpawnerData / SpawnerBlockEntity：
+  net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity（无 TrialSpawnerData 于 block.entity 包）
+  TrialSpawner$Codec（源码 net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.java）：
+    normal_config / ominous_config（optionalFieldOf）+ TrialSpawnerData.MAP_CODEC
+  TrialSpawnerData MAP_CODEC 字段：registered_players / current_mobs / cooldown_ends_at /
+    next_mob_spawns_at / total_mobs_spawned / spawn_data / ejecting_loot_table
+  → 试炼刷怪笼生成配置 = spawn_data / normal_config / ominous_config，与任务书预期一致。
+  SpawnerBlockEntity（真实样本 nbt_样本.txt spawner-before）：
+    SpawnData（compound，内含 entity.id）+ SpawnPotentials（列表）
+  → 与 1.20.1 键名一致，任务书预期正确。
+
+J14 ItemStack：
+  public Tag save(HolderLookup$Provider) / save(HolderLookup$Provider, Tag)
+  public static Optional<ItemStack> parse(HolderLookup$Provider, Tag)
+  CODEC（源码 ItemStack.java）：ITEM_NON_AIR_CODEC.fieldOf("id")
+    + ExtraCodecs.intRange(1,99).fieldOf("count").orElse(1)
+  → 物品 NBT = {id, count:int, components:{…}}；与任务书预期一致。
+
+J15 BlockEntity：
+  public final void loadWithComponents(CompoundTag, HolderLookup$Provider)
+  public final CompoundTag saveWithFullMetadata(HolderLookup$Provider)
+  public final CompoundTag saveCustomOnly(HolderLookup$Provider)
+  public void removeComponentsFromTag(CompoundTag)
+  源码（BlockEntity.java）：COMPONENTS_CODEC = DataComponentMap.CODEC.optionalFieldOf("components", EMPTY)
+  → 方块实体可带 components 子标签（applyImplicitComponents 填充）；与任务书预期一致。
+
+J16 Entity：
+  public boolean save(CompoundTag)（1.21.1 仍在，编译通过；真实样本 stand-armed 显示
+  ArmorItems / HandItems 列表元素为物品 NBT {id,count}，空槽为 {}）

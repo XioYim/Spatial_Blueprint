@@ -1,0 +1,34 @@
+SBN-002 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 16:55:14
+日志关键行：
+  Running test batch 'defaultBatch:0' (19 tests)...
+  [+++++++++++++++++++]
+  ========= 19 GAME TESTS COMPLETE IN 658.4 ms ======================
+  All 19 required tests passed :)
+  BUILD SUCCESSFUL in 19s
+用例数核对（C2：数注解实数）：SBN001Tests 8 个 @GameTest + SBN002Tests 11 个 @GameTest = 19，
+与批次条数 19 一致，全部通过。
+
+s01～s11 一次通过；中途唯一失败与处理（如实记录）：
+  首跑（16:42）s05_signcommand 失败：Cannot invoke "Level.sendBlockUpdated(...)" because "this.level" is null
+  —— SignBlockEntity 未进世界就 setText，内部会调 level.sendBlockUpdated。
+  修法：测试里先 sign.setLevel(helper.getLevel()) 再 setText（只调 API，不写世界残留）。
+  二跑（16:44）起 19/19 全过。
+
+同一启动内的本 mod 运行时证据：
+  Spatial Blueprint mod loaded!（主类构造器 + commonSetup 正常）
+  [SpatialBlueprint] block_substitutions.toml already has content, skipping scan
+  （本次会话首跑 16:42 时 run/ 为全新目录，两份 toml 首次生成；后续跑因已有内容跳过扫描。）
+
+A3（专服冒烟，可选）说明：未做单独 runServer。等效证据已由 gametest 启动覆盖：
+  - 完整 mod 加载链（config 注册、toml 生成、commonSetup）与 SBN-001 相同且再次通过；
+  - 本次会话新生成的 run/config/spatial_blueprint/spatial_blueprint.toml 里两处默认值均带 D9 两项，原文：
+    excludedBlocks = [... , "minecraft:trial_spawner", "minecraft:vault"]
+    excludedItems  = [... , "minecraft:trial_spawner", "minecraft:vault"]
+  - run/ 整目录已在取证后删除（Test-Path run = False）。
+预存在的两条无关 ERROR（非本任务引入，同 SBN-001）：
+  1. Dedicated Settings: Failed to load properties from file: server.properties（首次运行自动生成，良性）
+  2. RecipeManager: Parsing error loading recipe spatial_blueprint:blank_blueprint（缺物品注册，P2 后消失）
+
+测试对 live 配置的改动（s07 只读断言；s11 改 excludedBlocks/bulk 后 finally 恢复原值 + 清缓存，未 save）。

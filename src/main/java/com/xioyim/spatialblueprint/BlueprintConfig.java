@@ -138,7 +138,9 @@ public class BlueprintConfig {
                         "minecraft:barrier",
                         "minecraft:nether_portal",
                         "minecraft:end_gateway",
-                        "minecraft:moving_piston"
+                        "minecraft:moving_piston",
+                        "minecraft:trial_spawner",
+                        "minecraft:vault"
                 ));
 
         EXCLUDED_ITEMS = BUILDER
@@ -161,7 +163,9 @@ public class BlueprintConfig {
                         "minecraft:chain_command_block",
                         "minecraft:end_portal_frame",
                         "minecraft:debug_stick",
-                        "minecraft:knowledge_book"
+                        "minecraft:knowledge_book",
+                        "minecraft:trial_spawner",
+                        "minecraft:vault"
                 ));
 
         BUILDER.comment("Capture volume limits per BLUEPRINT TYPE (non-air block count).",
