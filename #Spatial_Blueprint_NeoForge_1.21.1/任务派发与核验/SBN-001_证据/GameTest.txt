@@ -1,0 +1,31 @@
+SBN-001 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; ./gradlew.bat runGameTestServer
+时间：2026-09-29 14:51:50～14:51:54
+类：src/main/java/com/xioyim/spatialblueprint/gametest/SBN001Tests.java，
+@GameTestHolder(spatial_blueprint) + @PrefixGameTestTemplate(false)，
+@GameTest 注解共 8 个（grep 实数 8）。
+
+日志关键行（run/logs/latest.log，run 目录已按任务书要求删除）：
+Running test batch 'defaultBatch:0' (8 tests)...
+[++++++++]
+========= 8 GAME TESTS COMPLETE IN 427.0 ms ======================
+All 8 required tests passed :)
+BUILD SUCCESSFUL in 23s
+
+注：日志只打印批次级结果（8 进 8 出、全过），不逐条打印用例名；
+8 个 @GameTest 方法与 8 个通过一一对应（少一个/挂一个都会导致批次失败）。
+g01～g08 全部通过。
+
+同次启动的本 mod 运行时证据：
+Spatial Blueprint mod loaded!（主类构造器 + commonSetup 正常）
+[SpatialBlueprint] Generated 106 block substitution candidates -> block_substitutions.toml
+run/config/spatial_blueprint/ 下生成 spatial_blueprint.toml 与 block_substitutions.toml 两份。
+
+残留处理：run/ 整个目录已删除（Test-Path run = False），下次运行重建；
+测试中对 live 配置的改动（g03/g05/g06/g07）全部在 finally 里 set 回原值并清缓存，未 save 落盘。
+
+无 ERROR 归因本 mod。两处无关 ERROR（预先存在，非本任务引入）：
+1. Dedicated Settings: Failed to load properties from file: server.properties（首次运行自动生成，良性）
+2. RecipeManager: Parsing error loading recipe spatial_blueprint:blank_blueprint，
+   原因 Unknown registry key ... spatial_blueprint:blank_blueprint —— 物品注册在 P2，
+   本任务结束时本来就没有物品，P2 注册后自动消失。见报告“需要用户做的事/提议”。

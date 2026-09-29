@@ -1,0 +1,48 @@
+SBN-001 报告
+执行：2026-09-29 14:38:00 ～ 2026-09-29 15:35:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交 <COMMIT_B> 仅改本报告与规程表两处哈希字段）
+
+一、备份：| 2026-09-29 14:38 | Spatial_Blueprint_NeoForge_1.21.1_20260929_143841 | 75A78928 | SBN-001 执行前 |
+二、完成情况（对照任务书第三节 1～10）：
+1. 配置系统：BlueprintConfig / GeneratedSubstitutionsConfig / ConfigRegistry 逐字搬，仅 ForgeConfigSpec→ModConfigSpec 改名，define 系原样保留 · BlueprintConfig.java:6-7、GeneratedSubstitutionsConfig.java:3、config/ConfigRegistry.java:5
+2. 主类：只加配置目录 + 两份 registerConfig + ModConfigEvent 监听 + commonSetup（enqueueWork generateAndSave），其余 10 处 SB-TODO · SpatialBlueprintMod.java:18-62
+3. 纯工具类 9 个零改动（BlueprintTransform / CaptureMode / FluidCaptureFilter / FluidDisplayMode / LitematicaCodec / StructureImportException / UndoRecord / SBUndoCooldown / BlueprintLogger），diff -w 无残差 · util/各文件
+4. NbtCompat 新增：写 {X,Y,Z} 复合标签，读兼容 int 数组，缺键 null · util/NbtCompat.java:1-58
+5. SafeNbtIo：改用 NbtAccounter.create · util/SafeNbtIo.java:49
+6. BlueprintData：坐标走 NbtCompat；MinecraftDataVersion 改当前版本链；新增只读 dataVersion 字段 + SB-TODO(P4)；asLookup 与方块类名全部保留（编译即证仍在） · util/BlueprintData.java:33-36、248、323
+7. MaterialKey / MaterialList：of 暂返纯 ID、setTag 注释、count 双读、tag 读旧键，各带 SB-TODO(P2/D8)；IGNORED 默认值 RepairCost 未改 · util/MaterialKey.java:47-52、util/MaterialList.java:122-132、154-170
+8. BulkMaterialConverter：parse 原样；collectConversions 整方法注释 + SB-TODO(P3)，无调用方 · util/BulkMaterialConverter.java:72-109
+9. ProjectData：坐标走 NbtCompat（缺键处 requireNonNullElse ZERO 保原语义）；dimension / Component 不变 · util/ProjectData.java:187-188、202-217、254-290
+10. 迁移桩：新桩 15 + 存量 0 = grep 实数 15，见第五节
+三、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）：
+- net.minecraftforge.common.ForgeConfigSpec → net.neoforged.neoforge.common.ModConfigSpec · BlueprintConfig.java:6（全文件同类替换） · J1
+- net.minecraftforge.fml.event.config.ModConfigEvent → net.neoforged.fml.event.config.ModConfigEvent · BlueprintConfig.java:7 · J3
+- net.minecraftforge.registries.GameData → net.neoforged.neoforge.registries.GameData · util/BlockSubstitutionGenerator.java:11 · J7（getBlockItemMap 仍在，原样保留）
+- new NbtAccounter(maxUncompressedBytes) → NbtAccounter.create(maxUncompressedBytes) · util/SafeNbtIo.java:49 · J5
+- NbtUtils.writeBlockPos/readBlockPos → NbtCompat.writeBlockPos/readBlockPos · util/BlueprintData.java:276-277、345-346、util/ProjectData.java:187-188、206-207、258-260、285-290 · J6
+- putInt(MinecraftDataVersion, 3465) → SharedConstants.getCurrentVersion().getDataVersion().getVersion() · util/BlueprintData.java:248 · J8
+- make(id, stack.getTag()) → return id（桩） · util/MaterialKey.java:47-52 · 任务书三.7b（ItemStack 已无 getTag，javap 全方法表无此项）
+- stack.setTag(tag.copy()) → 注释 + 桩 · util/MaterialList.java:168-169 · 任务书三.7c
+- getByte(Count) → getInt(count) 优先、Count 兼容 · util/MaterialList.java:125-127 · 任务书三.7d
+- collectConversions 方法体 → 整段注释 + 桩 · util/BulkMaterialConverter.java:79-109 · 任务书三.8a
+- 裸 ConfigValue[] 数组登记 → List.of · config/ConfigRegistry.java:97-110 · 本线 0 警告基线（任务书出入第 2 条）
+- 主类构造器 context.registerConfig → modContainer.registerConfig(Type, SPEC, 路径)；FMLPaths 包名 forge→neoforge；监听 ModConfigEvent 基类不拆 · SpatialBlueprintMod.java:18-62 · J3/J4
+- 新增：NbtCompat 类、dataVersion 字段与读取、SB-TODO(P4) DataFixer 注释 · 见二.4/二.6 · 任务书三.4/三.6c
+四、测试覆盖：A1 编译 BUILD SUCCESSFUL、警告 0 条（源文件:行号: 命中 0）；A2 runGameTestServer 批次 8 进 8 出全过（g01～g08 全部通过，427ms）；A3 未做（gametest 已覆盖完整 mod 加载：mod loaded、两份 toml 生成、106 条替换候选写入）；A4 未做（本机无 1.20.1 旧蓝图文件）。证据：编译.txt、GameTest.txt、改动清单.txt、javap.txt。run/ 已整目录删除；g03/g05/g06/g07 的 live 配置改动全部 finally 恢复原值 + 清缓存、未 save。
+五、迁移桩清单：新桩 15 + 存量 0 = grep 实数 15。逐条 file:line · 阶段 · 类名：
+SpatialBlueprintMod.java:36 P2 SpatialBlueprintItems；:37 P2 SpatialBlueprintRegistry；:38 P3 BlueprintNetwork；:39 P4 SBCommands；:40 P4 登录登出事件；:41 P2 创造物品栏；:42 P5 clientSetup；:43 P4 ForagersInsightCompat；:44 P2 Storage.init；:45 P4 FileLogger；util/BlueprintData.java:323 P4 DataFixer；util/BulkMaterialConverter.java:74 P3 S2C_IllegalBlocksListMessage；util/MaterialKey.java:51 P2 D8；util/MaterialList.java:128 P2 D8；util/MaterialList.java:169 P2 D8。
+六、任务书出入：
+1. 任务书说 ModConfigEvent 若为 abstract 则拆 Loading/Reloading；javap 是非 abstract 的普通类（Loading/Reloading 存在）；改成了照 1.20.1 注册基类监听、不拆。GameTest 启动无异常。
+2. 任务书未提 ConfigRegistry 裸泛型数组的 unchecked 注；实际 javac 会打印该注（本线基线 0 警告）；改成了 List.of 登记，迭代顺序与行为一致。
+3. 任务书说“define 可用且无弃用则原样保留”；javap 确认无 @Deprecated，且与 Forge 1.20.1-47.1.3 源码比对 validator 逐字一致；启动日志的列表 correction WARN（Incorrect key … corrected … to its default）在 1.20.1 同样存在，未改文件时值不变。选了原样保留。
+4. 任务书说远程 1.20.1 分支是 forge-1.20.1 不是 main；本机 fetch 确认 origin/main 不存在、origin/forge-1.20.1 存在，属实。
+5. DataVersion 不在 net.minecraft 根包而在 world.level.storage 包；链式调用本身成立，无影响。
+七、双端同步自查：本任务不引入任何客户端读配置的代码；两份配置保持 COMMON 双端各一份（与 1.20.1 一致）；服务端权威仍靠 P3 的“配置界面走网络”那一套。结论：无新增不同步点。
+八、教训同步：基线 8a0f4ad 的副本与当前副本 git diff 为空，且原件与副本 SHA256 均为 10C89E19…（逐字相同）。A→C 0 条，C→A 0 条，冲突无。同步表已追加一行。
+九、建议记入：
+1. 想记到 K：本线警告基线 0，裸泛型数组会触发 javac unchecked 注，列表登记改用 List.of。
+2. 想记到 C：define(String, List) 的列表 correction WARN 与 1.20.1 行为一致，未改文件时值不变，别当 bug 修。
+3. 想记到 C：GameTest 日志只打批次级结果，要逐条证据就数 @GameTest 注解实数。
+十、需要用户做的事：无（本组无手测项）。
+提议（不算任务外改动，未动手）：1. blank_blueprint.json 的 recipe 解析 ERROR 待 P2 物品注册后自动消失；2. 列表 correction WARN 若想彻底消除，需把 define 改 defineListAllowEmpty 并改字段类型为 ConfigValue<List<? extends String>>（行为变更，等云端问过用户再定，不在本任务做）。
+证据目录 任务派发与核验/SBN-001_证据/：编译.txt、GameTest.txt、改动清单.txt、javap.txt。

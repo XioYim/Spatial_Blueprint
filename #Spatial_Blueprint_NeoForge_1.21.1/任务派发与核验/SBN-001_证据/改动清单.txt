@@ -1,0 +1,40 @@
+SBN-001 改动清单（V1 两向比对）
+基线：neoforge-1.21.1...HEAD（任务分支 task/SBN-001，含 TASK 手册提交 d734669）
+时间：2026-09-29
+
+一、git 实际改动（M = 修改，?? = 新增；任务书手册提交除外）：
+M src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java
+新 src/main/java/com/xioyim/spatialblueprint/BlueprintConfig.java
+新 src/main/java/com/xioyim/spatialblueprint/GeneratedSubstitutionsConfig.java
+新 src/main/java/com/xioyim/spatialblueprint/config/ConfigRegistry.java
+新 src/main/java/com/xioyim/spatialblueprint/log/BlueprintLogger.java
+新 src/main/java/com/xioyim/spatialblueprint/util/BlueprintTransform.java
+新 src/main/java/com/xioyim/spatialblueprint/util/CaptureMode.java
+新 src/main/java/com/xioyim/spatialblueprint/util/FluidCaptureFilter.java
+新 src/main/java/com/xioyim/spatialblueprint/util/FluidDisplayMode.java
+新 src/main/java/com/xioyim/spatialblueprint/util/LitematicaCodec.java
+新 src/main/java/com/xioyim/spatialblueprint/util/StructureImportException.java
+新 src/main/java/com/xioyim/spatialblueprint/util/SafeNbtIo.java
+新 src/main/java/com/xioyim/spatialblueprint/util/UndoRecord.java
+新 src/main/java/com/xioyim/spatialblueprint/util/SBUndoCooldown.java
+新 src/main/java/com/xioyim/spatialblueprint/util/BulkMaterialConverter.java
+新 src/main/java/com/xioyim/spatialblueprint/util/BlockSubstitutionGenerator.java
+新 src/main/java/com/xioyim/spatialblueprint/util/BlueprintData.java
+新 src/main/java/com/xioyim/spatialblueprint/util/MaterialKey.java
+新 src/main/java/com/xioyim/spatialblueprint/util/MaterialList.java
+新 src/main/java/com/xioyim/spatialblueprint/util/ProjectData.java
+新 src/main/java/com/xioyim/spatialblueprint/util/NbtCompat.java
+新 src/main/java/com/xioyim/spatialblueprint/gametest/SBN001Tests.java
+新 src/main/resources/data/spatial_blueprint/structure/empty.nbt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-001_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-001_证据/（编译.txt、GameTest.txt、改动清单.txt、javap.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-001 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（示例段替换为“一、SBN-001 纯逻辑层”）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+改 #Spatial_Blueprint_NeoForge_1.21.1/通用经验/Mod开发与迁移_通用铁律经验教训.md（只三方同步，见报告第八节）
+
+二、两向比对结论：
+允许清单 → 实际：21 个新 java + empty.nbt + 报告 + 证据 4 文件 + 4 处交接件修改，
+全部命中，无遗漏。
+实际 → 允许清单：无清单外文件。run/ 残留已删（gitignored，本来就不进提交）。
+两向一致。

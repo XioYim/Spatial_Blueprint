@@ -1,0 +1,14 @@
+SBN-001 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; ./gradlew.bat compileJava --rerun
+时间：2026-09-29 14:47:00 左右（第二次通过构建；第一次因两处写法问题失败，见开发日志 SBN-001 节）
+
+输出尾部（全文见 C:/Users/Yim/AppData/Local/Temp/opencode/sbn001-compile.txt）：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 8s
+2 actionable tasks: 1 executed, 1 up-to-date
+
+警告计数：0 条。计数方法：对构建输出全文按“源文件:行号:”（正则 .java:\d+:）搜，
+命中 0 行。注：javac 在中文系统输出“警告/注/错误”字样，不按英文 grep；
+第一次构建的 1 个“错误”是真正的编译错误（SBN001Tests instanceof 类型不可转），
+已修；ConfigRegistry 的 unchecked“注”已改用 List.of 写法消除。
