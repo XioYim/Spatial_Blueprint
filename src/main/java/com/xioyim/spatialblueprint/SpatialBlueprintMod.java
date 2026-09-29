@@ -2,6 +2,8 @@ package com.xioyim.spatialblueprint;
 
 import com.mojang.logging.LogUtils;
 import com.xioyim.spatialblueprint.util.BlockSubstitutionGenerator;
+import com.xioyim.spatialblueprint.util.BlueprintStorage;
+import com.xioyim.spatialblueprint.util.ProjectStorage;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -41,7 +43,6 @@ public class SpatialBlueprintMod {
         // SB-TODO(P2): 创造物品栏（addCreative）
         // SB-TODO(P5): clientSetup（ClientModSetup）
         // SB-TODO(P4): ForagersInsightCompat（作物收获经验补丁）
-        // SB-TODO(P2): Storage.init（BlueprintStorage / ProjectStorage）
         // SB-TODO(P4): FileLogger（BlueprintFileLogger.init / 关服 close）
 
         modEventBus.addListener(this::commonSetup);
@@ -49,6 +50,8 @@ public class SpatialBlueprintMod {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+        BlueprintStorage.init();
+        ProjectStorage.init();
         // 扫描注册表，生成方块替换候选到独立 toml（幂等覆盖写）
         event.enqueueWork(BlockSubstitutionGenerator::generateAndSave);
         LOGGER.info("Spatial Blueprint mod loaded!");

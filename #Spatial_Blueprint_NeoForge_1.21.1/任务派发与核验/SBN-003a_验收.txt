@@ -1,0 +1,18 @@
+SBN-003a 验收（连同 SBN-003 一起结案）
+验收：2026-09-29 20:00:00（云端主会话）
+对象：task/SBN-003 @ 76891bf（内容主提交 8eec528）
+结论：PASS → SBN-003 + SBN-003a 合并进 neoforge-1.21.1。本轮起云端复编译 / GameTest 可跑（网络策略 Full），全部自己复跑。
+
+V1 改动清单：75b70ff..76891bf 只动 MaterialKey、SBN003Tests、SBN-003a 报告 / 证据、开发日志、测试清单、规程第五节表一行 —— 与任务书第一节两向一致，通过。
+V2 云端复编译：bash gradlew compileJava --rerun（不加 --offline）BUILD SUCCESSFUL，源文件行号警告 0 条。
+   云端 runGameTestServer：26 进 26 出全过（SBN001 8 + SBN002 11 + SBN003 7）。—— 通过（云端复编译通过，项目首次）。
+V3 MaterialKey 相对 75b70ff 只改 pruneNoOps：normalize 调用处传 true、递归两处传 false、顶层含 ':' 且原本为空的 compound continue、javadoc 一段。
+   逐条核对任务书二.a～d：a 判断在剔 id / 递归之前，用的是处理前的 isEmpty —— 成立；b block_entity_data 原本非空、剔 id 后变空仍走 remove —— 成立；
+   c 旧格式键无 ':' 不命中例外 —— 成立；d 深层传 false、"!" 在循环首行 continue —— 成立。SBN-003 其余通过项零改动。
+V4 新断言物品均由真实 ItemStack + set(DataComponents.UNBREAKABLE / HIDE_TOOLTIP, …) 造出；nbt_样本 可见 {"minecraft:unbreakable": {}}、{"minecraft:hide_tooltip": {}} 空 compound 形状。
+   变异复核（云端自做）：把例外条件临时改成 false 再跑 GameTest → t01「unbreakable pickaxe differs from plain」与 t03「normalized components present」失败（2/26），
+   证明新断言确实能抓到本 bug；随后还原源码、删 run/，工作区干净。
+V5 SB-TODO( 实数 12 —— 通过。
+
+报告「任务书出入：无」—— 核对属实。
+附注（不阻塞）：例外按「顶层键名含 : 且为空 compound」判，不区分组件类型；若将来某个组件的「空 compound」与「无此组件」语义等价，会多出一个键（偏保守：不会混同，只会不合并），可接受。

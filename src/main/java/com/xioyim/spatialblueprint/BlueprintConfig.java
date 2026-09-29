@@ -467,7 +467,7 @@ public class BlueprintConfig {
                         + "Default: RepairCost — otherwise the same enchanted gear with a different\n"
                         + "anvil repair cost counts as a separate material and cannot be deposited.")
                 .define("materialSpaceIgnoredNbtKeys",
-                        (List<String>) new ArrayList<>(List.of("RepairCost")));
+                        (List<String>) new ArrayList<>(List.of("RepairCost", "minecraft:repair_cost")));
 
         BUILDER.pop();
         BUILDER.push("animation");
