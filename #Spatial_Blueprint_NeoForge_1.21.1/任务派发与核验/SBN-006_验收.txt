@@ -1,0 +1,23 @@
+SBN-006 验收
+验收：2026-09-30 00:30:00（云端主会话）
+对象：task/SBN-006 @ 051bd2e（内容主提交 626a5b5）
+结论：PASS → 合并进 neoforge-1.21.1
+
+V1 改动清单：c0a63b4..051bd2e 的 28 个 .java（24 消息 + BlueprintFileLogger + BlueprintNetwork + 主类 + 测试）与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 48 进 48 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR）；A4 云端自跑 grep：network\、server\、log\ 无任何客户端 / gui 引用；
+   注释里无 SB-TODO( 字样（K10）—— 通过。
+V3 25 个搬迁文件 diff -w：滤掉口径内样板后，残差只有：CHANNEL.send → sendToPlayer / sendToAllPlayers、
+   MaterialKey.of / buildDisplayStack 补 player.registryAccess()、C2S_RequestMaterialSpaceMessage 直读 NBT → SpatialBlueprintItem.getBlueprintId、
+   ForgeConfigSpec → ModConfigSpec（S2C_ConfigValuesMessage）、Item#getMaxStackSize → ItemStack#getMaxStackSize（报告出入 2）、S2C 客户端体打桩。
+   decode 上限 / 权限判定关键字逐文件计数与 1.20.1 全部相等（ApplyConfig 10、ConfigValues 7、RequestBlueprintMaterials 4、Delete 3 等）。
+   S2C_ConfigSyncMessage 的 handleClient 只写本类 static 字段（同 IllegalBlocksList 先例），不打桩合理。
+   BlueprintNetwork 只多 24 条注册与 sendToAllPlayers；BlueprintFileLogger.init 在 commonSetup（与 1.20.1 同位置），关服 close 挂 NeoForge.EVENT_BUS —— 通过。
+V4 32 条注册（18 C2S / 14 S2C）逐条与 1.20.1 BlueprintNetwork 的 c2s / s2c 归类比对，0 处不一致 —— 通过。
+V5 SB-TODO( 实数 35 = 29 − 1（主类 FileLogger）+ 7（S2C 客户端体 P5）—— 通过。
+V6 变异复核（K7）：
+   C2S_ApplyConfigMessage:114 非 OP 判定临时短路 → t05 失败（非 OP 被放行、回 saved）；
+   C2S_RenameBlueprintMessage:76 canManageBlueprint 临时短路 → t06 失败「expected S2C_OperationResult」；两处均已还原 —— 通过。
+
+报告「任务书出入」1～3 接受（2：1.21 最大堆叠在栈上；3：GameTest 服 op-permission-level = 0，测试直接写 ServerOpListEntry 等级 4）。
+遗留（不阻塞）：S2C 客户端处理打桩，P5 前联机时客户端静默忽略；C2S_ReloadConfigMessage 按任务书留 P4。

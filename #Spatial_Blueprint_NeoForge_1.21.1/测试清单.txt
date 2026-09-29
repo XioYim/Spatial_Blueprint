@@ -261,3 +261,39 @@ A4. grep 门禁（必做）
     结果：[✓] 全部通过
 
 【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+六、SBN-006 轻量消息一 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 22:20:00 · 测于 2026-09-29 22:06:41
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 48 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7）
+    预期：48 进 48 出全过
+    实际：Running test batch 'defaultBatch:0' (48 tests)... [++++++++++++++++++++++++++++++++++++++++++++++++] All 48 required tests passed :)
+    t01 32 个 payload ID 命名 + 互不重复（24 新 + 8 旧）
+    t02 24 个消息编码往返字节逐字相等
+    t03 上限 6 组：4 组超限抛 DecoderException、2 组 Math.min 截断
+    t04 物品状态 handler + 三条负例
+    t05 ApplyConfig 权限 / 合法值 / 越界值三路径
+    t06 蓝图库归属（非主人被拒、主人成功）
+    t07 材料存入 + 回推 sync
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (7.236s)；RCON stop 正常退出；0 条 ERROR；18 条 WARN 全为既有/无害项；
+          [BlueprintFileLogger] Log directory 日志行 + config/spatial_blueprint/logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / NotifySound；注释 0）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。

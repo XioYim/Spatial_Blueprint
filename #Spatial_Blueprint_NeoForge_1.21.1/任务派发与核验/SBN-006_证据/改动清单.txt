@@ -1,0 +1,64 @@
+SBN-006 改动清单（V1 两向比对 + A4 门禁）
+基线：c0a63b4（task/SBN-006 任务书提交，自 neoforge-1.21.1 @ b902f56 拉出）
+时间：2026-09-29 22:15 左右
+
+一、git 实际改动（对照任务书第二节允许清单）：
+新 network/ 下 24 个消息（物品状态 6 / 配置 6 / 蓝图库 7 / 材料空间 5，路径与 1.20.1 一一对应）
+新 log/BlueprintFileLogger.java
+改 network/BlueprintNetwork.java（追加 24 条注册 + sendToAllPlayers；类注释补发包封装一句）
+改 SpatialBlueprintMod.java（commonSetup 接 BlueprintFileLogger.init；NeoForge.EVENT_BUS 监听 ServerStoppingEvent → close()；删 SB-TODO(P4) FileLogger）
+新 gametest/SBN006Tests.java
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-006_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-006_证据/（编译.txt、GameTest.txt、改动清单.txt、服务端.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-006 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（追加「六、SBN-006 轻量消息一」）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+通用经验副本：三方比对 A=C=B 逐字相同（10C89E19…），未动。
+
+二、两向比对结论：允许清单 → 实际全部命中；实际 → 允许清单无清单外文件。
+run/ 残留已删。两向一致。
+
+三、A4 grep 门禁（必做）：
+命令：Get-ChildItem network\ server\ log\ 下全部 .java → Select-String
+  'net\.minecraft\.client|com\.xioyim\.spatialblueprint\.client|com\.xioyim\.spatialblueprint\.gui|NotifySound'
+结果：0 命中。SB-TODO 示例也不在注释里（K10，0 命中）。
+（network 下的 "client" 字面量只有 playToClient 方法名，非客户端类引用。）
+
+四、24 个 payload 的 ID 与方向（注册处 BlueprintNetwork.java:98-146）：
+C2S（16）：
+  set_point_message · ClearPointsMessage
+  clear_points_message · ClearPointsMessage
+  set_blueprint_name_message · SetBlueprintNameMessage
+  update_offset_message · UpdateOffsetMessage
+  update_settings_message · UpdateSettingsMessage
+  c2s_project_range_point_message · C2S_ProjectRangePointMessage
+  c2s_request_config_message · C2S_RequestConfigMessage
+  c2s_apply_config_message · C2S_ApplyConfigMessage
+  c2s_request_library_message · C2S_RequestLibraryMessage
+  c2s_rename_blueprint_message · C2S_RenameBlueprintMessage
+  c2s_convert_blueprint_message · C2S_ConvertBlueprintMessage
+  c2s_set_withdraw_property_message · C2S_SetWithdrawPropertyMessage
+  c2s_delete_blueprint_message · C2S_DeleteBlueprintMessage
+  c2s_request_material_space_message · C2S_RequestMaterialSpaceMessage
+  c2s_material_deposit_message · C2S_MaterialDepositMessage
+  c2s_request_blueprint_materials_message · C2S_RequestBlueprintMaterialsMessage
+S2C（8）：
+  s2c_config_sync_message · S2C_ConfigSyncMessage
+  s2c_config_values_message · S2C_ConfigValuesMessage
+  s2c_config_perm_message · S2C_ConfigPermMessage
+  s2c_open_config_message · S2C_OpenConfigMessage
+  s2c_library_sync_message · S2C_LibrarySyncMessage
+  s2c_void_bag_sync_message · S2C_VoidBagSyncMessage
+  s2c_material_space_sync_message · S2C_MaterialSpaceSyncMessage
+  s2c_blueprint_materials_message · S2C_BlueprintMaterialsMessage
+方向与 1.20.1 BlueprintNetwork.register 的 c2s / s2c 归类逐条一致。
+
+五、本批 decode 上限清单（语义：抛出 / 截断）：
+  C2S_ApplyConfigMessage.java:80/83/86 Math.min(MAX_ENTRIES=256) —— 截断（ints/bools/lists 计数）
+  C2S_ApplyConfigMessage.java:90 Math.min(65536) —— 截断（单个列表元素数）
+  S2C_ConfigValuesMessage.java:90/93/96/100 checkedCount 4096 —— 抛出 DecoderException
+  S2C_LibrarySyncMessage.java:97 checkedCount 65536 —— 抛出
+  S2C_MaterialSpaceSyncMessage.java:149/155 checkedCount 65536 —— 抛出
+  S2C_VoidBagSyncMessage.java:89 checkedCount 65536 —— 抛出
+  S2C_BlueprintMaterialsMessage.java:59 Math.min(n, 300) —— 截断
+  C2S_RequestBlueprintMaterialsMessage.java:92 Math.min(MAX_ENTRIES=300, size) —— 发送侧截断（非 decode）

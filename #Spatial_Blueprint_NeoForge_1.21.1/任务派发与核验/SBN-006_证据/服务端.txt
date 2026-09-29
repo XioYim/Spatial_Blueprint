@@ -1,0 +1,21 @@
+SBN-006 专服冒烟证据（A3，必做）
+方式：run\ 预置 eula.txt 与 server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询日志到 Done，
+再用 RCON 发 `stop`，等待进程正常退出。未强杀进程树。
+
+关键日志（run/server-run.log 摘录，全文随 run/ 删除）：
+  [22:06:24] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: [BlueprintFileLogger] Log directory: D:\...\run\config\spatial_blueprint\logs
+  [22:06:24] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: Spatial Blueprint mod loaded!
+  [22:06:26] [main/INFO] [minecraft/RecipeManager]: Loaded 1291 recipes
+  [22:06:35] [Server thread/INFO] [minecraft/DedicatedServer]: Done (7.236s)! For help, type "help"
+  [22:06:40] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+  [22:06:41] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+
+BlueprintFileLogger：init 按 1.20.1 建出 config/spatial_blueprint/logs 目录（日志行见上；该目录只在实际写
+日志时才创建文件，本次冒烟无操作故目录为空，属 1.20.1 既有行为）。
+目录清点（删除前）：config/spatial_blueprint 下 create / dimensional / engineering / logs / project /
+projections / projects / reward / templates 与两份 toml 均在。
+
+ERROR 统计：0 条（排除 Gradle 依赖扫描里 jar 路径含 error 字样的 DEBUG 行）。
+WARN 统计：18 条，全部为既有/无害项（配置 correction 7、命令歧义 5、offline 提示 4、assets URL 2）。
+run/ 已在取证后整目录删除。

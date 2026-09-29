@@ -1,0 +1,167 @@
+SBN-006 · P3b-1 轻量消息（物品状态 / 配置 / 蓝图库 / 材料空间，24 个）
+派发：2026-09-29 23:40:00（云端主会话）
+分支：task/SBN-006（从 neoforge-1.21.1 @ b902f56 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-006 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、C1、C2、C12、C14、C15；迁移计划书.md 第五节 D4 / D5；
+network/BlueprintNetwork.java 的类注释（改写口径全文）。1.20.1 源码：git show origin/forge-1.20.1:<路径>。
+以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3 调整为四段（按引用簇；云端逐文件去掉注释后查过依赖，本任务 24 个消息只互相引用或引用已迁的类）：
+  SBN-005（P3a，已完成）：骨架 + 蓝图传输 8 个
+  SBN-006（本任务，P3b-1）：物品状态 6 + 配置 6 + 蓝图库 7 + 材料空间 5 = 24 个，另搬 log/BlueprintFileLogger
+  SBN-007（P3b-2）：次元袋 / 传送 / 身份 / 预览 / 冷却 / 项目只读等其余轻量消息
+  SBN-008（P3c）：捕获 / 放置 / 上传 / 项目写操作等带大段服务端逻辑的消息（与 P4 交界）
+
+本任务的 24 个（1.20.1 同路径）：
+  物品状态：SetPointMessage、ClearPointsMessage、SetBlueprintNameMessage、UpdateOffsetMessage、UpdateSettingsMessage、C2S_ProjectRangePointMessage
+  配置：C2S_RequestConfigMessage、C2S_ApplyConfigMessage、s2c/S2C_ConfigSyncMessage、s2c/S2C_ConfigValuesMessage、s2c/S2C_ConfigPermMessage、s2c/S2C_OpenConfigMessage
+  蓝图库：C2S_RequestLibraryMessage、S2C_LibrarySyncMessage、C2S_RenameBlueprintMessage、C2S_ConvertBlueprintMessage、C2S_SetWithdrawPropertyMessage、
+         C2S_DeleteBlueprintMessage、S2C_VoidBagSyncMessage
+  材料空间：C2S_RequestMaterialSpaceMessage、S2C_MaterialSpaceSyncMessage、C2S_MaterialDepositMessage、C2S_RequestBlueprintMaterialsMessage、
+           s2c/S2C_BlueprintMaterialsMessage
+**不含 C2S_ReloadConfigMessage**：它的 doReload 用到 FML 4 已不公开的 ConfigTracker 内部（configSets 变包私有，J38），
+要重新设计「从磁盘重读配置」的做法；与调用同一方法的 /sb reload 命令一起放 P4。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  network/ 与 network/s2c/ 下第一节列出的 24 个文件（1.20.1 同路径）
+  新  log/BlueprintFileLogger.java                                              ← 1.20.1 同路径（三.4）
+  改  network/BlueprintNetwork.java                                             ← 只加 24 条注册 + sendToAllPlayers（三.1）
+  改  SpatialBlueprintMod.java                                                  ← 三.5
+  新  gametest/SBN006Tests.java
+
+交接件（规程允许范围）：SBN-006_报告.txt、SBN-006_证据\、开发日志.md 文末「## SBN-006 执行记录」、
+测试清单.txt 追加「六、SBN-006 轻量消息一」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（SBN-001～005 的通过项含 SBN-005 的 8 个消息、物品类、gradle、资源、待办、记忆、联动手册、迁移计划书）。
+明确不在本任务：C2S_ReloadConfigMessage（P4）、第一节以外的消息（SBN-007 / 008）、客户端缓存 / 界面（P5 / P6）。
+若某个消息实测引用了第二节以外、尚未迁移的类：该调用按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；只按 BlueprintNetwork 类注释的改写口径（记忆 C14）改写。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork
+   a. register 里追加 24 条：C2S 一律 playToServer、S2C 一律 playToClient（方向以 1.20.1 BlueprintNetwork.register 里 c2s / s2c 的归类为准）。
+   b. 新增 public static void sendToAllPlayers(CustomPacketPayload payload) → PacketDistributor.sendToAllPlayers（J36）；
+      替换 1.20.1 的 CHANNEL.send(PacketDistributor.ALL.noArg(), …)。类注释里的「发包一律走…」那句把它补进去。其余零改动。
+
+2. 本批补充口径（C14 之外）
+   a. 物品数据：消息里凡直接读写物品 NBT（stack.getTag() / getOrCreateTag()）的，一律改走物品类的 public static 访问器或
+      SpatialBlueprintComponents（记忆 C12）；访问器已有就用访问器。
+   b. 材料键：MaterialKey.of(stack) → MaterialKey.of(stack, player.registryAccess())（SBN-003 已改签名）；
+      MaterialList.buildDisplayStack / getDisplayStack / MaterialSpace.displayStack 同理补 provider。
+   c. 配置：ForgeConfigSpec.* → ModConfigSpec.*（SBN-001 已迁 ConfigRegistry，J37）；ConfigValue#save / set / get 名字不变（J37）。
+   d. FriendlyByteBuf 的 writeBlockPos / readBlockPos / writeNbt / readNbt 在 1.21 仍在（J36），原样用。
+   e. S2C：handle 体只要引用了客户端类（client / gui 包、net.minecraft.client.*、NotifySound 客户端方法）就整体打桩 SB-TODO(P5)；
+      只写本类 static 字段、不碰客户端类的（先例 S2C_IllegalBlocksListMessage）原样保留。
+      S2C 类里服务端用的构造 / 静态工厂（如 fromConfig、sendTo）原样保留，内部发包改走封装。
+
+3. 各簇要点（以 1.20.1 源码为准，这里只点风险处）
+   a. 物品状态 6 个：服务端改的是物品组件，改完的同步沿用 1.20.1 的写法（ItemSyncUtil 等）。距离 / 权限 / 手持判定原样。
+   b. 配置：C2S_ApplyConfigMessage 的 MAX_ENTRIES、非 OP 拒绝、applyInt / applyBool / applyList 的计数与 save、
+      「改了 BlueprintConfig → sendToAllPlayers(S2C_ConfigSyncMessage.fromConfig())」「改了替换表 → GeneratedSubstitutionsConfig save + invalidateCache」原样。
+      S2C_ConfigValuesMessage 的客户端镜像（ClientConfigMirror）打桩；服务端组包用 ConfigRegistry.ints / bools / lists（已是 ModConfigSpec 类型）。
+   c. 蓝图库：改名 / 转换 / 取回属性 / 删除 的 canManageBlueprint（或 1.20.1 的等价判定）原样；删除里的 BlueprintFileLogger 调用原样。
+   d. 材料空间：C2S_MaterialDepositMessage 的扣背包 → 写 MaterialSpace → 回推 S2C_MaterialSpaceSyncMessage 顺序原样；
+      S2C_MaterialSpaceSyncMessage 的 writeNbt / readNbt 与计数上限原样。
+
+4. log/BlueprintFileLogger：原样搬；FMLPaths 换 net.neoforged.fml.loading.FMLPaths（SBN-001 已用）；只改 1.21 API 残差（若有）。
+
+5. 主类
+   按 1.20.1 接上 BlueprintFileLogger.init()（1.20.1 在 commonSetup 里调）与关服 close()：
+   NeoForge.EVENT_BUS.addListener(ServerStoppingEvent 的监听 → BlueprintFileLogger.close())（J36）；
+   删掉 SB-TODO(P4): FileLogger 那一条。其余 SB-TODO 不动。
+
+========================================================
+四、取证（云端 2026-09-29 已 javap；loader-4.0.44 / neoforge-21.1.252-merged）
+========================================================
+
+  J36 PacketDistributor.sendToAllPlayers(CustomPacketPayload, …)；FriendlyByteBuf#writeBlockPos / readBlockPos / writeNbt(Tag) / readNbt()；
+      net.neoforged.neoforge.event.server.ServerStoppingEvent；NeoForge.EVENT_BUS
+  J37 ModConfigSpec.ConfigValue#get / set / save / clearCache
+  J38 net.neoforged.fml.config.ConfigTracker：configSets / configsByMod / fileMap 均为包私有字段，无公开 getter；
+      ModConfig#getLoadedConfig() → IConfigSpec.ILoadedConfig#config() / save()；ModConfigSpec#afterReload() —— 供 P4 设计 reload 用，本任务不用。
+
+========================================================
+五、测试（新格式数据由真实对象产生；伪造 / 越界包是唯一允许手写处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～005 的 41 条照旧全过。
+    t01_registration         24 个 payload 的 TYPE.id() 符合命名规则（类名小写 snake_case），且与 SBN-005 的 8 个合计 32 个 ID 互不重复；
+                             方向清单写进证据（C2S / S2C 各多少条，与 1.20.1 c2s / s2c 归类逐条一致）。
+    t02_codecRoundTrip       24 个各造一条真实实例（列表 / Map 型字段至少各一项；MaterialSpaceSync 带真实 CompoundTag；LibrarySync 带固定坐标项）
+                             → STREAM_CODEC 编码 → 解码 → 再编码，字节逐字相等。
+    t03_decodeGuards         本批里所有 decode 带上限的（ApplyConfig 的 MAX_ENTRIES、列表 / Map 计数、checkedCount 调用处等，逐个列进报告），
+                             各手写一个越界包：断言按 1.20.1 语义处理（抛 DecoderException 的抛；Math.min 截断的截断）。
+    t04_itemStateHandlers    假玩家（FakePlayerFactory.get + 新 GameProfile）主手持对应蓝图：SetPoint / ClearPoints / SetBlueprintName / UpdateOffset /
+                             UpdateSettings / ProjectRangePoint 各走一次 handleServer → 物品组件按 1.20.1 语义变化；
+                             至少一条负例（1.20.1 源码里的距离 / 手持 / 权限判定之一）→ 组件不变。
+    t05_applyConfig          非 OP 假玩家 → sink 收到 S2C_OperationResult(spatial_blueprint.config.error.no_permission)、配置值不变；
+                             OP 假玩家（server.getPlayerList().op(profile)，finally deop）改一个 int 项（合法值）→ 值生效 + 收到 S2C_ConfigValuesMessage；
+                             越界值 → 按 applyInt 语义计为 rejected、回包 saved_partial。finally 把改过的配置值恢复原值再 save。
+    t06_libraryOwnership     BlueprintStorage.save 一份主人 = 假玩家 A 的蓝图：假玩家 B（非 OP）改名 / 删除 → 按 1.20.1 语义被拒、文件与名称不变；
+                             A 改名成功（文件里 name 变化）、A 删除成功（findFile 为 null）。测试文件 finally 清理。
+    t07_materialDeposit      假玩家背包放真实物品（石头 + 一把附魔剑）→ C2S_MaterialDepositMessage.handleServer → MaterialSpace 里对应键
+                             （MaterialKey.of(stack, provider)）计数增加、背包相应减少，sink 收到 S2C_MaterialSpaceSyncMessage；
+                             C2S_RequestMaterialSpaceMessage 回 S2C_MaterialSpaceSyncMessage。
+    测试 finally 恢复 fakePlayerSink、配置、op 状态，删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR；logs 目录下 BlueprintFileLogger 的日志文件按 init 建出（或说明 1.20.1 的建出条件）。
+A4  grep 门禁（必做）：network\、server\、log\ 下无 net.minecraft.client / 本 mod client / gui 引用（import 与全限定名都算）；
+    SB-TODO 示例不得出现在注释里（K10）。
+
+【手测】无。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  25 个搬迁文件与 1.20.1 源 diff -w 残差只有口径内写法与三.2 的补充口径、S2C 客户端体打桩；上限常量与 decode 校验一个不少；
+    BlueprintNetwork 只多 24 条注册与 sendToAllPlayers。
+V4  方向与 1.20.1 逐条一致；A4 为空。
+V5  SB-TODO 实数 = 29 − 1（主类 FileLogger）+ 本任务新桩，逐条列出。
+V6  变异复核（云端验收时做）：C2S_ApplyConfigMessage 的非 OP 判定与 C2S_RenameBlueprintMessage 的归属判定各临时短路一次 → t05 / t06 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-006 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按簇分组）
+三、网络实测：24 个 payload 的 ID 与方向清单；本批 decode 上限清单（file:line · 语义：抛出 / 截断）
+四、测试覆盖：A1～A4；t01～t07；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（配置同步链路：ApplyConfig → ConfigSync 广播 → 客户端镜像打桩后的表现；材料空间回推）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-006』」。

@@ -33,7 +33,8 @@ import java.util.function.BiConsumer;
  *       调 public static 的 handleServer（测试可直接调）；去掉 enqueueWork / setPacketHandled / getSender 判空。</li>
  *   <li>S2C：payload 类里<b>不许</b>出现任何客户端类引用（1.21 不按 @OnlyIn 剥离代码，专服加载即崩）；
  *       客户端处理体整体换成一条 SB-TODO（P5）占位。</li>
- *   <li>发包一律走本类的 {@link #sendToPlayer} / {@link #sendToServer}，不直接调 PacketDistributor。</li>
+ *   <li>发包一律走本类的 {@link #sendToPlayer} / {@link #sendToServer} / {@link #sendToAllPlayers}，
+ *       不直接调 PacketDistributor。</li>
  * </ul>
  *
  * <p>1.21 按 payload ID 区分消息，注册顺序无关；但增删 payload / 改 wire format 仍须 bump
@@ -69,6 +70,11 @@ public class BlueprintNetwork {
         PacketDistributor.sendToServer(payload);
     }
 
+    /** 服务端 → 全部玩家发包统一封装（替换 1.20.1 的 PacketDistributor.ALL.noArg()）。 */
+    public static void sendToAllPlayers(CustomPacketPayload payload) {
+        PacketDistributor.sendToAllPlayers(payload);
+    }
+
     public static void register(RegisterPayloadHandlersEvent event) {
         // registrar 的参数就是注册器版本（等价于 new PayloadRegistrar(版本)）：协议版本 = mod 版本（D4）。
         PayloadRegistrar r = event.registrar(protocolVersion());
@@ -92,6 +98,61 @@ public class BlueprintNetwork {
                 S2C_OpenVoidScreenMessage.STREAM_CODEC, S2C_OpenVoidScreenMessage::handle);
         r.playToClient(S2C_IllegalBlocksListMessage.TYPE,
                 S2C_IllegalBlocksListMessage.STREAM_CODEC, S2C_IllegalBlocksListMessage::handle);
+
+        // ── SBN-006（P3b-1）：物品状态 / 配置 / 蓝图库 / 材料空间 24 条 ──────────
+        // 物品状态（全 C2S）
+        r.playToServer(SetPointMessage.TYPE, SetPointMessage.STREAM_CODEC, SetPointMessage::handle);
+        r.playToServer(ClearPointsMessage.TYPE, ClearPointsMessage.STREAM_CODEC, ClearPointsMessage::handle);
+        r.playToServer(SetBlueprintNameMessage.TYPE, SetBlueprintNameMessage.STREAM_CODEC, SetBlueprintNameMessage::handle);
+        r.playToServer(UpdateOffsetMessage.TYPE, UpdateOffsetMessage.STREAM_CODEC, UpdateOffsetMessage::handle);
+        r.playToServer(UpdateSettingsMessage.TYPE, UpdateSettingsMessage.STREAM_CODEC, UpdateSettingsMessage::handle);
+        r.playToServer(C2S_ProjectRangePointMessage.TYPE, C2S_ProjectRangePointMessage.STREAM_CODEC,
+                C2S_ProjectRangePointMessage::handle);
+
+        // 配置（C2S 请求 / 应用；S2C 同步 / 值 / 权限 / 打开界面）
+        r.playToServer(C2S_RequestConfigMessage.TYPE, C2S_RequestConfigMessage.STREAM_CODEC,
+                C2S_RequestConfigMessage::handle);
+        r.playToServer(C2S_ApplyConfigMessage.TYPE, C2S_ApplyConfigMessage.STREAM_CODEC,
+                C2S_ApplyConfigMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ConfigValuesMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigValuesMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigValuesMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ConfigPermMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigPermMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_ConfigPermMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_OpenConfigMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_OpenConfigMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_OpenConfigMessage::handle);
+
+        // 蓝图库
+        r.playToServer(C2S_RequestLibraryMessage.TYPE, C2S_RequestLibraryMessage.STREAM_CODEC,
+                C2S_RequestLibraryMessage::handle);
+        r.playToClient(S2C_LibrarySyncMessage.TYPE, S2C_LibrarySyncMessage.STREAM_CODEC, S2C_LibrarySyncMessage::handle);
+        r.playToServer(C2S_RenameBlueprintMessage.TYPE, C2S_RenameBlueprintMessage.STREAM_CODEC,
+                C2S_RenameBlueprintMessage::handle);
+        r.playToServer(C2S_ConvertBlueprintMessage.TYPE, C2S_ConvertBlueprintMessage.STREAM_CODEC,
+                C2S_ConvertBlueprintMessage::handle);
+        r.playToServer(C2S_SetWithdrawPropertyMessage.TYPE, C2S_SetWithdrawPropertyMessage.STREAM_CODEC,
+                C2S_SetWithdrawPropertyMessage::handle);
+        r.playToServer(C2S_DeleteBlueprintMessage.TYPE, C2S_DeleteBlueprintMessage.STREAM_CODEC,
+                C2S_DeleteBlueprintMessage::handle);
+        r.playToClient(S2C_VoidBagSyncMessage.TYPE, S2C_VoidBagSyncMessage.STREAM_CODEC, S2C_VoidBagSyncMessage::handle);
+
+        // 材料空间
+        r.playToServer(C2S_RequestMaterialSpaceMessage.TYPE, C2S_RequestMaterialSpaceMessage.STREAM_CODEC,
+                C2S_RequestMaterialSpaceMessage::handle);
+        r.playToClient(S2C_MaterialSpaceSyncMessage.TYPE, S2C_MaterialSpaceSyncMessage.STREAM_CODEC,
+                S2C_MaterialSpaceSyncMessage::handle);
+        r.playToServer(C2S_MaterialDepositMessage.TYPE, C2S_MaterialDepositMessage.STREAM_CODEC,
+                C2S_MaterialDepositMessage::handle);
+        r.playToServer(C2S_RequestBlueprintMaterialsMessage.TYPE, C2S_RequestBlueprintMaterialsMessage.STREAM_CODEC,
+                C2S_RequestBlueprintMaterialsMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_BlueprintMaterialsMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────
