@@ -1,0 +1,32 @@
+SBN-007 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-30 00:00 左右（BUILD SUCCESSFUL in 33s）
+日志关键行（当次 run/logs/latest.log 摘录；跑完已随 run/ 删除）：
+  [23:58:13.788] Running test batch 'defaultBatch:0' (50 tests)...
+  [23:58:15.484] Running test batch 'defaultBatch:1' (6 tests)...
+  [23:58:15.713] ========= 56 GAME TESTS COMPLETE IN 2.403 s ======================
+  [23:58:15.714] All 56 required tests passed :)
+用例数核对（C2）：SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 + SBN007 8 = 56。
+SBN001～006 的 48 条照旧全过。
+
+t01 53 个 payload ID 命名 + 互不重复（本批 21 + 旧 32）；namespace = spatial_blueprint。
+t02 21 个消息编码往返字节逐字相等（含 C2S_PreviewUpdateMessage origin=null 与
+    S2C_PreviewBroadcastMessage origin=null 两个分支；ProjectList / ProjectEntries /
+    ProjectStatus 带真实枚举与作者参考系尺寸）。
+t03 上限 5 组：
+    ProjectList projects=4097 → DecoderException；
+    ProjectEntries entries=4097 → DecoderException；
+    ProjectStatus entryStatuses=4097 → DecoderException；
+    RequestVoidBags targetUuid 上限 64（手写 193 字节）→ DecoderException；
+    PreviewBroadcast playerName 上限 40（手写 121 字节）→ DecoderException。
+t04 次元袋请求：B（非 OP）请求 A 的 → sink 为空；A 请求自己 → 收到 S2C_VoidBagSyncMessage；
+    OP（ServerOpListEntry 等级 4）请求 A 的 → 收到。
+t05 空置次元重置：B 持同一枚（非主人）→ not_owner、文件与物品不变；A → 成功（文件删、物品换空白、
+    收到 LibrarySync + OperationResult(true)）；世界 UUID 为别的存档 → foreign_world、文件不变。
+t06 传送：无权限假玩家 → no_permission 且坐标不变；允许的在场玩家 → 坐标到 TP 目标（30.5, 70.0, -29.5）；
+    紧接着再发 → 冷却回包；工程传送同样走不允许（no_permission）/ 允许（到起点 10.5, 64.0, 10.5）/ 冷却。
+t07 项目只读：非 OP 请求 STATION → 无回包；A（主人）请求 PRIVATE → 含该项目；B 请求 PRIVATE → 不含；
+    请求不存在项目状态 → found=false 且带 projectId。
+t08 预览广播：同一维度两只假玩家（手动加入 level.players）→ A 发预览，B 的 sink 收到广播（sender uuid 对上）；
+    B 移到 2000 格外后换来源玩家再发 → B 不再收到（正对照：范围内的 A 仍收到）。
+测试 finally 恢复 fakePlayerSink / op / TeleportPermissions / 配置类状态，删除测试文件与在场玩家；run/ 已整目录删除。

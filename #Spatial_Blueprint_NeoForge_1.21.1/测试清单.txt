@@ -297,3 +297,43 @@ A4. grep 门禁（必做）
     结果：[✓] 全部通过
 
 【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+七、SBN-007 轻量消息二 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 00:20:00 · 测于 2026-09-30 00:00:00
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行（首跑曾因 makeMockServerPlayerInLevel 弃用警告 2 条，改自建在场玩家后 0）
+    结果：[✓] 全部通过
+A2. GameTest 56 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 + SBN007 8）
+    预期：56 进 56 出全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (6 tests)
+          ========= 56 GAME TESTS COMPLETE IN 2.403 s ======================
+          All 56 required tests passed :)
+    t01 53 个 payload ID 命名 + 互不重复（21 新 + 32 旧）
+    t02 21 个消息编码往返字节逐字相等（含 origin=null 分支）
+    t03 上限 5 组：ProjectList / ProjectEntries / ProjectStatus 计数超限抛，2 个手写超长字符串抛
+    t04 次元袋：非 OP 看别人无回包 / 自己回 / OP 看别人回
+    t05 空置次元重置：非主人拒、主人成功（文件删+换空白）、外档走 foreign 分支
+    t06 传送：无权限拒 + 坐标不变；允许者移动到目标（在场玩家）、冷却拒；工程同样走允许 / 不允许
+    t07 项目只读：STATION 非 OP 无回包 / PRIVATE 主人可见他人不可见 / 不存在项目 found=false
+    t08 预览广播：范围内收到 / B 移出范围收不到
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.646s)；RCON stop 后 Stopping server + All dimensions are saved；0 条 ERROR；
+          19 条 WARN 全为既有/无害项；[BlueprintFileLogger] Log directory 日志行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          network / server / log 下 SB-TODO( 21 处全部为桩标记；全仓桩数 44 = 35 + 新 9
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
