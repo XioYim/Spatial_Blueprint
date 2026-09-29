@@ -1,7 +1,7 @@
 # Spatial Blueprint
 
-**Minecraft 1.20.1 · Forge 47.4.10**  
-作者：xioyim · 版本：2.4.0
+**Minecraft 1.21.1 · NeoForge 21.1.252**（本分支 `neoforge-1.21.1`，移植中；Forge 1.20.1 版在 `main` 分支）  
+作者：xioyim · 版本：3.0.0
 
 ---
 

@@ -1,17 +1,48 @@
-.gradle/
+### Gradle ###
+.gradle
 build/
-net/
-run/
-out/
-bin/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+### IntelliJ IDEA ###
 .idea/
+*.iws
 *.iml
+*.ipr
+out/
+!**/src/**/out/
+
+.run/
+
+### Eclipse ###
+.apt_generated
 .classpath
+.eclipse/
+.factorypath
 .project
-.settings/
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/**/bin/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Minecraft Modding ###
+run/
+!**/src/**/run/
+**/src/generated/**/.cache/
+repo/
+!**/src/**/repo/
+
+# 运行时目录（补充：第二客户端 / 数据生成），与 1.20.1 版同口径
 run-client2/
-run-server/
 run-data/
-mods/
+*.log
+run-server/
 *.bak
 Desktop.ini
