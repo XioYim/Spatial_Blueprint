@@ -1,0 +1,62 @@
+SBN-006 报告
+执行：2026-09-29 21:36:21 ～ 2026-09-29 22:25:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 21:36 | Spatial_Blueprint_NeoForge_1.21.1_20260929_213621 | 661AF199 | SBN-006 执行前 |
+
+一、完成情况（对照任务书三.1～三.5）：
+1. BlueprintNetwork：追加 24 条注册（16 C2S playToServer + 8 S2C playToClient，方向与 1.20.1 归类逐条一致）· BlueprintNetwork.java:98-146；新增 `sendToAllPlayers` → `PacketDistributor.sendToAllPlayers` · :71-75；类注释补一句发包封装 · :36。其余零改动。
+2. 24 个消息按 SBN-005 口径改写（TYPE 命名 = 类名小写 snake_case、`ofMember`、C2S 拆 handle/handleServer、S2C 客户端体打桩），补充口径：物品数据走物品类访问器 / 组件（SetPoint/ClearPoints/SetName/UpdateOffset/UpdateSettings/RangePoint/Rename/Withdraw/Delete/Deposit 等）；材料键与显示栈补 provider（MaterialKey.of(stack, player.registryAccess())、MaterialList.buildDisplayStack(key, tag, provider)、MaterialSpace.displayStack(key, provider)）；`Item#getMaxStackSize` → `ItemStack#getMaxStackSize`（MaterialDeposit）· 见改动清单与各文件。
+3. 各簇要点核对：ApplyConfig 的 MAX_ENTRIES/MAX_LIST_ELEM、非 OP 拒绝、applyInt/applyBool/applyList 计数与 save、改配置广播 ConfigSync、改替换表 save + invalidateCache 原样 · C2S_ApplyConfigMessage.java:112-170；ConfigValues 客户端镜像打桩、服务端组包用 ConfigRegistry · s2c/S2C_ConfigValuesMessage.java:45/90-100/118；蓝图库改名/转换/取回属性/删除的 canManageBlueprint 与 BlueprintFileLogger 调用原样 · C2S_RenameBlueprintMessage.java:67-90、C2S_DeleteBlueprintMessage.java:70-135；材料空间扣背包 → 写 MaterialSpace → 回推 sync 顺序原样 · C2S_MaterialDepositMessage.java:130-173。
+4. BlueprintFileLogger：原样搬，仅 FMLPaths 包名 · log/BlueprintFileLogger.java（与 1.20.1 diff -w 零残差）。
+5. 主类：commonSetup 接 `BlueprintFileLogger.init()`；`NeoForge.EVENT_BUS` 监听 `ServerStoppingEvent` → `close()`；删 SB-TODO(P4) FileLogger · SpatialBlueprintMod.java:47-66。
+
+二、改了写法的调用（1.20.1 → 1.21.1 · file:line · 依据，按簇）：
+【通用（24 个文件）】NetworkEvent/Supplier → IPayloadContext；enqueueWork/setPacketHandled/getSender → instanceof + handleServer；类声明加 CustomPacketPayload + TYPE + STREAM_CODEC（ofMember）· 各文件 · C14 / J32；CHANNEL.send(PacketDistributor.PLAYER…) → BlueprintNetwork.sendToPlayer；ALL.noArg() → sendToAllPlayers · 各文件 · J33/J36。
+【物品状态】物品 NBT 访问 → 物品类访问器 / 组件 · SetPointMessage.java:81-85、ClearPointsMessage.java:44-52、SetBlueprintNameMessage.java:56-60、C2S_ProjectRangePointMessage.java:74-86 · C12。
+【配置】ForgeConfigSpec → ModConfigSpec（ConfigValues）· S2C_ConfigValuesMessage.java:90-100 · J37；客户端镜像/界面引用 → P5 桩 · S2C_ConfigValuesMessage.java:118、S2C_ConfigPermMessage.java:46、S2C_OpenConfigMessage.java:34 · 三.2.e。
+【蓝图库】LibrarySync / VoidBagSync 的客户端缓存/界面 → P5 桩 · S2C_LibrarySyncMessage.java:152、S2C_VoidBagSyncMessage.java:107；物品数据走访问器 · C2S_SetWithdrawPropertyMessage.java（getBlueprintId/setAnimDuration）。
+【材料空间】MaterialKey.of(stack) → of(stack, provider) · C2S_MaterialDepositMessage.java:242；buildDisplayStack 补 provider · :254；Item#getMaxStackSize → ItemStack#getMaxStackSize · :258；客户端缓存 → P5 桩 · S2C_MaterialSpaceSyncMessage.java:173、S2C_BlueprintMaterialsMessage.java:70。
+【FileLogger】net.minecraftforge.fml.loading.FMLPaths → net.neoforged.fml.loading.FMLPaths · log/BlueprintFileLogger.java。
+
+三、网络实测：
+1. 24 个 payload 的 ID 与方向清单见证据/改动清单.txt（C2S 16 / S2C 8，逐条与 1.20.1 c2s/s2c 归类一致）。
+2. 本批 decode 上限清单（file:line · 语义）见证据/改动清单.txt 第五节：ApplyConfig 截断（256 / 65536）、ConfigValues 抛出（4096）、LibrarySync/MaterialSpaceSync/VoidBagSync 抛出（65536）、BlueprintMaterials 截断（300）。
+3. 注册器版本仍为 `protocolVersion()`（D4，SBN-005 已验）。
+
+四、测试覆盖：
+A1 编译 0 警告；A2 GameTest 48/48（@GameTest 实数 48；SBN006 7 条）；A3 专服 Done (7.236s) → RCON stop 正常退出、0 ERROR、BlueprintFileLogger logs 目录建出；A4 grep 门禁 0 命中。
+t01～t07 全部通过（首跑 t05/t07 三处测试自身问题修复后通过：配置 id 前缀、op-permission-level=0、存入前置）。
+证据：编译.txt、GameTest.txt、改动清单.txt（含 A4）、服务端.txt。run/ 已删。
+
+五、迁移桩清单：新 7（S2C 客户端体）+ 存量 28 = grep -rn "SB-TODO(" src 实数 35。新增逐条：
+network/s2c/S2C_ConfigValuesMessage.java:118 P5（ClientConfigMirror）
+network/s2c/S2C_ConfigPermMessage.java:46 P5（ClientConfigPermCache）
+network/s2c/S2C_OpenConfigMessage.java:34 P5（SpatialBlueprintConfigScreen）
+network/S2C_LibrarySyncMessage.java:152 P5（ClientLibraryCache）
+network/S2C_VoidBagSyncMessage.java:107 P5（VoidBagSpaceScreen）
+network/S2C_MaterialSpaceSyncMessage.java:173 P5（ClientMaterialSpaceCache）
+network/s2c/S2C_BlueprintMaterialsMessage.java:70 P5（MaterialsViewScreen）
+（S2C_ConfigSyncMessage 的 handle 只写本类 static 字段，不打桩。）
+存量 28 = SBN-005 的 29 − 主类 FileLogger 1。
+
+六、任务书出入：
+1. 三.2.a 说「物品数据一律改走访问器」；SetWithdrawProperty / Rename / Delete 等消息本来就调访问器，无改动；仅 SetPoint/ClearPoints/SetName/RangePoint 等直读 NBT 处按口径改写。
+2. 任务书未提：`C2S_MaterialDepositMessage` 的 `Item#getMaxStackSize()` 在 1.21 已移栈上（迁移计划书 API 表有，任务书未点名）——改 `ItemStack#getMaxStackSize()`。
+3. 任务书未提：GameTest 服 `op-permission-level = 0`（PlayerList.op() 不给 2 级权限），测试改直接写 ServerOpListEntry(level 4)（仅测试代码）。
+4. 无其它出入。
+
+七、双端同步自查：
+- 配置同步链路：ApplyConfig（OP）→ 写 ConfigRegistry → `sendToAllPlayers(S2C_ConfigSyncMessage.fromConfig())` + 回推 `S2C_ConfigValuesMessage` → 客户端镜像在 P5 打桩，当前客户端收包后静默忽略（不崩、不显示）；服务端权威值已落盘（save）。
+- 材料空间回推：deposit → `S2C_MaterialSpaceSyncMessage.sendFor`；请求 → sendFullAndOpen / sendFor；客户端缓存 P5 打桩，同上。
+- 方向全绑定（16 C2S / 8 S2C）；A4 门禁为空（专服加载无客户端类风险）；增删 payload / 改 wire format 须 bump mod_version（类注释已写明）。
+结论：无新增不同步点；P5 前客户端收包静默忽略属预期。
+
+八、教训同步：基线为 b902f56 的副本；原件 A、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+九、建议记入：
+1. [建议记入 K] GameTest 服的 op-permission-level = 0：PlayerList.op() 写的条目 level 0，hasPermissions(2) 仍 false；测试要直接写 ServerOpListEntry(profile, 4, false)。
+2. [建议记入 C] 配置项稳定 id = toml 完整路径（含 general. 等父段前缀）；测试/调用别手写短路径，用 ConfigRegistry.idOf(...)。
+3. [建议记入 C] 材料存入的前置：手持带材料清单的蓝图 + 清单含该键 + 非创造（C2S_MaterialDepositMessage）。
+4. [供云端问用户] P5 前 S2C 包客户端静默忽略是预期；联机握手测试留到 P5。
+
+十、需要用户做的事：无（本任务无手测项）。

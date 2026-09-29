@@ -48,7 +48,10 @@ public class SpatialBlueprintMod {
         // SB-TODO(P4): 登录登出事件（传送权限 / 存档身份 / 孤儿次元袋提示）
         // SB-TODO(P5): clientSetup（ClientModSetup）
         // SB-TODO(P4): ForagersInsightCompat（作物收获经验补丁）
-        // SB-TODO(P4): FileLogger（BlueprintFileLogger.init / 关服 close）
+
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                (net.neoforged.neoforge.event.server.ServerStoppingEvent event)
+                        -> com.xioyim.spatialblueprint.log.BlueprintFileLogger.close());
 
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::addCreative);
@@ -58,6 +61,7 @@ public class SpatialBlueprintMod {
     private void commonSetup(final FMLCommonSetupEvent event) {
         BlueprintStorage.init();
         ProjectStorage.init();
+        com.xioyim.spatialblueprint.log.BlueprintFileLogger.init();
         // 扫描注册表，生成方块替换候选到独立 toml（幂等覆盖写）
         event.enqueueWork(BlockSubstitutionGenerator::generateAndSave);
         LOGGER.info("Spatial Blueprint mod loaded!");
