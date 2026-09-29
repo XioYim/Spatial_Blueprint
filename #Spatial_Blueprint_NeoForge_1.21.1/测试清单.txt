@@ -2,7 +2,7 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-更新：2026-09-29 17:05:00
+更新：2026-09-29 17:58:00
 
 ========================================================
 【规矩】
@@ -74,6 +74,44 @@ A3. 专服冒烟
     结果：[~] 主体通过（等效覆盖）
 A4. 旧文件读取基线
     实际：未做（同 SBN-001，本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+二·补丁、SBN-002a 净化器补丁 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 17:58:00 · 测于 2026-09-29 17:43:49
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+来由：SBN-002 验收不通过（讲台书裸字符串页面漏检）+ 用户拍板一起修的三条两线共有问题。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 19 条（SBN001Tests 8 + SBN002Tests 11；临时取样 s99 已删）
+    预期：19 进 19 出全过
+    实际：Running test batch 'defaultBatch:0' (19 tests)... [+++++++++++++++++++] All 19 required tests passed :)
+    改写用例：
+      s04(c) 裸字符串页面：真实成书 NBT 的 pages 换成字符串列表（内容 = 原 raw JSON）→ ItemStack.parse 成功、
+             解析出页面带 run_command（可达性成立）→ 判危险、净化后无 Book
+      s05 过滤文本：messages 干净、命令只藏 filtered_messages → 判危险；净化后 filtered_messages 无 clickEvent、文字还在、
+             正常文本保留
+      s09 hasEquipment：空盔甲架 = false、手持剑 = true（经 scanBlueprintData 的 ScanEntity 读出）
+      s10 战利品表：stripItemContents / stripDangerousBlockNbt 后无 LootTable/LootTableSeed；KeepContents 保留；
+             components."minecraft:container_loot"（真实物品 API 序列化）经物品放置路径生效，strip 后组件不在、
+             loadWithComponents 读回 getLootTable() = null
+    首跑 s10 的可达性断言用了 loadWithComponents（不调 applyImplicitComponents）而误判，改用
+    applyComponentsFromItemStack 后通过；详见证据/GameTest.txt 与报告第四节
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（同 SBN-002，gametest 已覆盖 mod 加载链）
+    结果：[~] 主体通过（等效覆盖）
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
     结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
 
 【手测】本组无手测项（没有物品、界面、渲染）。

@@ -1,0 +1,197 @@
+﻿SBN-002a 真实 NBT 样本（证据）
+采集：2026-09-29 17:43（GameTest 服务器内，临时 s99 用例；采集后已从 SBN002Tests.java 删除）
+来源：除注明的手写拼接外，全部由真实对象序列化得到
+  - 方块实体：BlockEntity.saveWithFullMetadata(helper.getLevel().registryAccess())
+  - 物品：ItemStack.save(provider)
+格式：NbtUtils.structureToSnbt 输出的 SNBT 文本。
+样本与测试对应：
+  s04c-before / s04c-after       讲台 + 真实成书的 NBT，pages 被替换成字符串列表
+                                 （内容 = 真实页 raw 的 JSON，含 run_command；这一步拼接允许手写）；
+                                 经 stripDangerousBlockNbt 前后
+  s05-before / s05-after         真实告示牌：messages 干净，命令只藏在 filtered_messages；经 stripDangerousBlockNbt 前后
+  s10-before                     真实箱子 setLootTable 后（顶层 LootTable / LootTableSeed）
+  s10-after-items / s10-after-danger  经 stripItemContents / stripDangerousBlockNbt 后（两者都不在）
+  s10-spliced-before / s10-spliced-after  空箱子 NBT 的 components 里拼入真实物品 API 设置后序列化出的
+                                 "minecraft:container_loot" 组件（内容来自 ItemStack.save）；经 stripItemContents 前后
+
+### s04c-before
+ {
+    data: [],
+    palette: [],
+    Book: {
+        components: {
+            "minecraft:written_book_content": {
+                author: "A",
+                pages: [
+                    '{"clickEvent":{"action":"run_command","value":"/say hi"},"text":"boom"}'
+                ],
+                title: {
+                    raw: "T"
+                }
+            }
+        },
+        count: 1,
+        id: "minecraft:written_book"
+    },
+    id: "minecraft:lectern",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s04c-after
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:lectern",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s05-before
+ {
+    data: [],
+    palette: [],
+    back_text: {
+        color: "black",
+        has_glowing_text: 0b,
+        messages: [
+            '""',
+            '""',
+            '""',
+            '""'
+        ]
+    },
+    front_text: {
+        color: "black",
+        filtered_messages: [
+            '{"clickEvent":{"action":"run_command","value":"/say hi"},"text":"boom"}',
+            '""',
+            '""',
+            '""'
+        ],
+        has_glowing_text: 0b,
+        messages: [
+            '"clean"',
+            '""',
+            '""',
+            '""'
+        ]
+    },
+    id: "minecraft:sign",
+    is_waxed: 0b,
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s05-after
+ {
+    data: [],
+    palette: [],
+    back_text: {
+        color: "black",
+        has_glowing_text: 0b,
+        messages: [
+            '""',
+            '""',
+            '""',
+            '""'
+        ]
+    },
+    front_text: {
+        color: "black",
+        filtered_messages: [
+            '{"text":"boom"}',
+            '""',
+            '""',
+            '""'
+        ],
+        has_glowing_text: 0b,
+        messages: [
+            '"clean"',
+            '""',
+            '""',
+            '""'
+        ]
+    },
+    id: "minecraft:sign",
+    is_waxed: 0b,
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s10-before
+ {
+    data: [],
+    palette: [],
+    LootTable: "minecraft:chests/simple_dungeon",
+    LootTableSeed: 123L,
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s10-after-items
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s10-after-danger
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s10-spliced-before
+ {
+    data: [],
+    palette: [],
+    Items: [],
+    components: {
+        "minecraft:container_loot": {
+            loot_table: "minecraft:chests/simple_dungeon",
+            seed: 123L
+        }
+    },
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### s10-spliced-after
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+[17:39:46] [Server thread/DEBUG] [ne.ne.ne.co.ModConfigSpec/CORE]: Range value 0.0 is not within its bounds 1.0-1600000.0
+[17:39:46] [Server thread/INFO] [minecraft/GameTestServer]: [++++++++++++++++++++]
+[17:39:46] [Server thread/INFO] [minecraft/GameTestServer]: ========= 20 GAME TESTS COMPLETE IN 729.2 ms ======================
+[17:39:46] [Server thread/INFO] [minecraft/GameTestServer]: All 20 required tests passed :)
+[17:39:46] [Server thread/INFO] [minecraft/GameTestServer]: ====================================================
+[17:39:46] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+[17:39:46] [Server thread/INFO] [minecraft/MinecraftServer]: Saving players
+[17:39:46] [Server thread/INFO] [minecraft/MinecraftServer]: Saving worlds
+[17:39:46] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:overworld
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_end
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_nether
+[17:39:47] [Server thread/DEBUG] [ne.ne.ne.co.CommonHooks/WP]: Gathered mod list to write to world save Test Level
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (world): All chunks are saved
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM1): All chunks are saved
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM-1): All chunks are saved
+[17:39:47] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+[17:39:48] [Server thread/DEBUG] [ne.ne.fm.co.ConfigTracker/CONFIG]: Unloading configs type SERVER
+[17:39:48] [Server thread/INFO] [minecraft/GameTestServer]: Game test server shutting down
+
+BUILD SUCCESSFUL in 22s
+8 actionable tasks: 2 executed, 6 up-to-date
+Configuration cache entry reused.

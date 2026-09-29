@@ -1,0 +1,22 @@
+SBN-002a GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 17:43:49
+日志关键行：
+  Running test batch 'defaultBatch:0' (19 tests)...
+  [+++++++++++++++++++]
+  ========= 19 GAME TESTS COMPLETE IN 708.0 ms ======================
+  All 19 required tests passed :)
+  BUILD SUCCESSFUL in 18s
+用例数核对：SBN001Tests 8 + SBN002Tests 11 = 19，与批次条数一致；临时取样用例 s99 已删（@GameTest 实数 19）。
+
+改写用例与首跑失败记录：
+- 中途一次运行（含临时 s99，20 条）中 s10_loottablestripped 失败：
+  "spliced loot table effective before strip"——首版测试用 loadWithComponents 证明 components."minecraft:container_loot"
+  生效，但 loadWithComponents 只解析 components 进缓存、不调 applyImplicitComponents（源码
+  BlockEntity.loadWithComponents，仅 loadAdditional + 解析 components）。改为用
+  applyComponentsFromItemStack（BlockItem 放置方块时走的真实路径）证明生效后通过。
+- 其余用例首跑即过；s04c 的裸字符串页面可达性证明成立（ItemStack.parse 成功、解析出的页面带 run_command）。
+- 最终跑 19/19 全过。
+
+同启动内本 mod 运行时证据：Spatial Blueprint mod loaded!；run/ 整目录已删（Test-Path run = False）。
+测试对 live 配置的改动（s11）finally 恢复、未 save。

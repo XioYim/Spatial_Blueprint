@@ -32,6 +32,7 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.item.component.SeededContainerLoot;
 import net.minecraft.world.item.component.WrittenBookContent;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Blocks;
@@ -48,6 +49,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * SBN-002 净化器 GameTest（s01～s11）。
@@ -205,10 +207,37 @@ public class SBN002Tests {
                 Blocks.LECTERN.defaultBlockState()).saveWithFullMetadata(provider(helper));
         nbtOld.put("Book", oldBook);
         helper.assertTrue(BlueprintSanitizer.hasDangerousBlockNbt(nbtOld), "old format still caught");
+
+        // (c) 裸字符串页面攻击形状（P1）：把真实成书存出的 pages 换成字符串列表，
+        // 内容 = 原页 raw 的 JSON（含 run_command）。拼接允许手写，被拼内容是真实序列化。
+        CompoundTag bareBook = (CompoundTag) writtenBook(helper, runCommandLine()).save(provider(helper));
+        CompoundTag comps = bareBook.getCompound("components");
+        CompoundTag wbc = comps.getCompound("minecraft:written_book_content");
+        String rawJson = wbc.getList("pages", 10).getCompound(0).getString("raw");
+        ListTag barePages = new ListTag();
+        barePages.add(StringTag.valueOf(rawJson));
+        wbc.put("pages", barePages);
+        comps.put("minecraft:written_book_content", wbc);
+        // 可达性：解码器确实接受裸字符串（Filterable.codec 的 withAlternative）
+        Optional<ItemStack> reparsed = ItemStack.parse(provider(helper), bareBook);
+        helper.assertTrue(reparsed.isPresent(), "bare-string pages decodable");
+        WrittenBookContent parsedContent = reparsed.get().get(DataComponents.WRITTEN_BOOK_CONTENT);
+        helper.assertTrue(parsedContent != null && parsedContent.pages().size() == 1, "one page parsed");
+        Component parsedPage = parsedContent.pages().get(0).raw();
+        helper.assertTrue(parsedPage.getStyle().getClickEvent() != null
+                        && parsedPage.getStyle().getClickEvent().getAction() == ClickEvent.Action.RUN_COMMAND,
+                "parsed page carries run_command");
+        // 检测与净化
+        CompoundTag bareLectern = new LecternBlockEntity(BlockPos.ZERO,
+                Blocks.LECTERN.defaultBlockState()).saveWithFullMetadata(provider(helper));
+        bareLectern.put("Book", bareBook);
+        helper.assertTrue(BlueprintSanitizer.hasDangerousBlockNbt(bareLectern), "bare-string command book dangerous");
+        helper.assertFalse(BlueprintSanitizer.stripDangerousBlockNbt(bareLectern).contains("Book"),
+                "bare-string command book removed");
         helper.succeed();
     }
 
-    /** s05：真实告示牌 run_command 点击事件（判危险 + 净化留字去事件）。 */
+    /** s05：真实告示牌 run_command 点击事件 + 过滤文本（P2：filtered_messages 也检测、也净化）。 */
     @GameTest(template = "empty")
     public static void s05_signCommand(GameTestHelper helper) {
         SignBlockEntity sign = new SignBlockEntity(BlockPos.ZERO, Blocks.OAK_SIGN.defaultBlockState());
@@ -220,6 +249,19 @@ public class SBN002Tests {
         CompoundTag stripped = BlueprintSanitizer.stripDangerousBlockNbt(nbt);
         String msg0 = stripped.getCompound("front_text").getList("messages", 8).getString(0);
         helper.assertTrue(msg0.contains("boom") && !msg0.contains("clickEvent"), "text kept, event gone");
+
+        // 过滤文本路径：正常文本干净，命令只藏在 filtered_messages
+        SignBlockEntity sign2 = new SignBlockEntity(BlockPos.ZERO, Blocks.OAK_SIGN.defaultBlockState());
+        sign2.setLevel(helper.getLevel());
+        sign2.setText(sign2.getText(true).setMessage(0, Component.literal("clean"), runCommandLine()), true);
+        CompoundTag nbt2 = sign2.saveWithFullMetadata(provider(helper));
+        helper.assertTrue(nbt2.getCompound("front_text").contains("filtered_messages"), "filtered_messages present");
+        helper.assertTrue(BlueprintSanitizer.hasDangerousBlockNbt(nbt2), "filtered command dangerous");
+        CompoundTag stripped2 = BlueprintSanitizer.stripDangerousBlockNbt(nbt2);
+        String fm0 = stripped2.getCompound("front_text").getList("filtered_messages", 8).getString(0);
+        helper.assertTrue(fm0.contains("boom") && !fm0.contains("clickEvent"), "filtered text kept, event gone");
+        String m0 = stripped2.getCompound("front_text").getList("messages", 8).getString(0);
+        helper.assertTrue(m0.contains("clean"), "clean normal text kept");
         helper.succeed();
     }
 
@@ -291,7 +333,7 @@ public class SBN002Tests {
         helper.succeed();
     }
 
-    /** s09：盔甲架槽位实际形状 + hasEquipment 记录（只记录方向）+ 手持非法判定。 */
+    /** s09：盔甲架槽位实际形状 + hasEquipment 判定（P4 修正后断言）+ 手持非法判定。 */
     @GameTest(template = "empty")
     public static void s09_armorStandEquipment(GameTestHelper helper) {
         ArmorStand empty = new ArmorStand(EntityType.ARMOR_STAND, helper.getLevel());
@@ -305,6 +347,7 @@ public class SBN002Tests {
         d0.entities.add(new BlueprintData.EntityEntry(0, 0, 0, (byte) 9, "minecraft:armor_stand", n0));
         BlueprintSanitizer.UploadScan scan0 = BlueprintSanitizer.scanBlueprintData(d0, 8192L, 8);
         helper.assertTrue(scan0.droppedEntities().size() == 1, "facing 9 dropped");
+        helper.assertFalse(scan0.droppedEntities().get(0).hasEquipment(), "empty stand hasEquipment=false");
 
         ArmorStand armed = new ArmorStand(EntityType.ARMOR_STAND, helper.getLevel());
         armed.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
@@ -314,6 +357,7 @@ public class SBN002Tests {
         d1.entities.add(new BlueprintData.EntityEntry(0, 0, 0, (byte) 9, "minecraft:armor_stand", n1));
         BlueprintSanitizer.UploadScan scan1 = BlueprintSanitizer.scanBlueprintData(d1, 8192L, 8);
         helper.assertTrue(scan1.droppedEntities().size() == 1, "armed facing 9 dropped");
+        helper.assertTrue(scan1.droppedEntities().get(0).hasEquipment(), "armed stand hasEquipment=true");
 
         ArmorStand eggStand = new ArmorStand(EntityType.ARMOR_STAND, helper.getLevel());
         eggStand.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.ZOMBIE_SPAWN_EGG));
@@ -324,28 +368,54 @@ public class SBN002Tests {
         helper.succeed();
     }
 
-    /** s10：战利品表键名与两条 strip 之后是否仍在（只记录）。 */
+    /** s10：战利品表（P3：两条 strip 清除、KeepContents 保留、components 夹带路径读回为 null）。 */
     @GameTest(template = "empty")
-    public static void s10_lootTableRecorded(GameTestHelper helper) {
+    public static void s10_lootTableStripped(GameTestHelper helper) {
         ChestBlockEntity chest = new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
         chest.setLootTable(ResourceKey.create(Registries.LOOT_TABLE,
                 ResourceLocation.parse("minecraft:chests/simple_dungeon")));
         chest.setLootTableSeed(123L);
         CompoundTag nbt = chest.saveWithFullMetadata(provider(helper));
-        boolean topLoot = nbt.contains("LootTable");
-        boolean compLoot = nbt.contains("components", 10)
-                && nbt.getCompound("components").contains("minecraft:container_loot");
-        helper.assertTrue(topLoot || compLoot, "loot recorded somewhere");
+        helper.assertTrue(nbt.contains("LootTable") && nbt.contains("LootTableSeed"), "loot recorded");
 
         CompoundTag afterItems = BlueprintSanitizer.stripItemContents(nbt);
+        helper.assertFalse(afterItems.contains("LootTable") || afterItems.contains("LootTableSeed"),
+                "stripItemContents clears loot");
         CompoundTag afterDanger = BlueprintSanitizer.stripDangerousBlockNbt(nbt);
+        helper.assertFalse(afterDanger.contains("LootTable") || afterDanger.contains("LootTableSeed"),
+                "stripDangerousBlockNbt clears loot");
+        CompoundTag afterKeep = BlueprintSanitizer.stripDangerousBlockNbtKeepContents(nbt);
+        helper.assertTrue(afterKeep.contains("LootTable") && afterKeep.contains("LootTableSeed"),
+                "keepContents keeps loot");
+
+        // components."minecraft:container_loot" 夹带路径：用真实 API 设置后由 ItemStack.save 序列化出的组件
+        ItemStack carrier = new ItemStack(Items.CHEST);
+        carrier.set(DataComponents.CONTAINER_LOOT, new SeededContainerLoot(
+                ResourceKey.create(Registries.LOOT_TABLE,
+                        ResourceLocation.parse("minecraft:chests/simple_dungeon")), 123L));
+        CompoundTag carrierNbt = (CompoundTag) carrier.save(provider(helper));
+        helper.assertTrue(carrierNbt.getCompound("components").contains("minecraft:container_loot"),
+                "container_loot component serialized");
+
+        CompoundTag spliced = chestWith(helper).saveWithFullMetadata(provider(helper));
+        spliced.put("components", carrierNbt.getCompound("components").copy());
+        // 可达性：该组件经真实物品放置路径生效（BlockItem 放置方块时走 applyComponentsFromItemStack）
+        ChestBlockEntity fromItem = new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
+        fromItem.applyComponentsFromItemStack(carrier);
+        helper.assertTrue(fromItem.getLootTable() != null, "component effective via item placement path");
+        // loadWithComponents 只解析 components 进缓存，不调 applyImplicitComponents（那是物品放置路径）；
+        // 这里读回为 null，仍按 fail-closed 清掉该组件（防其它加载路径与将来版本）。
+        ChestBlockEntity reach = new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
+        reach.loadWithComponents(spliced, provider(helper));
+        helper.assertTrue(reach.getLootTable() == null, "loadWithComponents does not apply implicit components");
+
+        CompoundTag splicedStripped = BlueprintSanitizer.stripItemContents(spliced);
+        helper.assertFalse(splicedStripped.contains("components", 10)
+                        && splicedStripped.getCompound("components").contains("minecraft:container_loot"),
+                "container_loot removed");
         ChestBlockEntity back = new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
-        back.loadWithComponents(afterDanger, provider(helper));
-        helper.assertTrue((afterItems.contains("LootTable") || (afterItems.contains("components", 10)
-                && afterItems.getCompound("components").contains("minecraft:container_loot")))
-                && (afterDanger.contains("LootTable") || (afterDanger.contains("components", 10)
-                && afterDanger.getCompound("components").contains("minecraft:container_loot"))),
-                "loot survives both strips");
+        back.loadWithComponents(splicedStripped, provider(helper));
+        helper.assertTrue(back.getLootTable() == null, "loot table null after strip");
         helper.succeed();
     }
 
