@@ -1,0 +1,105 @@
+SBN-002a · 净化器补丁：裸字符串书页漏检 + 告示牌过滤文本 + 战利品表 + 盔甲架装备判定
+派发：2026-09-29 17:10:00（云端主会话）
+分支：task/SBN-002（接在 SBN-002 验收提交之后；不另开分支）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-002a 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）；先读同目录 SBN-002_验收.txt（不通过理由就是本任务的来由），再读本文件。
+SBN-002 任务书第三节、第五节 A2 的「真实序列化」硬性要求在本补丁里继续有效。以源码为准，出入写进报告。
+
+========================================================
+一、允许修改的文件
+========================================================
+
+  改  src/main/java/com/xioyim/spatialblueprint/util/BlueprintSanitizer.java
+  改  src/main/java/com/xioyim/spatialblueprint/gametest/SBN002Tests.java
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002a_报告.txt
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002a_证据/（编译.txt、GameTest.txt、改动清单.txt、nbt_样本.txt）
+  改  开发日志.md（文末追加「## SBN-002a 执行记录」）、测试清单.txt（二组里追加 / 改写本补丁的用例）、
+      云端协作规程.md（第五节同步表追加一行）、通用经验副本（只按规程第五节同步）
+
+其余一律不动，包括 SBN-002 验收列为「通过项」的那些改动。
+
+========================================================
+二、已定方案
+========================================================
+
+P1 讲台书页面（安全，必修）
+   bookPageJsons 新格式分支：不再用 getList("pages", 10)。改为取 wbc.get("pages")，是 ListTag 就逐个元素处理，不按元素类型过滤：
+   StringTag → 收字符串；CompoundTag → 收 raw、filtered（都是字符串时）。
+   旧格式分支同样改成不按类型过滤地遍历 tag.pages（字符串收、compound 收 raw / filtered），fail-closed，两个分支写法一致。
+   filtered_pages（旧）保持收全部值。
+
+P2 告示牌过滤文本（1.20.1 同有）
+   hasDangerousBlockNbt 与 applySafetyStripInPlace 里处理 front_text / back_text 的地方：
+   messages 与 filtered_messages 两个列表都检测、都净化（写法与 messages 完全相同）。filtered_messages 不存在时不新增键。
+   以真实 SignBlockEntity 设了过滤文本后存出的键名为准（1.21.1 预期 filtered_messages，JSON 字符串列表）。
+
+P3 战利品表（1.20.1 同有）
+   a. stripItemContents 与 stripDangerousBlockNbt 在已有的 remove("Items") / remove("RecordItem") 之后，追加 remove("LootTable")、remove("LootTableSeed")。
+   b. 同两处：若有 compound 键 components，从中 remove("minecraft:container_loot")（1.21 才有的夹带路径）；删完 components 为空就连 components 一起删。
+   c. stripDangerousBlockNbtKeepContents（次元蓝图，把结构搬走）**不清** LootTable —— 原地方块已被清除，战利品表跟着走不产生复制；
+      在该方法注释里补一句这个理由。
+   d. hasDangerousBlockNbt 不因 LootTable 判危险（它不是安全项，是防复制项，与容器内容同一口径：由上面两条 strip 负责）。
+
+P4 盔甲架装备判定（1.20.1 同有，只影响上传报告显示）
+   nonEmptyItemList 改为：列表里存在「非空 compound 且含字符串 id」的元素才算非空。空槽 {} 不算。其它调用点不动。
+
+========================================================
+三、测试（真实序列化要求照旧）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告。
+A2  runGameTestServer：全部通过，报告写 @GameTest 实数。
+    s04 扩充：
+      (c) 裸字符串攻击形状：取真实成书 ItemStack 存出的 NBT，把 components."minecraft:written_book_content".pages 替换成
+          字符串列表（内容 = 原来那页 raw 的 JSON 字符串，含 run_command）—— 这一步拼接允许手写。
+          先证明可达：ItemStack.parse(provider, 该 NBT) 成功，且解析出的 WrittenBookContent 第一页的点击事件是 run_command；
+          再断言：放进讲台 NBT 的 Book 后 hasDangerousBlockNbt = true，stripDangerousBlockNbt 后无 Book。
+          若 parse 失败（解码器其实不收裸值），照实记录、测试改为只断言检测结果，并在报告「任务书出入」里写明。
+    s05 扩充：真实告示牌只在过滤文本里放 run_command（正常文本干净）→ 判危险；净化后 filtered_messages 里没有 clickEvent、文字还在。
+    s09 改为断言：空盔甲架 hasEquipment = false、手持剑的 = true（通过 scanBlueprintData 的 ScanEntity 读出来，用白名单外的朝向或其它方式让它进 dropped 列表均可）。
+    s10 改为断言：真实箱子 setLootTable 后，stripItemContents / stripDangerousBlockNbt 之后无 LootTable、无 LootTableSeed；
+          stripDangerousBlockNbtKeepContents 之后两者仍在；
+          另把 components."minecraft:container_loot"（内容来自真实物品存出的组件，或 javap 核对形状后手写，报告说明用了哪种）拼进空箱子 NBT →
+          stripItemContents 后该组件不在，loadWithComponents 读回箱子 getLootTable() 为 null。
+    净化前后 NBT 写进 证据/nbt_样本.txt（s04c、s05、s10 各一份）。
+A3  可选：无。
+
+【手测】无。
+
+========================================================
+四、验收标准
+========================================================
+
+V1  改动只在第一节清单内。
+V2  0 警告、GameTest 全过（云端网络放行则复跑）。
+V3  BlueprintSanitizer 相对 4d77a0f 的 diff 只落在 P1～P4 四处 + 相应注释；SBN-002 通过项零改动。
+V4  s04c 的可达性证明成立（或按上面写明的退路处理）。
+V5  SB-TODO 实数仍为 15。
+
+========================================================
+五、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-002a 报告
+执行 / 提交 / 备份
+一、P1～P4 逐条：做了什么 + file:line
+二、真实形状：裸字符串页面能否被解码（s04c 结果）、告示牌过滤文本的实际键名
+三、测试覆盖：A1、A2（实数），s04 / s05 / s09 / s10 逐条
+四、任务书出入
+五、双端同步自查
+六、教训同步
+七、建议记入
+八、需要用户做的事
+
+推送后对用户说：「已推送，去云端说『验收 SBN-002a』」。
