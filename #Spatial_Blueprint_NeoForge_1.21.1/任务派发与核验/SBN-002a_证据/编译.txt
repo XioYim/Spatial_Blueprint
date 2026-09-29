@@ -1,0 +1,18 @@
+SBN-002a 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 17:42（BUILD SUCCESSFUL in 7s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 一次失败：s10 首版测试的「可达性」断言不成立（spliced loot table effective before strip）——
+   不是编译错，是运行时断言错；已查明 loadWithComponents 不调 applyImplicitComponents（那是物品放置路径
+   applyComponentsFromItemStack 调的），改写测试后通过。见 GameTest.txt 与报告第四节。
+2. 一次文件损坏与恢复：用 PowerShell Get-Content（按 GBK 读 UTF-8 文件）→ Set-Content 截断 s99 时，
+   把 SBN002Tests.java 的中文全部转成了乱码并截断到方法中间；用 git checkout -- 恢复为 4d77a0f 版后
+   用 Edit 工具重做全部测试改动。教训：.java 一律不用 PS 读写（见报告第七节建议记入）。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 7s
+2 actionable tasks: 1 executed, 1 up-to-date

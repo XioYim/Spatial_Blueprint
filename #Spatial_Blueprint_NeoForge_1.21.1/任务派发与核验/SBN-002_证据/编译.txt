@@ -1,0 +1,18 @@
+SBN-002 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 16:54（BUILD SUCCESSFUL in 9s）
+警告计数：0 条。方法：对构建输出全文按「源文件:行号:」（正则 .java:\d+:）统计，命中 0 行；
+中文系统输出「警告 / 注 / 错误」字样，不按英文 grep（K1）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 首次编译 2 个错误：SBN002Tests 引入 net.minecraft.world.entity.decoration.paintings.PaintingVariants，
+   实际包为 net.minecraft.world.entity.decoration.PaintingVariants（javap / 源码核对），改 import 后通过。
+2. 一次「49 个错误：需要 class、interface、enum 或 record」：用 PowerShell Set-Content 截断
+   SBN002Tests.java 时写入了 UTF-8 BOM，javac 不接受；去掉头三个字节 EF BB BF 后恢复。
+   （PS 5.1 的 Set-Content -Encoding UTF8 会带 BOM；本仓库 .java 一律 UTF-8 无 BOM。）
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 9s
+2 actionable tasks: 1 executed, 1 up-to-date

@@ -1,9 +1,14 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.GeneratedSubstitutionsConfig;
+import com.xioyim.spatialblueprint.network.s2c.S2C_IllegalBlocksListMessage;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 批量材料转换：捕获的源方块达到阈值后，整组固定产出目标物品（而非 1:1）。
@@ -71,35 +76,34 @@ public final class BulkMaterialConverter {
      * （{@code source=}）的项 —— 两处语义相同，都是「转成空气、不计入材料」。批量表优先，
      * 因为放置逻辑先查它。</p>
      */
-    // SB-TODO(P3): S2C_IllegalBlocksListMessage
-    // public static void collectConversions(Map<String, Integer> blockCounts,
-    //                                       List<S2C_IllegalBlocksListMessage.ConversionEntry> conversions,
-    //                                       List<String> freeBlocks) {
-    //     Map<String, BulkEntry> bulk = parse();
-    //     Set<String> freeSeen = new LinkedHashSet<>();
-    //
-    //     for (var e : bulk.entrySet()) {
-    //         int captured = blockCounts.getOrDefault(e.getKey(), 0);
-    //         if (captured <= 0) continue;
-    //         var rule = e.getValue();
-    //         if (rule.threshold() == 0) {
-    //             freeSeen.add(e.getKey());
-    //         } else if (captured >= rule.threshold()) {
-    //             List<S2C_IllegalBlocksListMessage.TargetItem> targets = new ArrayList<>();
-    //             for (var t : rule.targets().entrySet()) {
-    //                 targets.add(new S2C_IllegalBlocksListMessage.TargetItem(t.getKey(), t.getValue()));
-    //             }
-    //             conversions.add(new S2C_IllegalBlocksListMessage.ConversionEntry(
-    //                     e.getKey(), captured, rule.threshold(), targets));
-    //         }
-    //     }
-    //
-    //     for (var e : GeneratedSubstitutionsConfig.getBlockSubstitutions().entrySet()) {
-    //         if (e.getValue().isEmpty() && blockCounts.getOrDefault(e.getKey(), 0) > 0) {
-    //             freeSeen.add(e.getKey());
-    //         }
-    //     }
-    //
-    //     freeBlocks.addAll(freeSeen);
-    // }
+    public static void collectConversions(Map<String, Integer> blockCounts,
+                                          List<S2C_IllegalBlocksListMessage.ConversionEntry> conversions,
+                                          List<String> freeBlocks) {
+        Map<String, BulkEntry> bulk = parse();
+        Set<String> freeSeen = new LinkedHashSet<>();
+
+        for (var e : bulk.entrySet()) {
+            int captured = blockCounts.getOrDefault(e.getKey(), 0);
+            if (captured <= 0) continue;
+            var rule = e.getValue();
+            if (rule.threshold() == 0) {
+                freeSeen.add(e.getKey());
+            } else if (captured >= rule.threshold()) {
+                List<S2C_IllegalBlocksListMessage.TargetItem> targets = new ArrayList<>();
+                for (var t : rule.targets().entrySet()) {
+                    targets.add(new S2C_IllegalBlocksListMessage.TargetItem(t.getKey(), t.getValue()));
+                }
+                conversions.add(new S2C_IllegalBlocksListMessage.ConversionEntry(
+                        e.getKey(), captured, rule.threshold(), targets));
+            }
+        }
+
+        for (var e : GeneratedSubstitutionsConfig.getBlockSubstitutions().entrySet()) {
+            if (e.getValue().isEmpty() && blockCounts.getOrDefault(e.getKey(), 0) > 0) {
+                freeSeen.add(e.getKey());
+            }
+        }
+
+        freeBlocks.addAll(freeSeen);
+    }
 }

@@ -1,0 +1,29 @@
+SBN-002a 改动清单（V1 两向比对）
+基线：236500a（task/SBN-002 验收提交，含 SBN-002a 任务书）
+时间：2026-09-29 17:55 左右
+
+一、git 实际改动（对照任务书第一节允许清单）：
+改 src/main/java/com/xioyim/spatialblueprint/util/BlueprintSanitizer.java（P1～P4）
+改 src/main/java/com/xioyim/spatialblueprint/gametest/SBN002Tests.java（s04 扩 c、s05 扩过滤文本、s09 改断言、s10 改写）
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002a_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002a_证据/（编译.txt、GameTest.txt、改动清单.txt、nbt_样本.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-002a 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（二组后追加 SBN-002a 补丁组）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+通用经验副本：三方比对 A=C=B 逐字相同（10C89E19…），未动。
+
+二、两向比对结论：
+允许清单 → 实际：全部命中；实际 → 允许清单：无清单外文件。
+run/ 残留已删；临时取样用例 s99 已删（SNBT 存 nbt_样本.txt）。
+两向一致。
+
+三、BlueprintSanitizer 相对 4d77a0f 的 diff 范围（V3）：
+8 个 hunk，全部落在 P1～P4 四处 + 相应注释：
+  :454 stripItemContents 加 LootTable/LootTableSeed/container_loot 清理（P3a/b）
+  :487 hasDangerousBlockNbt 告示牌 messages + filtered_messages（P2）
+  :532 stripDangerousBlockNbt 同上加清理（P3a/b）
+  :553 KeepContents 注释补「有意不清 LootTable」（P3c）
+  :577 applySafetyStripInPlace 净化 messages + filtered_messages（P2）
+  :665/:690 bookPageJsons 改 collectPageJsons 新旧两分支不按类型过滤（P1）
+  :943 nonEmptyItemList 改判「非空 compound 含字符串 id」（P4）
+SBN-002 通过项（三.2 容器槽位、三.3 bees、三.5 展示框、三.6 试炼刷怪笼、三.8 D9、三.9 S2C record）零改动。

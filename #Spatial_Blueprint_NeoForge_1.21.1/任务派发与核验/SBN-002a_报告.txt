@@ -1,0 +1,43 @@
+SBN-002a 报告
+执行：2026-09-29 17:29:25 ～ 2026-09-29 18:05:00
+提交：bedb7c4（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 17:29 | Spatial_Blueprint_NeoForge_1.21.1_20260929_172925 | 0B288389 | SBN-002a 执行前 |
+
+一、P1～P4 逐条：
+P1 讲台书裸字符串页面（必修漏检）：bookPageJsons 两个 pages 列表（旧 tag.pages、新 components."minecraft:written_book_content".pages）都不再按元素类型过滤，统一走新私有方法 collectPageJsons（StringTag 收字符串、CompoundTag 收 raw/filtered、其它类型忽略）；filtered_pages（旧）保持收全部值 · util/BlueprintSanitizer.java:703-737
+P2 告示牌过滤文本：hasDangerousBlockNbt 的 front_text/back_text 段改为 messages 与 filtered_messages 两个列表都检测 · util/BlueprintSanitizer.java:506-522；applySafetyStripInPlace 同两个列表都净化、列表不存在时不新增键 · util/BlueprintSanitizer.java:604-626
+P3 战利品表：stripItemContents 在 remove("Items")/remove("RecordItem") 后追加 remove("LootTable")、remove("LootTableSeed")、stripContainerLootComponentInPlace · util/BlueprintSanitizer.java:450-467；stripDangerousBlockNbt 同口径 · util/BlueprintSanitizer.java:551-566；新私有方法 stripContainerLootComponentInPlace（components 里 remove("minecraft:container_loot")，清空后连 components 一起删） · util/BlueprintSanitizer.java:469-476；stripDangerousBlockNbtKeepContents 不清 LootTable，注释写明理由 · util/BlueprintSanitizer.java:580-583；hasDangerousBlockNbt 未新增 LootTable 判定（它不是安全项）
+P4 盔甲架装备判定：nonEmptyItemList 改为「列表里存在非空 compound 且含字符串 id 的元素才算非空」，空槽 {} 不算；其它调用点未动 · util/BlueprintSanitizer.java:973-981
+SBN-002 通过项零改动（容器 {slot,item}、bees、展示框 {id,count}、试炼刷怪笼、D9、S2C record）。
+
+二、真实形状：
+1. 裸字符串页面可解码（s04c 结果）：把真实成书 NBT 的 pages 换成字符串列表后，ItemStack.parse(provider, nbt) 成功、解析出的 WrittenBookContent 第一页 raw 的 clickEvent.action = RUN_COMMAND —— 解码器确实接受裸值（Filterable.codec 的 withAlternative），原实现 getList("pages", 10) 取不到该形状、整类漏检。可达性成立，无需走任务书写明的退路。
+2. 告示牌过滤文本实际键名：front_text.filtered_messages（JSON 字符串列表，与 messages 并列；真实 SignBlockEntity 设过滤文本后存出，样本 s05-before）。任务书预期一致。
+
+三、测试覆盖：
+A1 编译 BUILD SUCCESSFUL、0 警告（源文件:行号: 命中 0）。
+A2 runGameTestServer：19 进 19 出全过（SBN001Tests 8 + SBN002Tests 11，@GameTest 实数 19；708ms）；证据/GameTest.txt。
+s04（扩 c）：裸字符串可达性 + 判危险 + 净化后无 Book —— 通过。
+s05（扩过滤文本）：filtered_messages 存在、判危险、净化后事件没了文字还在、正常文本保留 —— 通过。
+s09（改断言）：空盔甲架 hasEquipment=false、手持剑 =true（经 scanBlueprintData 的 ScanEntity 读出） —— 通过。
+s10（改写）：两条 strip 后无 LootTable/LootTableSeed；KeepContents 两者仍在；container_loot 组件经物品放置路径（applyComponentsFromItemStack）生效，stripItemContents 后组件不在、loadWithComponents 读回 getLootTable()=null —— 通过。
+s04c / s05 / s10 净化前后 SNBT 存 证据/nbt_样本.txt。
+A3 未做（同 SBN-002，gametest 覆盖 mod 加载链）。A4 未做（本机无旧蓝图文件）。
+
+四、任务书出入：
+1. 任务书 P3b 说 components."minecraft:container_loot" 是「加载时被 applyImplicitComponents 设成战利品表」；实测 loadWithComponents / loadStatic 只解析 components 进缓存，不调 applyImplicitComponents —— 真正生效的是物品放置路径：BlockItem 放置时走 applyComponentsFromItemStack → applyImplicitComponents（源码 BlockEntity.java:294-318、BlockItem.java:123）。处理：清理照做（fail-closed，防其它加载路径与将来版本）；s10 的可达性改用 applyComponentsFromItemStack 证明，并加断言记录 loadWithComponents 不应用隐式组件这一事实。此点建议云端登记（1.20.1 线若同样加此清理，口径一致）。
+2. 任务书 P1 写法「旧格式分支同样改成不按类型过滤地遍历 tag.pages」——落实为两分支共用 collectPageJsons，写法一致（与任务书意思相同）。
+3. 任务书未提：s05 过滤文本在真实序列化里 filtered_messages 总是存在（SignText CODEC 编码含 filtered_messages 字段）；净化侧仍按「不存在时不新增键」处理。
+
+五、双端同步自查：本次只改服务端净化工具与测试；无网络、无客户端引用；配置未动。结论：无新增不同步点。
+
+六、教训同步：基线为 6b958f6 的副本；原件 A（本机总库）、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…，cmd 原样导出按字节复核）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+七、建议记入：
+1. [建议记入 K] .java 一律用 Edit/Write 工具读写：本次用 PS Get-Content（默认按 GBK 读 UTF-8 文件）→ Set-Content 截断，把 SBN002Tests.java 中文转乱码并截断，靠 git checkout 恢复重做；与既有「含中文 .ps1 要 BOM」互补。
+2. [建议记入 C] loadWithComponents / loadStatic 不调 applyImplicitComponents；隐式组件（如 container_loot）只在物品放置路径 applyComponentsFromItemStack 生效（BlockEntity.java:294-318）。用于可达性测试与 P4 放置逻辑设计。
+3. [建议记入 C] 1.21 成书 pages 可被解码器接受为裸字符串（Filterable withAlternative）；检查书页必须不按元素类型过滤（本次漏检根因，已修）。
+4. [建议记入 C] 告示牌过滤文本键名 front_text.filtered_messages / back_text.filtered_messages（JSON 字符串列表）。
+5. [供云端问用户] P3 清理与 P4 判定修的是「两条线共有问题」，1.20.1 线需要跟（验收记录已列「1.20.1 待跟」）。
+
+八、需要用户做的事：无（本组无手测项）。等云端验收。

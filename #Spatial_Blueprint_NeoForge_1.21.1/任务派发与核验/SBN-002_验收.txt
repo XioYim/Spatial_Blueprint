@@ -1,0 +1,38 @@
+SBN-002 验收
+验收：2026-09-29 17:05:00（云端主会话）
+对象：task/SBN-002 @ 4d77a0f（内容主提交 6b958f6）
+结论：不通过 → 同一分支补丁任务 SBN-002a（一处安全漏检 + 用户拍板一起修的三条两线共有问题）
+
+V1 改动清单两向比对：通过。da05c98...4d77a0f 与任务书第二节一致（通用经验副本未改，A→C / C→A 均 0）。
+
+V2 云端重编译：仍未能复核。maven.neoforged.net / maven.parchmentmc.org / libraries.minecraft.net / piston-meta.mojang.com 仍被环境网络策略拒绝。
+   按 SBN-001 口径审本地证据：编译.txt 0 警告；GameTest.txt 19/19；SBN002Tests @GameTest 注解实数 11（C2）。
+
+V3 diff 残差：
+   BulkMaterialConverter 与 1.20.1 源 diff 为零 —— 通过。
+   BlueprintConfig 与 SBN-001 版相比只多 trial_spawner / vault 各两处默认值 —— 通过（D9）。
+   BlueprintSanitizer 残差只落在任务书三.2～三.6 点名处 —— 范围通过，但三.4 的实现有漏洞（见下「不通过理由」）。
+
+V4 测试 NBT 来源：通过。除任务书允许的旧格式成书样本外，SBN002Tests 里的 NBT 全部来自真实 ItemStack.save / saveWithFullMetadata / Entity.save；
+   new CompoundTag() 只作 Entity.save 的容器。
+
+V5 迁移桩：通过。grep "SB-TODO(" = 15（BulkMaterialConverter −1、S2C 消息本体 +1）。
+
+V6 证据五件齐全；V7 第八节 a / b 有真实 NBT（stand-empty、loot-before / loot-after-*）。
+
+【不通过理由】
+1. 讲台书裸字符串页面漏检（安全，fail-open）。
+   bookPageJsons 读新格式用 wbc.getList("pages", 10)（util/BlueprintSanitizer.java:691 附近），只取 compound 元素。
+   而报告自己的 J11 取证写明 Filterable.codec 用 withAlternative「接受裸值」—— pages:["<JSON>", …] 这种字符串列表游戏照样解码成成书。
+   对字符串列表 getList(…, 10) 返回空表，后面的 StringTag 分支永远走不到 → 含 run_command 的讲台书原样放行。
+   s04 只测了真实序列化出的 {raw:…} 形状，没测解码器接受的另一种形状，所以没发现。
+
+【用户拍板一起修（2026-09-29），1.20.1 线同样存在，修完在功能联动手册登记「1.20.1 待跟」】
+2. 告示牌 filtered_messages 不查：开了文本过滤的玩家点告示牌时执行的是过滤版文本的点击事件，命令藏在 filtered_messages 就绕过检测。
+3. 容器 LootTable / LootTableSeed 不清：捕获没开过的战利品箱，可反复放置的蓝图每放一次都能重新生成战利品；
+   1.21 另有 components."minecraft:container_loot" 夹带路径（加载时被 applyImplicitComponents 设成战利品表）。
+4. 盔甲架 hasEquipment 恒真：空槽存 {}，列表恒 4 / 2 个元素（报告八.a 实测）。
+
+【其余通过项，补丁不许动】三.2 容器 {slot,item} 整条删、三.3 bees、三.5 展示框 {id,count}、三.6 试炼刷怪笼、三.8 D9、三.9 S2C record。
+
+报告建议记入 5 条与覆盖事故取证（报告十一.1，stash@{0} 保留）：SBN-002a 通过后一并处理。
