@@ -1,0 +1,51 @@
+SBN-001 验收
+验收：2026-09-29 15:10:00（云端主会话）
+对象：task/SBN-001 @ 36c2294（内容主提交 ad0c9b7）
+结论：PASS（V2 云端复编译待补 —— 云端环境网络策略拦截 maven.neoforged.net 等站点，见 V2）
+
+V1 改动清单两向比对：通过。
+   git diff --name-status e97d824...36c2294：java 21 新增 + SpatialBlueprintMod 1 修改、empty.nbt、报告、证据 4 件、开发日志 / 测试清单 / 规程各 1 修改。
+   与任务书第二节允许清单逐项一致，无多无少。通用经验副本未改（本轮 A→C / C→A 均 0，与报告一致）。
+
+V2 云端重编译：未能复核（非代码原因）。
+   云端 bash gradlew compileJava --rerun → BUILD FAILED：Could not GET https://maven.neoforged.net/.../neoform-runtime-2.0.31.pom，403 Forbidden。
+   代理状态：maven.neoforged.net / maven.parchmentmc.org / libraries.minecraft.net / piston-meta.mojang.com 全部被拒，services.gradle.org 通。
+   另：gradlew 在仓库里没有可执行位（Windows 提交），Linux 下要 bash gradlew 或 git update-index --chmod=+x gradlew。
+   本地证据：编译.txt BUILD SUCCESSFUL、警告 0；GameTest.txt 8 tests complete、All 8 required tests passed。网络放行后下次云端会话补跑并在本文件追加结果。
+
+V3 与 1.20.1 源 diff -w --strip-trailing-cr 残差：通过。
+   零残差 9 个：BlueprintLogger、BlueprintTransform、CaptureMode、FluidCaptureFilter、FluidDisplayMode、LitematicaCodec、SBUndoCooldown、StructureImportException、UndoRecord。
+   GeneratedSubstitutionsConfig：只有 ForgeConfigSpec→ModConfigSpec。
+   BlockSubstitutionGenerator：只有 GameData 包名（NeoForge 仍有 getBlockItemMap，报告 J7）。
+   SafeNbtIo：只有 NbtAccounter.create。
+   BlueprintData：dataVersion 字段、MinecraftDataVersion 取当前版本、NbtCompat 四处、SB-TODO(P4)，与任务书三.4 / 三.6 一致。
+   ProjectData：NbtCompat 读写 + requireNonNullElse(ZERO)，anchor 缺值回 origin 保持原语义。
+   MaterialKey / MaterialList：三处 SB-TODO(P2/D8) 与 count/Count 双读，与任务书三.7 一致。
+   BulkMaterialConverter：collectConversions 整段注释 + SB-TODO(P3)，parse 原样。
+   ConfigRegistry：除改名外只有裸数组 → List.of（报告出入 2，理由成立：消 unchecked 注，迭代顺序与行为不变）。
+
+V4 配置键名 / 默认值 / 注释：通过。BlueprintConfig 把 1.20.1 源里的 ForgeConfigSpec 换成 ModConfigSpec 后，与 1.21.1 版 diff 只剩两行 import。
+
+V5 迁移桩：通过。grep -rn "SB-TODO(" src/ = 15，逐条与报告第五节一致（主类 10、BlueprintData 1、BulkMaterialConverter 1、MaterialKey 1、MaterialList 2），都有阶段号与类名。
+
+V6 javap 覆盖 J1～J9：javap.txt 存在；云端无法 javap（同 V2 网络原因），J3「ModConfigEvent 非 abstract」由 GameTest 启动未抛注册异常旁证，接受。
+
+V7 交接件：通过。开发日志只在文末追加 SBN-001 执行记录；测试清单只替换示例段（文件头「更新」时间同步改，属正常）；规程只在第五节表尾加一行。
+
+测试代码抽查：g03 覆盖全部 mod 字段往返、三列表归类、箱子 NBT、MinecraftDataVersion 与 dataVersion；g05 越界拒收 / 界内生效 / 恢复；g06 两条阈值分支；断言都是实值比较，不是空跑。
+
+报告出入逐条核对：
+  1. ModConfigEvent 非 abstract → 不拆 Loading/Reloading：接受（任务书写的是条件分支）。
+  2. ConfigRegistry List.of：接受。
+  3. 列表 correction WARN 与 1.20.1 一致、原样保留：接受；「改 defineListAllowEmpty」列为待拍板。
+  4. 1.20.1 分支名 forge-1.20.1：属实，云端亦确认。
+  5. DataVersion 所在包：无影响。
+  规程同步表「同步提交」填 ad0c9b7 而非推送 HEAD 36c2294：36c2294 只回填两处哈希，内容同步点就是 ad0c9b7，不改。
+
+小瑕疵（不影响通过，不开补丁）：
+  - NbtCompat.readBlockPos 对 {X,Y,Z} 缺任一分量返回 null，1.20.1 原版是缺分量记 0。正常写出的文件三个分量总是齐全，无实际影响。
+
+合并：云端试合并 task/SBN-001 → neoforge-1.21.1（含 cfa3a69）无冲突。是否在 V2 补跑前合并由用户决定。
+
+建议记入（待问用户）：报告第九节 3 条。
+待拍板：D8（MaterialKey 组件化）；列表配置是否改 defineListAllowEmpty；文档里 main → forge-1.20.1。
