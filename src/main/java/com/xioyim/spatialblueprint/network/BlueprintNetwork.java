@@ -212,6 +212,32 @@ public class BlueprintNetwork {
         r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage.TYPE,
                 com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage.STREAM_CODEC,
                 com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage::handle);
+
+        // ── SBN-008（P3c-1）：项目写操作 / 蓝图应用 / 材料清单 / 非法方块查询 12 条（全 C2S）──
+        r.playToServer(C2S_CreateProjectMessage.TYPE, C2S_CreateProjectMessage.STREAM_CODEC,
+                C2S_CreateProjectMessage::handle);
+        r.playToServer(C2S_DeleteProjectMessage.TYPE, C2S_DeleteProjectMessage.STREAM_CODEC,
+                C2S_DeleteProjectMessage::handle);
+        r.playToServer(C2S_TakeProjectMessage.TYPE, C2S_TakeProjectMessage.STREAM_CODEC,
+                C2S_TakeProjectMessage::handle);
+        r.playToServer(C2S_SubmitProjectOrderMessage.TYPE, C2S_SubmitProjectOrderMessage.STREAM_CODEC,
+                C2S_SubmitProjectOrderMessage::handle);
+        r.playToServer(C2S_SubmitProjectChangesMessage.TYPE, C2S_SubmitProjectChangesMessage.STREAM_CODEC,
+                C2S_SubmitProjectChangesMessage::handle);
+        r.playToServer(C2S_DeleteSubProjectMessage.TYPE, C2S_DeleteSubProjectMessage.STREAM_CODEC,
+                C2S_DeleteSubProjectMessage::handle);
+        r.playToServer(C2S_SaveProjectRangeMessage.TYPE, C2S_SaveProjectRangeMessage.STREAM_CODEC,
+                C2S_SaveProjectRangeMessage::handle);
+        r.playToServer(C2S_ClaimSubProjectMessage.TYPE, C2S_ClaimSubProjectMessage.STREAM_CODEC,
+                C2S_ClaimSubProjectMessage::handle);
+        r.playToServer(C2S_ApplyBlueprintMessage.TYPE, C2S_ApplyBlueprintMessage.STREAM_CODEC,
+                C2S_ApplyBlueprintMessage::handle);
+        r.playToServer(C2S_SaveMaterialListMessage.TYPE, C2S_SaveMaterialListMessage.STREAM_CODEC,
+                C2S_SaveMaterialListMessage::handle);
+        r.playToServer(C2S_RewardMaterialsMessage.TYPE, C2S_RewardMaterialsMessage.STREAM_CODEC,
+                C2S_RewardMaterialsMessage::handle);
+        r.playToServer(C2S_RequestIllegalBlocksMessage.TYPE, C2S_RequestIllegalBlocksMessage.STREAM_CODEC,
+                C2S_RequestIllegalBlocksMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────

@@ -1,0 +1,40 @@
+SBN-008 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-30 00:55（BUILD SUCCESSFUL in 35s）
+日志关键行（当次 run/logs/latest.log 摘录；跑完已随 run/ 删除）：
+  [00:55:20.887] Running test batch 'defaultBatch:0' (50 tests)...
+  [00:55:23.222] Running test batch 'defaultBatch:1' (15 tests)...
+  [00:55:23.640] ========= 65 GAME TESTS COMPLETE IN 3.222 s ======================
+  [00:55:23.640] All 65 required tests passed :)
+用例数核对（C2）：SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 +
+SBN007 8 + SBN008 9 = 65。SBN001～007 的 56 条照旧全过。
+
+t01 65 个 payload ID 命名 + 互不重复（本批 12 + 旧 53）；namespace = spatial_blueprint。
+t02 12 个消息编码往返字节逐字相等（SubmitProjectChanges 带材料清单与 keyTags、
+    SaveMaterialList 带键与计数、项目类带 String/枚举字段）。
+t03 上限：
+    SubmitProjectOrder count=1025 → 按 1.20.1 语义回空列表（再编码计数 0）；
+    SubmitProjectOrder count=-1 → 同样回空列表；
+    CreateProject noteShort 上限 15（手写 46 字节）→ DecoderException；
+    SubmitProjectChanges 材料键上限 128（手写 385 字节）→ DecoderException。
+    （SubmitProjectChanges / SaveMaterialList 的列表计数在 1.20.1 本就没有守卫，照原样不测。）
+t04 项目创建 / 删除：非 OP 创建被拒且无新项目；OP 创建成功且 ownerUuid = 该玩家；
+    OP 删除（无占用）成功；非 OP 删除被拒、文件仍在；OP 删除成功。
+t05 蓝图应用 / 项目取用：次元蓝图非主人（B）应用被拒、手不动；主人（A）应用得到次元蓝图物品，
+    blueprint_id / blueprint_name / anim_duration / save_mode 经访问器读出正确；
+    工程蓝图带固定坐标应用，eng_project_id / eng_dimension / eng_start / eng_end 正确；
+    TakeProject MODE_PLAN 换手得到公用项目蓝图（project_id 正确）；
+    MODE_IMPORT PUBLIC 按 claim 给出 task_set_id / project_id 正确。
+t06 项目编辑：SaveProjectRange 非 OP 拒、OP 成功（origin/size/stage 变化、临时两点清空）；
+    扩建与别的任务集占用重叠 → claim_conflict、范围不变；
+    SubmitProjectOrder 非 OP 拒、OP 重排成功（顺序 / 重编号 / requiresEntry 重映射逐项断言）；
+    DeleteSubProject 非 OP 拒、被引用时拒（delete_has_dependents）、OP 删无引用条目成功。
+t07 领取子工程：已激活项目 + 子工程条目 → ClaimSubProject 得到工程蓝图，
+    sb_task_set_id / sb_entry_index / eng 绑定正确；ProjectProgressData 记录领取；回包成功。
+t08 材料清单：非 OP 非创造 SaveMaterialList 静默拒、文件不变；RewardMaterials 回 need_op；
+    OP + 创造 SaveMaterialList 写入，读回 blockCounts / keyTags 与发送一致；
+    RewardMaterials MODE_CLEAR 清空 reward 蓝图清单成功。
+t09 非法方块查询：默认禁捕方块（基岩）报 illegal、普通方块（石头）不报；
+    无监听时 protectedChunks 为空；注册取消 BreakEvent 的临时监听 → 测试区区块进 protectedChunks；
+    注销监听 → 恢复为空（监听器 finally 注销）。
+测试 finally 恢复 fakePlayerSink / op / 游戏模式，删测试文件与项目、清 claim 与进度记录；run/ 已整目录删除。

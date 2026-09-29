@@ -1,0 +1,13 @@
+SBN-008 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-30 00:53 左右（BUILD SUCCESSFUL in 14s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 首编译 1 错：C2S_DeleteSubProjectMessage 漏 import SpatialBlueprintMod ——补 import 后通过，复编译 0 警告。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 14s
+2 actionable tasks: 1 executed, 1 up-to-date

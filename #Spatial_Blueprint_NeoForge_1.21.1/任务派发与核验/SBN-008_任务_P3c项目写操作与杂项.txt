@@ -1,0 +1,165 @@
+SBN-008 · P3c-1 项目写操作 / 蓝图应用 / 材料清单 / 非法方块查询（12 个消息）
+派发：2026-09-30 02:00:00（云端主会话）
+分支：task/SBN-008（从 neoforge-1.21.1 @ 2847bcb 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-008 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、K11、K12、C2、C12、C14、C15、C18、C20；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-006 任务书三.2（补充口径，本任务沿用）；功能联动手册第二节「物品 NBT 键 → 组件」映射表。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3 剩余 24 个消息（C2S_ReloadConfigMessage 另在 P4）。云端逐个查了传递依赖：非网络类只涉及 5 个 ——
+PendingUploadRegistry（80 行）、UploadStagingRegistry（138）、SubProjectClaimHandler（131）、NotifySound（84）、BlueprintPlacementHandler（1311）。
+按簇拆三段：
+  SBN-008（本任务，P3c-1）：项目写操作 + 蓝图应用 + 材料清单 + 非法方块查询，12 个消息 + SubProjectClaimHandler + NotifySound（服务端半边）
+  SBN-009（P3c-2）：上传 6 个（UploadBegin / UploadChunk / UploadProjectionTemplate / ConfirmUpload / RequestEngineeringReport / S2C_UploadReport）
+                   + PendingUploadRegistry + UploadStagingRegistry
+  SBN-010（P3c-3 / P4a）：捕获与放置 6 个（CaptureArea / CaptureProjection / VoidRecapture / CreateEngineeringBlueprint / CreateSubProject /
+                   PlaceBlueprint）+ BlueprintPlacementHandler —— 放置引擎本体，与 P4 DataFixer 一起设计
+
+本任务的 12 个（1.20.1 同路径，全部在 network\ 根下）：
+  项目写：C2S_CreateProjectMessage、C2S_DeleteProjectMessage、C2S_TakeProjectMessage、C2S_SubmitProjectOrderMessage、C2S_SubmitProjectChangesMessage、
+         C2S_DeleteSubProjectMessage、C2S_SaveProjectRangeMessage、C2S_ClaimSubProjectMessage
+  蓝图应用：C2S_ApplyBlueprintMessage（TakeProject 引用它）
+  材料清单：C2S_SaveMaterialListMessage、C2S_RewardMaterialsMessage
+  查询：C2S_RequestIllegalBlocksMessage（回 SBN-005 已迁的 S2C_IllegalBlocksListMessage）
+  依赖：server/SubProjectClaimHandler（纯静态，/sb 命令在 P4 也会调它）、util/NotifySound（只迁服务端半边，见三.3）
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  第一节列出的 12 个消息（network\ 根下，1.20.1 同路径）
+  新  server/SubProjectClaimHandler.java、util/NotifySound.java                    ← 1.20.1 同路径
+  改  network/BlueprintNetwork.java                                               ← 只加 12 条注册
+  新  gametest/SBN008Tests.java
+
+交接件（规程允许范围）：SBN-008_报告.txt、SBN-008_证据\、开发日志.md 文末「## SBN-008 执行记录」、
+测试清单.txt 追加「八、SBN-008 项目写操作与杂项」（**正文已整理：只收未完成项，已通过组在 测试清单_归档.txt；新组照旧追加在正文末尾**，
+云端验收后归档）、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（物品类里调 NotifySound 的客户端桩保持原样 —— 那些是 P6 界面桩；主类；/sb 命令在 P4）。
+若某个消息实测引用了第二节以外、尚未迁移的类：该调用按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005～007：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）与 SBN-006 任务书三.2 改写。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork：register 里追加 12 条，全部 playToServer（1.20.1 里 12 个都是 c2s，以源码为准）。其余零改动。
+
+2. 物品数据（C12）
+   a. C2S_ApplyBlueprintMessage 里 newStack.getOrCreateTag() 后的 putString / putInt（blueprintName、blueprintId、animDuration、工程蓝图固定坐标等）
+      一律改走物品类的 public static 访问器（setBlueprintName / setBlueprintId / setSaveMode / setAnimDuration / EngineeringBlueprintItem.setBoundProject 等），
+      映射见功能联动手册第二节表；访问器没有的键写进报告，不要直接 set 组件绕过访问器。
+   b. C2S_TakeProjectMessage / C2S_ClaimSubProjectMessage / SubProjectClaimHandler 里给物品写 taskSetId / projectId / sbTaskSetId / sbEntryIndex 的，同样走访问器
+      （1.20.1 源码若已是访问器则原样）。
+   c. 1.20.1 里凡「取出物品 NBT → 改 → 不写回」的写法在组件下不存在，但「先读组件值再改副本」的地方要确认写回（C12、迁移计划书第四节）。
+
+3. util/NotifySound
+   1.20.1 有服务端两个（server(Player)、serverError(Player)，发 ClientboundSoundPacket）与客户端两个（client()、clientError()，@OnlyIn + Minecraft）。
+   **只迁服务端两个**；client() / clientError() 不搬，文件里原位置上一行一条 SB-TODO(P5): 客户端提示音（client / clientError）迁 client 包 —— 只写一条。
+   理由：util 是双端公共包，NeoForge 1.21 不按 @OnlyIn 剥离，方法体里引用 Minecraft 的类在专服上有加载风险（与 C14 同理）；
+   物品类与界面里对 clientError 的调用本来就在 P6 桩里，不受影响。ClientboundSoundPacket 构造器以 1.21 实测为准（J40），行为不变。
+
+4. C2S_RequestIllegalBlocksMessage
+   a. 领地采样：net.minecraftforge.event.level.BlockEvent.BreakEvent → net.neoforged.neoforge.event.level.BlockEvent.BreakEvent（构造参数同，J40）；
+      MinecraftForge.EVENT_BUS.post(evt) → NeoForge.EVENT_BUS.post(evt)；evt.isCanceled()（ICancellableEvent 默认方法，J40）。
+      MAX_SCAN_VOLUME、MAX_CLAIM_SAMPLES、「非创造才采样」的判断原样。
+   b. be.saveWithFullMetadata() → be.saveWithFullMetadata(player.registryAccess())（J40）。
+   c. 回包走 SBN-005 已迁的 S2C_IllegalBlocksListMessage（字段顺序、嵌套 record 不改）。
+
+5. 其余要点（以 1.20.1 源码为准，只点风险处）
+   a. 项目写操作的 OP 判定、任务集占用判定、SaveProjectRange 的重叠校验、SubmitProjectOrder 的 MAX_ORDER、forgetEntry 进度清理 —— 原样。
+   b. C2S_ApplyBlueprintMessage 的次元蓝图主人校验（isOwnedBy）、category → 物品类型的 switch 原样。
+   c. C2S_SaveMaterialListMessage / C2S_RewardMaterialsMessage 的「OP 且创造」判定原样；SaveMaterialList 末尾的 NotifySound.server 原样。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged / bus）
+========================================================
+
+  J40 net.neoforged.neoforge.event.level.BlockEvent$BreakEvent(Level, BlockPos, BlockState, Player)；ICancellableEvent#isCanceled / setCanceled（default）；
+      NeoForge.EVENT_BUS#post；BlockEntity#saveWithFullMetadata(HolderLookup.Provider)（1.21 无无参版）；
+      ClientboundSoundPacket 构造器（本地 javap 贴进证据，与 1.20.1 用法比对）
+  其余沿用 J31～J39。
+
+========================================================
+五、测试（新格式数据由真实对象产生；伪造 / 越界包是唯一允许手写处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～007 的 56 条照旧全过。
+    t01_registration         12 个 payload ID 符合命名规则，与已有 53 个合计 65 个互不重复；方向与 1.20.1 逐条一致。
+    t02_codecRoundTrip       12 个各造一条真实实例（SubmitProjectOrder / SubmitProjectChanges 的列表字段、SaveMaterialList 的键与计数至少各一项）
+                             → 编码 → 解码 → 再编码，字节逐字相等。
+    t03_decodeGuards         本批 decode 的全部上限（MAX_ORDER、列表计数、字符串长度等）各手写一个越界包，按 1.20.1 语义断言（C20），逐个列进报告。
+    t04_projectLifecycle     非 OP 假玩家 CreateProject → 按 1.20.1 语义被拒、ProjectStorage 无新项目；OP 假玩家（K11）→ 建出、ownerUuid = 该玩家；
+                             OP DeleteProject（无任务集占用）→ 删除；非 OP DeleteProject → 被拒。测试项目 finally 清理。
+    t05_applyAndTake         BlueprintStorage.save 一份 category = dimensional、主人 = A 的蓝图：B 发 ApplyBlueprint → 按 1.20.1 语义被拒、背包无新物品；
+                             A 发 → 得到对应物品类型，blueprint_id / blueprint_name / save_mode（/ anim_duration，若数据里有）经物品访问器读出正确；
+                             一份带固定坐标的 engineering 蓝图 → 工程蓝图的 eng_project_id / eng_start / eng_end 经访问器读出正确。
+                             TakeProject 走一次（按 1.20.1 某个 mode 的前置造数据），得到的项目蓝图 task_set_id / project_id 正确。
+    t06_projectEdits         SaveProjectRange / SubmitProjectOrder / DeleteSubProject 各走一次：非 OP 被拒；OP 成功且 ProjectStorage 里对应字段变化；
+                             SaveProjectRange 一条与别的任务集占用重叠的范围 → 按 1.20.1 语义被拒。
+    t07_claimSubProject      造一个已激活项目（任务集 + 子工程条目），假玩家主手持对应项目蓝图 → ClaimSubProject → 得到工程蓝图，
+                             sb_task_set_id / sb_entry_index 经访问器读出正确；ProjectClaimRegistry / ProjectProgressData 按 1.20.1 语义记录。
+    t08_materialList         非 OP 或非创造的假玩家 SaveMaterialList / RewardMaterials → 被拒、蓝图文件的材料清单不变；
+                             OP + 创造（setGameMode）→ 写入，读回的 materialList 与发送内容一致。
+    t09_illegalBlocks        在测试区放一个默认禁捕的方块（取 BlueprintConfig 默认 excludedBlocks 里的一个）与一个普通方块 →
+                             RequestIllegalBlocks → sink 收到 S2C_IllegalBlocksListMessage，illegalBlocks 含该方块坐标、不含普通方块；
+                             注册一个临时 NeoForge.EVENT_BUS 监听把 BreakEvent 取消（finally 注销；非创造假玩家）→ protectedChunks 含测试区所在区块；
+                             不注册监听 → protectedChunks 为空。
+    测试 finally 恢复 fakePlayerSink、op 状态、游戏模式、事件监听，删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR。
+A4  grep 门禁（必做）：network\、server\、log\、util\ 下无 net.minecraft.client / 本 mod client / gui 引用（util\ 本次起纳入，因 NotifySound）；
+    注释里无 SB-TODO(（K10）。
+
+【手测】无。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  14 个搬迁文件与 1.20.1 源 diff -w 残差只在口径内（三.2～三.4）；decode 上限与权限判定逐文件计数与 1.20.1 相等；BlueprintNetwork 只多 12 条注册。
+V4  65 条注册方向与 1.20.1 逐条一致；A4 为空。
+V5  SB-TODO 实数 = 44 + 本任务新桩（至少 NotifySound 的 1 条 P5），逐条列出。
+V6  变异复核（云端验收时做）：C2S_CreateProjectMessage 的 OP 判定、C2S_ApplyBlueprintMessage 的次元蓝图主人判定（isOwnedBy）、
+    C2S_RequestIllegalBlocksMessage 的 evt.isCanceled() 分支，各临时短路一次 → t04 / t05 / t09 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-008 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按簇分组）；ApplyBlueprint 的「NBT 键 → 访问器」逐键对照
+三、网络实测：12 个 payload 的 ID 与方向；本批 decode 上限清单（file:line · 语义）；本批权限判定清单（file:line）
+四、测试覆盖：A1～A4；t01～t09；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（给物品的消息：服务端改完组件后客户端手里的物品是否同步；NotifySound 服务端发声包）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-008』」。
