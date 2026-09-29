@@ -124,9 +124,9 @@ public class MaterialList {
         if (id.isBlank()) return;
         int count = item.contains("count") ? item.getInt("count")
                 : (item.contains("Count") ? item.getByte("Count") : 1);
-        // 复合键：同 ID 不同附魔/耐久的物品各自独立成条
-        // SB-TODO(P2): 1.21 物品 NBT 的 components 也要进复合键（D8）
-        CompoundTag rawTag = item.contains("tag", 10) ? item.getCompound("tag") : null;
+        // 复合键：同 ID 不同组件的物品各自独立成条（1.21 components；旧格式 tag 兜底）
+        CompoundTag rawTag = item.contains("components", 10) ? item.getCompound("components")
+                : (item.contains("tag", 10) ? item.getCompound("tag") : null);
         CompoundTag norm   = MaterialKey.normalize(rawTag);
         String key         = MaterialKey.make(id, rawTag);
         ml.blockCounts.merge(key, Math.max(1, count), Integer::sum);
@@ -143,15 +143,19 @@ public class MaterialList {
      * 构建用于 GUI 显示的 ItemStack（含 {@link #keyTags} 中的 tag，若有）。
      * 附魔物品会显示附魔光效和完整 tooltip；普通物品返回普通 ItemStack；物品不存在时返回 EMPTY。
      */
-    public ItemStack getDisplayStack(String materialKey) {
-        return buildDisplayStack(materialKey, keyTags.get(materialKey));
+    public ItemStack getDisplayStack(String materialKey, net.minecraft.core.HolderLookup.Provider provider) {
+        return buildDisplayStack(materialKey, keyTags.get(materialKey), provider);
     }
 
     /**
      * 由复合键 + tag 构建显示用 ItemStack。供 {@link MaterialSpace} 复用 —— 材料空间保存的是
      * 复合键与 tag，不持有 MaterialList 实例。
+     *
+     * <p>tag 是组件补丁 NBT（与 {@code ItemStack.save} 的 components 子标签同编码），
+     * 按 {@link net.minecraft.core.component.DataComponentPatch#CODEC} 解析后应用。</p>
      */
-    public static ItemStack buildDisplayStack(String materialKey, @javax.annotation.Nullable CompoundTag tag) {
+    public static ItemStack buildDisplayStack(String materialKey, @javax.annotation.Nullable CompoundTag tag,
+                                              net.minecraft.core.HolderLookup.Provider provider) {
         ResourceLocation rl = ResourceLocation.tryParse(MaterialKey.idOf(materialKey));
         if (rl == null) return ItemStack.EMPTY;
         Optional<Item> itemOpt = BuiltInRegistries.ITEM.getOptional(rl);
@@ -166,8 +170,15 @@ public class MaterialList {
             if (item == Items.AIR) return ItemStack.EMPTY;
         }
         ItemStack stack = new ItemStack(item);
-        // SB-TODO(P2): MaterialKey 组件化（D8）
-        // if (tag != null) stack.setTag(tag.copy());
+        if (tag != null) {
+            var parsed = net.minecraft.core.component.DataComponentPatch.CODEC.parse(
+                    provider.createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), tag);
+            if (parsed.result().isPresent()) {
+                stack.applyComponents(parsed.result().get());
+            } else {
+                // SB-TODO(P4): 旧格式 tag 摘要的材料键随 DataFixer 迁移（D2 / D8）
+            }
+        }
         return stack;
     }
 

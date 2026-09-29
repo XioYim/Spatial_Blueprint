@@ -1,0 +1,73 @@
+SBN-003 报告
+执行：2026-09-29 18:31:55 ～ 2026-09-29 19:10:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 18:31 | Spatial_Blueprint_NeoForge_1.21.1_20260929_183155 | 3D38765E | SBN-003 执行前 |
+
+一、完成情况（对照任务书三.1～三.5）：
+1. FMLPaths：BlueprintStorage / ProjectStorage 的 import 改 net.neoforged.fml.loading · util/BlueprintStorage.java:8、util/ProjectStorage.java:6；ServerLifecycleHooks 改 net.neoforged.neoforge.server · util/WorldIdentity.java:8（J17）。
+2. SavedData 7 个同一套改法：computeIfAbsent(new SavedData.Factory<>(X::new, X::load, null), KEY)（第三参 DataFixTypes 传 null，J18）；save/load 加 HolderLookup.Provider 签名 · MaterialSpace:60-63/317/370、ProjectClaimRegistry:81-84/224/231、ProjectProgressData:27-30/78/103、SBSafeCoordData:29-32/49/62、SBUndoData:24-27/56/73、TeleportPermissions:37-40/106/115、WorldIdentity:39-43/119/124。SAVE_KEY / DATA_NAME / 存盘结构未改（c）；WorldIdentity 的 setDirty + getDataStorage().save() 段照搬 · WorldIdentity.java:44-53（d）；SBUndoData 的 BlockState 走 NbtUtils.readBlockState(asLookup) / writeBlockState 未动 · SBUndoData.java:108/138（e）。
+3. D8：
+   a. make / idOf / hasTag / normalize / canonical / digest 未动（diff 只落在点名处）。
+   b. of(ItemStack, Provider)：空栈 ""；补丁空 → 纯 ID；否则 DataComponentPatch.CODEC + provider.createSerializationContext(NbtOps.INSTANCE) 编码 → make · util/MaterialKey.java:56-77。
+   c. pruneNoOps 跳过 "!" 前缀；minecraft:block_entity_data 与 BlockEntityTag 同样剔 id · util/MaterialKey.java:118-140；ignoredKeys 回退值加 minecraft:repair_cost · :149。
+   d. mergeItemCount 读 item.components（旧 tag 兜底），去桩 · util/MaterialList.java:122-134。
+   e. materialSpaceIgnoredNbtKeys 默认值 → ["RepairCost","minecraft:repair_cost"]（注释未动） · BlueprintConfig.java:469-470。
+   f. buildDisplayStack / getDisplayStack 加 provider，按 DataComponentPatch.CODEC 解析应用；失败（旧格式）返回普通栈 + 1 条 SB-TODO(P4) · util/MaterialList.java:146-179。
+   g. MaterialSpace.displayStack 加 provider 透传 · util/MaterialSpace.java:305。
+4. BlueprintStorage / ProjectStorage：目录 / 文件名 / 原子写 / 摘要缓存 / listSummaries 原样；读文件走 SafeNbtIo（原本就是）；坐标读写改 NbtCompat（原 NbtUtils.readBlockPos(getCompound) 两处） · util/BlueprintStorage.java:517-518；写入 API 改 Path 重载 · BlueprintStorage.java:76、ProjectStorage.java:198；load 不插 DataFixer（P4 桩在 BlueprintData，未动）。
+5. 主类 commonSetup 接上 BlueprintStorage.init() / ProjectStorage.init()，删 Storage.init 桩 · SpatialBlueprintMod.java:53-54。
+
+二、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）：
+- net.minecraftforge.fml.loading.FMLPaths → net.neoforged.fml.loading.FMLPaths · BlueprintStorage.java:8、ProjectStorage.java:6 · J（SBN-001 已用）
+- net.minecraftforge.server.ServerLifecycleHooks → net.neoforged.neoforge.server.ServerLifecycleHooks · WorldIdentity.java:8 · J17
+- NbtIo.writeCompressed(tag, File) → NbtIo.writeCompressed(tag, Path) · BlueprintStorage.java:76、ProjectStorage.java:198 · 1.21.1 只有 Path/OutputStream 重载（javap NbtIo）
+- computeIfAbsent(X::load, X::new, KEY) → computeIfAbsent(new SavedData.Factory<>(X::new, X::load, null), KEY) · 7 个类（见一.2 行号） · J18
+- save(CompoundTag) / load(CompoundTag) → save(CompoundTag, Provider) / load(CompoundTag, Provider) · 7 个类 · J18
+- NbtUtils.readBlockPos(mod.getCompound(key))（含 contains 类型门）→ NbtCompat.readBlockPos(mod, key) · BlueprintStorage.java:517-518 · J6（SBN-001）
+- stack.getTag()（SBN-001 桩）→ 组件补丁编码（DataComponentPatch.CODEC + 序列化上下文） · MaterialKey.java:56-77 · D8 / J19 / J20
+- stack.setTag(tag.copy())（SBN-001 桩）→ DataComponentPatch.CODEC.parse + stack.applyComponents(patch) · MaterialList.java:157-179 · D8 / J19
+- item.contains("tag",10)（SBN-001 桩）→ 先 components 再 tag 兜底 · MaterialList.java:122-134 · D8
+- MaterialSpace.displayStack(String) → displayStack(String, Provider) · MaterialSpace.java:305 · 任务书三.3.g
+
+三、D8 实测：
+1. 补丁 NBT 与 ItemStack.save 的 components 是同一个编码：ItemStack.CODEC 用 DataComponentPatch.CODEC.optionalFieldOf("components", EMPTY)（J20，源码），of() 用同一个 Codec + 同一序列化上下文；t02 对 7 个样本（石头 / 附魔剑 / 附魔+repair_cost / 改名剑 / 挖起来的空潜影盒 / 移除 FOOD 的苹果 / 装石头的潜影盒）逐一断言 of == make(id, save 出的 components 或 null)，全部相等。
+2. "!" 移除标记真实形状：苹果 stack.remove(DataComponents.FOOD) 后 components = {"!minecraft:food": {}}（空 compound；证据 nbt_样本.txt removed-marker-components）——pruneNoOps 跳过该键，键与普通苹果不同（t01 断言 + t02 一致性）。
+3. 附魔剑 components = {"minecraft:enchantments":{"levels":{"minecraft:sharpness":3,"minecraft:unbreaking":2}}}；加 repair_cost=7 后多 {"minecraft:repair_cost":7}，normalize 剔除（忽略项）后与未加的同键。
+4. 空潜影盒：放下再挖起来（真实 ShulkerBoxBlockEntity.saveToItem）不产生任何组件（1.21 的 saveAllItems(…,false) 空列表不写、setBlockEntityData 空标签删组件），与合成空潜影盒同键（t01）；block_entity_data 剔 id 逻辑对旧格式数据仍有效（P4 用）。
+5. 装石头的潜影盒：components."minecraft:container" = [{slot:0, item:{id,count}}]（槽位包一层，样本 shulker-with-components）。
+
+四、测试覆盖：
+A1 编译 BUILD SUCCESSFUL、0 警告（源文件:行号: 命中 0）。
+A2 runGameTestServer：26 进 26 出全过（SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7，@GameTest 实数 26；671ms）。t01 D8 键 / t02 一致性 / t03 显示栈往返+旧格式 / t04 实体键 / t05 7 个 SavedData 往返 + MaterialSpace 真实 computeIfAbsent 接线 / t06 存储往返 / t07 旧坐标摘要 —— 全部通过（首跑即过）。证据：编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt。
+A3 未做（gametest 已覆盖 mod 加载链；新 toml 的 materialSpaceIgnoredNbtKeys 两项由 t05 的 live 配置路径与配置定义保证，未单独 runServer）。
+A4 未做（本机无旧蓝图文件）。
+run/ 已整目录删除；t06/t07 写入的蓝图与项目文件在 finally 删除；临时取样 t99 已删。
+
+五、迁移桩清单：新 1（MaterialList.buildDisplayStack 旧格式 P4）+ 去掉 4（MaterialKey 1 + MaterialList 2 + 主类 Storage.init 1） + 存量 12 = grep -rn "SB-TODO(" src 实数 12。逐条：
+SpatialBlueprintMod.java:38 P2 SpatialBlueprintItems；:39 P2 SpatialBlueprintRegistry；:40 P3 BlueprintNetwork；:41 P4 SBCommands；:42 P4 登录登出事件；:43 P2 创造物品栏；:44 P5 clientSetup；:45 P4 ForagersInsightCompat；:46 P4 FileLogger；network/s2c/S2C_IllegalBlocksListMessage.java:5 P3 消息本体；util/BlueprintData.java:323 P4 DataFixer；util/MaterialList.java:179 P4 旧格式 tag 摘要迁移（新）。
+
+六、会原样带过来的旧格式数据清单（三.4.d，给 P4 用）：
+1. 蓝图 .litematic 文件：根 MinecraftDataVersion（旧文件 3465）→ BlueprintData.dataVersion 已记，DataFixer 未插（P4）；region 里的 BlockStatePalette / TileEntities / Entities 是旧版本格式；SpatialBlueprintData.materialList 的 entries.block 键可能是旧 tag 摘要键（形如 id#hash 但 hash 来自 1.20.1 tag）、keyTags 里的 tag 是旧键名（Enchantments 等）；fixedStartPos / fixedEndPos 是 {X,Y,Z} 复合标签（NbtCompat 兼容读，本任务已验 t07）。
+2. MaterialSpace（sb_material_space.dat）：pools / bags / consumedBags 的键含旧 tag 摘要键；tagRegistry 存的是旧格式规范化 tag（Enchantments 等）—— displayStack 解析这类 tag 会失败返回普通栈（P4 迁移）。
+3. SBUndoData（sb_undo_history.dat）：SnapshotBlock.beNbt / SnapshotEntity.nbt 是写入时版本的方块实体 / 实体 NBT；BlockState 由 readBlockState 按当前注册表解析（缺 id → 空气）；本任务原样读写不迁移。
+4. ProjectClaimRegistry / ProjectProgressData / SBSafeCoordData / TeleportPermissions / WorldIdentity：字段无版本敏感类型（字符串 / int / UUID），原样读写。
+5. project.dat（ProjectData）：dimension / rotation 字符串与 entries 的 relP1/relP2（{X,Y,Z}，NbtCompat 兼容读），无版本敏感内容。
+
+七、任务书出入：
+1. 任务书五.t05 写「Factory 的 load」；实测 ProjectClaimRegistry / ProjectProgressData / TeleportPermissions / WorldIdentity 的 load 是 private（与 1.20.1 相同），测试无法直接调用。处理：测试用反射调用同一个 private load 方法做往返，不改源码可见性（保持与 1.20.1 零残差）；另外 3 个（MaterialSpace / SBSafeCoordData / SBUndoData）load 是 public，直接调用。
+2. 任务书三.3.c 说 pruneNoOps 对 block_entity_data「删掉其中的 id 再递归剔除空结构」；实测 1.21 真实物品路径下该键不会以「只有可剔除内容」的形态出现（空潜影盒 saveToItem 根本不给组件，saveAllItems(…,false) 空列表不写）。代码照写（旧格式数据 / 其它 mod 需要），t01 的等价断言用真实 saveToItem 成立。
+3. 任务书四 J20 说「ItemStack#save 里 components 字段用的 codec（确认与 J19 同一个）」——确认同一个（DataComponentPatch.CODEC.optionalFieldOf），无出入。
+4. 任务书未提：SBN-002 / 002a 证据里的顶层 data / palette 是 NbtUtils.structureToSnbt 的注入产物（结构模板导出格式），不是 1.21 方块实体字段；本次改用 prettyPrint 并在证据头部更正。
+
+八、双端同步自查：SavedData 全部挂在 overworld 的 DataStorage（服务端世界数据），无客户端路径；BlueprintStorage / ProjectStorage 是服务端文件 I/O（客户端在多人下本就读不到，原有语义）；MaterialKey/MaterialList 是纯计算。无网络、无客户端引用。结论：无新增不同步点。
+
+九、教训同步：基线为 701dc3e 的副本；原件 A（本机总库）、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…，cmd 原样导出按字节复核）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+十、建议记入：
+1. [建议记入 K] NbtUtils.structureToSnbt 是结构模板导出格式，会给输入注入 data/palette 字段；证据里打印 NBT 用 NbtUtils.prettyPrint（SBN-002 / 002a 证据的 data/palette 注解是错的）。
+2. [建议记入 C] D8 编码：MaterialKey.of 用 DataComponentPatch.CODEC + provider.createSerializationContext(NbtOps.INSTANCE)，与 ItemStack.save 的 components 子标签同编码（ItemStack.CODEC 同一个 Codec）；"!" 前缀 = 移除标记（空 compound），pruneNoOps 必须跳过。
+3. [建议记入 C] 1.21 物品组件里 repair_cost 是 "minecraft:repair_cost"（旧 RepairCost 只在旧 tag）；忽略列表已两项。
+4. [建议记入 C] 空潜影盒 1.21 saveToItem 不带任何组件（空 Items 不写、空 block_entity_data 删组件）；block_entity_data 剔 id 留给旧格式数据。
+5. [供云端问用户] 本任务对 1.20.1 线的映射：1.20.1 线不需要这些 API 改动；D8 的旧键迁移与两线材料键一致性属于 P4 / 联动手册范畴。
+
+十一、需要用户做的事：无（本组无手测项）。等云端验收。

@@ -1,0 +1,14 @@
+SBN-003 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 18:53:53
+日志关键行：
+  Running test batch 'defaultBatch:0' (26 tests)...
+  [++++++++++++++++++++++++++]
+  ========= 26 GAME TESTS COMPLETE IN 671.7 ms ======================
+  All 26 required tests passed :)
+  BUILD SUCCESSFUL in 19s
+用例数核对（C2）：SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7 = 26，与批次条数一致。
+t01～t07 首跑即过（含临时取样 t99 时 27/27，取样后已删）。
+同启动内本 mod 运行时证据：Spatial Blueprint mod loaded!；run/ 整目录已删（Test-Path run = False）。
+测试写进 run/config/spatial_blueprint 的蓝图文件与 projects/ 目录在 finally 里删除；
+t05 对 SavedData 的写入发生在测试世界（run/ 整体删除）。

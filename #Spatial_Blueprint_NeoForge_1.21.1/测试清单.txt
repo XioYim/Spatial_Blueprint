@@ -2,7 +2,7 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-更新：2026-09-29 17:58:00
+更新：2026-09-29 19:05:00
 
 ========================================================
 【规矩】
@@ -109,6 +109,39 @@ A2. GameTest 19 条（SBN001Tests 8 + SBN002Tests 11；临时取样 s99 已删�
     结果：[✓] 全部通过
 A3. 专服冒烟
     实际：未做（同 SBN-002，gametest 已覆盖 mod 加载链）
+    结果：[~] 主体通过（等效覆盖）
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+三、SBN-003 存储与 SavedData + D8 材料键组件化 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 19:05:00 · 测于 2026-09-29 18:53:53
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 26 条（SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7）
+    预期：26 进 26 出全过
+    实际：Running test batch 'defaultBatch:0' (26 tests)... [++++++++++++++++++++++++++] All 26 required tests passed :)
+    t01 D8 材料键（纯 ID / 摘要 / 附魔顺序无关 / repair_cost 忽略 / "!" 移除标记 / 空潜影盒等价）
+    t02 of() 与 ItemStack.save components 同编码一致性（7 个样本逐一相等）
+    t03 显示栈往返（附魔/改名 isSameItemSameComponents）+ 旧格式 tag 返回普通栈
+    t04 实体手持物品键 == of()
+    t05 7 个 SavedData 往返 + MaterialSpace 真实 computeIfAbsent 接线
+    t06 BlueprintStorage / ProjectStorage 保存 → 读回 → 删除（含箱子 NBT）
+    t07 旧格式 {X,Y,Z} 坐标经 listSummaries 读出正确
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（gametest 已覆盖 mod 加载链）
     结果：[~] 主体通过（等效覆盖）
 A4. 旧文件读取基线
     实际：未做（本机无旧蓝图文件）

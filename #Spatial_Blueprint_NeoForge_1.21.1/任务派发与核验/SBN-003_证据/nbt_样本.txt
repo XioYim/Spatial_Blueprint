@@ -1,0 +1,76 @@
+﻿SBN-003 真实 NBT 样本（证据）
+采集：2026-09-29 18:52（GameTest 服务器内，临时 t99 用例；采集后已从 SBN003Tests.java 删除）
+来源：全部由真实对象序列化得到
+  - 物品：ItemStack.save(provider) 的 components 子标签（D8 的键摘要输入）
+格式：NbtUtils.prettyPrint 输出的 SNBT 文本（忠实打印输入标签本身）。
+注意：SBN-002 / 002a 证据里出现的顶层 data / palette 是当时用了 NbtUtils.structureToSnbt 的产物 ——
+  该方法是「结构模板导出」格式，会给输入注入 data/palette 字段；真实方块实体 NBT 不含这两个键。
+  本文件改用 prettyPrint，不再有该注入。
+样本与测试对应：
+  sword-components              附魔钻石剑（锋利 3 + 耐久 2）的 components
+  repair-components             同剑 + minecraft:repair_cost=7（materialSpaceIgnoredNbtKeys 命中，摘要时被剔除）
+  removed-marker-components     苹果 stack.remove(FOOD) 后：{"!minecraft:food": {}}（真差异标记，pruneNoOps 跳过）
+  picked-shulker-saved          放下再挖起来的空潜影盒（真实 ShulkerBoxBlockEntity.saveToItem）：无 components
+  picked-shulker-normalized     normalize 结果 = null（纯 ID，与合成空潜影盒同键）
+  shulker-with-components       装了石头的潜影盒物品：minecraft:container 组件（槽位包一层）
+
+### sword-components
+ { "minecraft:enchantments": {
+    "levels": {
+      "minecraft:sharpness" : 3,
+      "minecraft:unbreaking": 2
+    }
+  }
+}
+### repair-components
+ { "minecraft:enchantments": {
+    "levels": {
+      "minecraft:sharpness" : 3,
+      "minecraft:unbreaking": 2
+    }
+  },
+  "minecraft:repair_cost" : 7
+}
+### removed-marker-components
+ { "!minecraft:food": {
+    }
+}
+### picked-shulker-saved
+ { "count": 1,
+  "id"   : "minecraft:shulker_box"
+}
+### picked-shulker-normalized
+ null (pure id)
+### shulker-with-components
+ { "minecraft:container": list<TAG_Compound>[1] [
+    { "item": {
+        "count": 2,
+        "id"   : "minecraft:stone"
+      },
+      "slot": 0
+    }
+  ]
+}
+[18:52:54] [Server thread/DEBUG] [ne.ne.ne.co.ModConfigSpec/CORE]: Range value 0.0 is not within its bounds 1.0-1600000.0
+[18:52:54] [Server thread/INFO] [minecraft/GameTestServer]: [+++++++++++++++++++++++++++]
+[18:52:54] [Server thread/INFO] [minecraft/GameTestServer]: [+++++++++++++++++++++++++++]
+[18:52:54] [Server thread/INFO] [minecraft/GameTestServer]: ========= 27 GAME TESTS COMPLETE IN 706.7 ms ======================
+[18:52:54] [Server thread/INFO] [minecraft/GameTestServer]: All 27 required tests passed :)
+[18:52:54] [Server thread/INFO] [minecraft/GameTestServer]: ====================================================
+[18:52:54] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+[18:52:54] [Server thread/INFO] [minecraft/MinecraftServer]: Saving players
+[18:52:54] [Server thread/INFO] [minecraft/MinecraftServer]: Saving worlds
+[18:52:54] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:overworld
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_end
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_nether
+[18:52:55] [Server thread/DEBUG] [ne.ne.ne.co.CommonHooks/WP]: Gathered mod list to write to world save Test Level
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (world): All chunks are saved
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM1): All chunks are saved
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM-1): All chunks are saved
+[18:52:55] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+[18:52:55] [Server thread/DEBUG] [ne.ne.fm.co.ConfigTracker/CONFIG]: Unloading configs type SERVER
+[18:52:55] [Server thread/INFO] [minecraft/GameTestServer]: Game test server shutting down
+
+BUILD SUCCESSFUL in 20s
+8 actionable tasks: 2 executed, 6 up-to-date
+Configuration cache entry reused.

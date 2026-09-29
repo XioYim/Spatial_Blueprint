@@ -1,0 +1,44 @@
+SBN-003 改动清单（V1 两向比对）
+基线：701dc3e（task/SBN-003 任务书提交，自 neoforge-1.21.1 @ 82e509e 拉出）
+时间：2026-09-29 19:00 左右
+
+一、git 实际改动（对照任务书第二节允许清单）：
+新 src/main/java/com/xioyim/spatialblueprint/util/BlueprintStorage.java
+新 src/main/java/com/xioyim/spatialblueprint/util/ProjectStorage.java
+新 src/main/java/com/xioyim/spatialblueprint/util/MaterialSpace.java
+新 src/main/java/com/xioyim/spatialblueprint/util/ProjectClaimRegistry.java
+新 src/main/java/com/xioyim/spatialblueprint/util/ProjectProgressData.java
+新 src/main/java/com/xioyim/spatialblueprint/util/SBSafeCoordData.java
+新 src/main/java/com/xioyim/spatialblueprint/util/SBUndoData.java
+新 src/main/java/com/xioyim/spatialblueprint/util/TeleportPermissions.java
+新 src/main/java/com/xioyim/spatialblueprint/util/WorldIdentity.java
+改 src/main/java/com/xioyim/spatialblueprint/util/MaterialKey.java（D8）
+改 src/main/java/com/xioyim/spatialblueprint/util/MaterialList.java（D8）
+改 src/main/java/com/xioyim/spatialblueprint/BlueprintConfig.java（只改 materialSpaceIgnoredNbtKeys 默认值）
+改 src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java（commonSetup 接 Storage.init）
+新 src/main/java/com/xioyim/spatialblueprint/gametest/SBN003Tests.java
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-003_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-003_证据/（编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-003 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（追加「三、SBN-003 存储与 SavedData」组）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+通用经验副本：三方比对 A=C=B 逐字相同（10C89E19…），未动。
+
+二、两向比对结论：允许清单 → 实际全部命中；实际 → 允许清单无清单外文件。
+run/ 残留已删；临时取样 t99 已删。两向一致。
+
+三、9 个新文件相对 1.20.1 源的 diff -w 残差（V3）：
+BlueprintStorage：FMLPaths 包名；NbtIo.writeCompressed(tag, File) → (tag, Path)；
+  fixedStartPos/fixedEndPos 改 NbtCompat.readBlockPos(mod, key)（原 NbtUtils.readBlockPos(getCompound)）；NbtUtils import 移除。
+ProjectStorage：FMLPaths 包名；NbtIo.writeCompressed File → Path。
+MaterialSpace：HolderLookup import；computeIfAbsent → SavedData.Factory；load/save 加 provider；
+  displayStack 加 provider 透传（任务书三.3.g）。
+ProjectClaimRegistry / ProjectProgressData / SBSafeCoordData / SBUndoData / TeleportPermissions：
+  HolderLookup import；computeIfAbsent → Factory；load/save 加 provider。其余零改动。
+WorldIdentity：ServerLifecycleHooks 包名（neoforge.server）；computeIfAbsent → Factory；load/save 加 provider。
+MaterialKey 相对 SBN-001 版只改三.3 点名处：of 组件化 + encodePatch 新方法 + pruneNoOps 跳过 "!" 与
+  block_entity_data + ignoredKeys 回退值 + 注释。make/idOf/hasTag/canonical/digest 未动。
+MaterialList 相对 SBN-001 版只改三.3 点名处：mergeItemCount 读 components、buildDisplayStack/getDisplayStack
+  加 provider 并按 DataComponentPatch.CODEC 解析（失败分支 1 条 SB-TODO(P4)）。
+BlueprintConfig：materialSpaceIgnoredNbtKeys 默认值多一项 minecraft:repair_cost（注释未动）。
+SpatialBlueprintMod：commonSetup 加 BlueprintStorage.init() / ProjectStorage.init()，删 Storage.init 桩，其余桩未动。
