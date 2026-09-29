@@ -1,0 +1,261 @@
+SBN-001 · P1a 纯逻辑层：配置系统 + 蓝图数据模型 + 纯工具类
+派发：2026-09-29 16:30:00（云端主会话）
+分支：task/SBN-001（从 neoforge-1.21.1 @ e97d824 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份（开工前先做）
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-001 执行前"
+把打印的表格行记进报告「备份」段（项目记忆.md 的备份表由云端验收时补，辅助 AI 不改记忆目录）。
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 D:\Mods\Spatial_Blueprint_NeoForge_1.21.1\#Spatial_Blueprint_NeoForge_1.21.1\记忆与注意事项\项目记忆.md，按读取顺序走。
+本任务还要读：
+  - #Spatial_Blueprint_NeoForge_1.21.1\云端协作规程.md 第三节「本地：执行」、第四节、第五节、第六节
+  - #Spatial_Blueprint_NeoForge_1.21.1\迁移计划书.md 第二节第 5 条（迁移桩）、第四节
+  - #Spatial_Blueprint_NeoForge_1.21.1\通用经验\Mod开发与迁移_通用铁律经验教训.md 第二节、第五节
+注意事项_分类.md 目前只有示例条目（T1 / K1 / C1 都是骨架示例），不适用于本任务，不用读。
+
+**以源码为准**：本任务书里的 API 结论有一部分是云端凭经验写的（云端这一轮拿不到 javap，见第四节「取证清单」）。
+凡与 merged.jar 的 javap 结果或 1.20.1 源码有出入，按实际情况改写法，并在报告「任务书出入」段逐条指出。
+
+========================================================
+一、背景与目标
+========================================================
+
+P1 = 迁移计划书阶段表里的「纯逻辑层：配置数据类、蓝图数据模型、变换 / 预算 / 净化等 util」。
+盘点 1.20.1 源码后，P1 拆成两个任务：
+
+  SBN-001（本任务，P1a）：配置系统 3 个类 + 蓝图数据模型 + 不碰注册 / 网络 / SavedData 的纯工具类，外加 GameTest 基础设施。
+  SBN-002（下一任务，P1b）：BlueprintSanitizer（1317 行）。它按物品 NBT 路径（tag / Count / Items / BlockEntityTag…）做安全净化，
+         1.20.5 起物品存储改成 components，原样搬过来能编译但会漏检，属于安全问题，单独一个任务、云端先出取证附件。
+
+1.20.1 源码位置：本机 D:\Mods\Spatial_Blueprint，或 git show origin/forge-1.20.1:<路径>。
+  注意：远程仓库里 1.20.1 线的分支名是 forge-1.20.1，不是文档里写的 main（origin/main 不存在）。报告里确认一下本机克隆的实际情况。
+
+本任务结束时的状态：mod 能加载、两份 toml 能生成、纯逻辑类全部在 1.21.1 编译通过且有 GameTest 覆盖；
+仍然没有物品、方块、网络、SavedData（那是 P2 / P3）。
+
+========================================================
+二、允许修改的文件清单（只许动这些；清单外一律不碰，要动先写进报告提议）
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+
+  改  SpatialBlueprintMod.java
+  新  BlueprintConfig.java                      ← 1.20.1 同路径
+  新  GeneratedSubstitutionsConfig.java         ← 1.20.1 同路径
+  新  config/ConfigRegistry.java                ← 1.20.1 同路径
+  新  log/BlueprintLogger.java                  ← 1.20.1 同路径
+  新  util/BlueprintTransform.java              ← 1.20.1 同路径
+  新  util/CaptureMode.java                     ← 1.20.1 同路径
+  新  util/FluidCaptureFilter.java              ← 1.20.1 同路径
+  新  util/FluidDisplayMode.java                ← 1.20.1 同路径
+  新  util/LitematicaCodec.java                 ← 1.20.1 同路径
+  新  util/StructureImportException.java        ← 1.20.1 同路径
+  新  util/SafeNbtIo.java                       ← 1.20.1 同路径
+  新  util/UndoRecord.java                      ← 1.20.1 同路径
+  新  util/SBUndoCooldown.java                  ← 1.20.1 同路径
+  新  util/BulkMaterialConverter.java           ← 1.20.1 同路径
+  新  util/BlockSubstitutionGenerator.java      ← 1.20.1 同路径
+  新  util/BlueprintData.java                   ← 1.20.1 同路径
+  新  util/MaterialKey.java                     ← 1.20.1 同路径
+  新  util/MaterialList.java                    ← 1.20.1 同路径
+  新  util/ProjectData.java                     ← 1.20.1 同路径
+  新  util/NbtCompat.java                       ← 1.21.1 新增（见三.4）
+  新  gametest/SBN001Tests.java                 ← 1.21.1 新增（见五）
+
+资源：
+  新  src/main/resources/data/spatial_blueprint/structure/empty.nbt   ← 1×1×1 空结构，可从 HD 1.21.1 项目复制，报告写来源与 SHA256
+
+交接件（规程允许的范围）：
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-001_报告.txt
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-001_证据/（第六节列的文件）
+  改  #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md        只在文末追加「## SBN-001 执行记录」
+  改  #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt       把示例段替换成「一、SBN-001 纯逻辑层」一组（格式照文件头规矩）
+  改  #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md    只在第五节同步表追加一行
+  改  #Spatial_Blueprint_NeoForge_1.21.1/通用经验/Mod开发与迁移_通用铁律经验教训.md   只按规程第五节三方同步
+
+不动：gradle.properties（本轮不部署，不 bump mod_version）、build.gradle、待办事项.html、记忆与注意事项\、功能联动手册.md（云端验收时登记）。
+
+明确**不在**本任务（别顺手搬）：BlueprintSanitizer（SBN-002）、BlueprintStorage / ProjectStorage / MaterialSpace / 各 *Data SavedData /
+TeleportPermissions / WorldIdentity / ProjectClaimRegistry（P2）、network\*（P3）、各导入器与 BlueprintPlacementHandler / BlueprintFileLogger /
+ForagersInsightCompat / StructureFileScanner / NotifySound / ItemSyncUtil / OrphanBlueprintGuard（P4）、client / gui（P5 / P6）。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则：逐文件照 1.20.1 搬，**逻辑、字段、NBT 键名、配置键名与默认值、lang 键一律不改**；只改 API。
+每个文件搬完用 diff -w --strip-trailing-cr 和 1.20.1 源比对，残差（滤掉 import / 包名样板后）逐条列进报告「改了写法的调用」。
+
+1. 配置系统（BlueprintConfig / GeneratedSubstitutionsConfig / ConfigRegistry）
+   a. ForgeConfigSpec → net.neoforged.neoforge.common.ModConfigSpec（Builder / IntValue / BooleanValue / ConfigValue / ValueSpec 同名嵌套类）。
+   b. 列表项：1.20.1 写法是 define("key", (List<String>) new ArrayList<>(...))，字段类型 ConfigValue<List<String>>。
+      先 javap / 读 ModConfigSpec.Builder 源码确认 define(String, T) 对 List 默认值是否仍可用、是否 @Deprecated：
+        - 可用且不带弃用警告 → 原样保留（优先，改动最小）；
+        - 否则改 defineListAllowEmpty(路径, 默认值 Supplier, 新元素 Supplier, 校验 Predicate)，字段类型随之改 ConfigValue<List<? extends String>>，
+          ConfigRegistry 与各调用点跟着改；报告写明选了哪条、为什么。
+      不管哪条，toml 里的键名、注释、默认内容不许变（两条线的配置文件要能互相拷贝）。
+   c. ConfigRegistry.accepts 里的 SPEC.getSpec().get(path) + instanceof ValueSpec + vs.test(candidate)：确认 NeoForge 同名 API 语义不变
+      （那段注释说的「必须是 getSpec() 不是 getValues()」的坑在 NeoForge 里是否依旧成立，javap 看一眼写进报告）。defaultInt 用 getDefault() 同理。
+   d. BlueprintConfig.onConfigReload(ModConfigEvent)：NeoForge 的事件总线不允许给抽象事件类注册监听（会在注册时抛异常，属于「编译能过、运行才错」）。
+      ModConfigEvent 若为 abstract，改成在主类分别 addListener(ModConfigEvent.Loading) 与 addListener(ModConfigEvent.Reloading)，
+      方法体保持原样（清缓存）。只对本 mod 的配置生效的判断如果 1.20.1 里有就照搬，没有就不加。
+   e. 注册（主类构造器，用传进来的 ModContainer）：
+        modContainer.registerConfig(ModConfig.Type.COMMON, BlueprintConfig.SPEC, "spatial_blueprint/spatial_blueprint.toml");
+        modContainer.registerConfig(ModConfig.Type.COMMON, GeneratedSubstitutionsConfig.SPEC, "spatial_blueprint/block_substitutions.toml");
+      注册前照 1.20.1 先 Files.createDirectories(FMLPaths.CONFIGDIR.get().resolve("spatial_blueprint"))（FMLPaths 在 net.neoforged.fml.loading）。
+      类型保持 COMMON（与 1.20.1 一致；服务端权威靠 1.20.1 的「配置界面走网络」那一套，P3 再迁）。
+      双端同步问题：本任务不引入任何客户端读配置的代码，不产生新的不同步点；报告里照「客户端和服务端会不会不同步」自问一遍写一句结论。
+   f. ConfigRegistry 引用的全部配置项必须在 BlueprintConfig 里存在；1.20.1 的 BlueprintConfig 若引用了不在本清单里的类（网络、客户端等），
+      那一条按迁移桩处理（见 3.10），不许为了编译扩大清单。
+
+2. 主类 SpatialBlueprintMod
+   只加：配置目录 + 两份 registerConfig + ModConfigEvent 监听 + commonSetup 监听（里面只做 event.enqueueWork(BlockSubstitutionGenerator::generateAndSave)）。
+   1.20.1 主类里其余内容（物品注册、网络、命令、登录登出事件、创造物品栏、clientSetup、ForagersInsightCompat、Storage.init、FileLogger）
+   本轮不搬，在 1.21.1 主类对应位置写 // SB-TODO(P<阶段>): <类名> 占位注释，阶段按第一节「不在本任务」的归属填。
+   LOGGER 保持 P0 的 slf4j（LogUtils.getLogger()），1.20.1 的 log4j 占位符写法 {} 兼容，不用改调用。
+
+3. 纯工具类（BlueprintTransform / CaptureMode / FluidCaptureFilter / FluidDisplayMode / LitematicaCodec / StructureImportException /
+   UndoRecord / SBUndoCooldown / BlueprintLogger）
+   预期零改动或只有 import 变化。BlueprintLogger 用到 ServerPlayer.getStringUUID / getName，1.21.1 仍在（编译为准）。
+
+4. NBT 坐标兼容（新增 util/NbtCompat.java）
+   1.20.5 起 NbtUtils.writeBlockPos 写成 IntArrayTag [x,y,z]，readBlockPos 改成 readBlockPos(CompoundTag 父标签, String 键) → Optional<BlockPos>
+   （云端未 javap，执行前核实）。而 1.20.1 线存盘的 fixedStartPos / fixedEndPos / relP1 / relP2 / origin / size / anchor 全是 {X:,Y:,Z:} 复合标签。
+   已定：
+     - NbtCompat.writeBlockPos(BlockPos) → 写 1.20.1 的 {X,Y,Z} 复合标签（两条线的文件格式保持一致，也不用等 P4 的 DataFixer）；
+     - NbtCompat.readBlockPos(CompoundTag 父标签, String 键) → 同时接受 {X,Y,Z} 复合标签与长度 3 的 int 数组；缺键返回 null，调用方原来的缺键语义不变。
+       （1.20.1 的 NbtUtils.readBlockPos(getCompound(缺键)) 返回 (0,0,0)；凡原代码依赖这个 0 的地方，调用方写 Objects.requireNonNullElse(..., BlockPos.ZERO)，保持原行为。）
+     - BlueprintData 与 ProjectData 里全部 NbtUtils.writeBlockPos / readBlockPos 调用改走 NbtCompat。报告列出每一处。
+   这是 1.21.1 独有的新类，类头写一句为什么存在（上面两行的意思），云端验收时登进功能联动手册。
+
+5. SafeNbtIo
+   1.20.1 用 new NbtAccounter(long)。1.20.2 起构造器带深度参数，另有 NbtAccounter.create(long)（云端未 javap）。
+   改用 NbtAccounter.create(maxUncompressedBytes)（深度取原版默认）；javap 确认后写进报告。FastBufferedInputStream / NbtIo.read(DataInput, NbtAccounter) 同样核实。
+
+6. BlueprintData
+   a. 坐标读写按 3.4。
+   b. 写文件的 MinecraftDataVersion：1.20.1 写死 3465。改为 SharedConstants.getCurrentVersion().getDataVersion().getVersion()（1.21.1 应为 3955，GameTest 断言），
+      因为 1.21.1 捕获的内容本来就是 1.21.1 格式；写死 3465 会让 P4 的 DataFixer 把新文件当旧文件再升级一遍。
+   c. 读文件：新增 public int dataVersion 字段，deserialize 时读根标签 MinecraftDataVersion（缺键记 0）。
+      在 deserialize 开头写 // SB-TODO(P4): DataFixer —— 按 dataVersion 升级调色板方块状态 / TileEntities / Entities（D2）。本任务不做升级。
+      这是 1.21.1 独有字段，serialize 不写它（MinecraftDataVersion 已经是它），也不进 SpatialBlueprintData 子标签。
+   d. NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), tag)：1.21.1 应仍可用（asLookup 在 1.21.2 才删），编译为准。
+   e. isDependentUncached 里的方块类名（BushBlock、PinkPetalsBlock、CeilingHangingSignBlock…）1.21.1 应全部仍在；有改名的按 1.21.1 的类替换并逐条报告，不许删判定。
+   f. deserialize 里 BlueprintConfig.getLatePlaceBlocks() 保留（配置本任务已迁）。
+
+7. MaterialKey / MaterialList（物品 NBT → 组件的部分**不在本任务定**）
+   1.21.1 物品没有 getTag / setTag；实体 NBT 里的物品从 {id, Count:byte, tag:{...}} 变成 {id, count:int, components:{...}}。
+   材料复合键在 1.21.1 该对什么做摘要（组件补丁编码成 NBT？忽略项默认值从 RepairCost 改成 minecraft:repair_cost？）是新的决策点 D8，P2 前由用户拍板。本任务：
+     a. 纯字符串 / CompoundTag 的部分（make / idOf / hasTag / normalize / pruneNoOps / canonical / digest、MaterialList 的计数 / 替换 / 批量 / 序列化 / copy）原样搬。
+     b. MaterialKey.of(ItemStack)：方法体暂改为「空栈返回 ""，否则返回纯注册 ID」，上一行 // SB-TODO(P2): MaterialKey 组件化（D8）。
+     c. MaterialList.buildDisplayStack：去掉 stack.setTag(tag.copy()) 那一条（注释掉 + 上一行 // SB-TODO(P2): MaterialKey 组件化（D8）），其余照旧。
+     d. MaterialList.mergeItemCount：数量先读 count（int，1.21 格式），没有再读 Count（byte，旧格式）；tag 照旧读 "tag"，
+        并在读 tag 那一行上面写 // SB-TODO(P2): 1.21 物品 NBT 的 components 也要进复合键（D8）。
+   MATERIAL_SPACE_IGNORED_NBT_KEYS 的默认值本任务不改（仍 RepairCost）。
+
+8. BulkMaterialConverter / BlockSubstitutionGenerator
+   a. BulkMaterialConverter.parse 原样。collectConversions 依赖 network.s2c.S2C_IllegalBlocksListMessage（P3）：
+      整个方法先注释掉，上一行 // SB-TODO(P3): S2C_IllegalBlocksListMessage；本任务没有调用方。
+   b. BlockSubstitutionGenerator 用了 Forge 的 GameData.getBlockItemMap()。javap 看 NeoForge 21.1.252 是否还有同名方法；
+      没有就改用原版 Item.BY_BLOCK（public static final Map<Block, Item>，同样是方块→物品反查表，也要 javap 确认可见性）。报告写清用了哪个。
+      BuiltInRegistries.BLOCK.get 缺键返回空气（非 null），原代码已有 == Blocks.AIR 判断，保留。
+      BuiltInRegistries.ITEM.getKey 在 1.21.1 不会返回 null（缺键给默认键），原 null 判断保留无害。
+
+9. ProjectData
+   坐标按 3.4；Level.dimension().location()、Component.translatable / literal 在 1.21.1 不变。其余原样。
+
+10. 迁移桩规则
+   不迁的依赖一律「注释掉那一条调用 + 上一行 // SB-TODO(P<阶段>): <类名>」，不删代码、不写替代实现。
+   报告写「本任务新桩 N 条 + 存量 0 = grep -rn "SB-TODO(" src/ 实数」，并逐条列出（file:line + 阶段 + 类名）。
+
+========================================================
+四、取证清单（javap merged.jar，结论写进 证据/javap.txt，每条一行：类#成员 签名 [是否 @Deprecated]）
+========================================================
+
+merged.jar：build\moddev\artifacts\neoforge-21.1.252-merged.jar（FML 类在 gradle 缓存的 fancymodloader loader jar）。
+
+  J1  ModConfigSpec.Builder#define(String, Object) 及 defineList / defineListAllowEmpty 全部重载
+  J2  ModConfigSpec#getSpec、ModConfigSpec.ValueSpec#test、ModConfigSpec.ConfigValue#getPath / getDefault / set / save
+  J3  net.neoforged.fml.event.config.ModConfigEvent 是否 abstract；Loading / Reloading 是否存在
+  J4  net.neoforged.fml.ModContainer#registerConfig 重载（带文件名的那个）
+  J5  net.minecraft.nbt.NbtAccounter 构造器与 create；NbtIo#read(DataInput, NbtAccounter)
+  J6  net.minecraft.nbt.NbtUtils#writeBlockPos / readBlockPos / readBlockState
+  J7  net.neoforged.neoforge.registries.GameData#getBlockItemMap 是否存在；net.minecraft.world.item.Item#BY_BLOCK 修饰符
+  J8  net.minecraft.SharedConstants#getCurrentVersion → WorldVersion#getDataVersion → DataVersion#getVersion
+  J9  net.minecraft.core.DefaultedRegistry / Registry#asLookup（BuiltInRegistries.BLOCK 上可调）
+
+任何一条与第三节的假设不一致：按 javap 改写法，报告「任务书出入」段写「任务书说 X，javap 是 Y，改成了 Z」。
+
+========================================================
+五、测试（规程第四节分类）
+========================================================
+
+【自动】辅助 AI 自己跑，结果当场写进测试清单与证据：
+
+A1  编译：JAVA_HOME = Zulu 21，.\gradlew.bat compileJava --rerun；BUILD SUCCESSFUL，警告 0 条（基线 0，计数用「源文件:行号:」）。
+A2  GameTest：.\gradlew.bat runGameTestServer，全部通过。写法照通用经验 5.1 第 7 条：
+    gametest/SBN001Tests.java，@GameTestHolder(SpatialBlueprintMod.MODID) + @PrefixGameTestTemplate(false)，每个用例 @GameTest(template = "empty")。
+    必须覆盖（一条一个 @GameTest，名字照抄便于验收对照）：
+      g01_litematicaCodecRoundTrip   bitsPerEntry(1/2/3/5/17) = 2/2/2/3/5；bits=5 写读 200 个伪随机值（固定种子）逐个相等，含跨 long 边界的索引
+      g02_transformRotations         size(3,1,2)：方块模型连转 4 次 90° 回到原坐标；角点模型 size=3 时 0.0 转 CLOCKWISE_90 得 3.0（类注释里的例子）
+      g03_blueprintDataRoundTrip     造一份含 石头(normal) / 火把(dependent) / 一个带 TileEntity NBT 的箱子 / 一幅画(EntityEntry) 的 BlueprintData，
+                                     填 name / category / ownerUuid / fixedStartPos / fixedEndPos / placed 字段；serialize → deserialize 后逐字段相等、
+                                     三个列表归类正确、箱子 NBT 在、根标签 MinecraftDataVersion == SharedConstants 当前值、读回的 dataVersion 同值
+      g04_nbtCompatBlockPos          readBlockPos 读 {X:1,Y:2,Z:3} 与 int[]{1,2,3} 都得 (1,2,3)；缺键 null；writeBlockPos 写出的是 {X,Y,Z} 复合标签
+      g05_configRangeGuard           ConfigRegistry.applyInt 对 maxVolumeSpatial（或任一 defineInRange 项）传越界值 → 返回原值且配置未变；传界内值 → 生效；
+                                     测完把原值 set 回去（不 save，不污染 run 目录）
+      g06_bulkAndMaterialList        默认 bulkMaterialConversions：5 格水 → MaterialList 里 minecraft:water_bucket = 2、没有 minecraft:water；
+                                     2 格水（低于阈值 3）→ 走 blockSubstitutions 的 water=water_bucket 1:1 得 2
+      g07_materialKeyNormalize       null tag → 纯 ID；只有 RepairCost 的 tag → 纯 ID；同内容不同插入顺序的两个 tag → 同一个键；
+                                     {BlockEntityTag:{Items:[],id:"minecraft:shulker_box"}} → 纯 ID
+      g08_projectDataRoundTrip       ProjectData 含 2 个 EntryData，serialize → deserialize 逐字段相等；缺 anchor 键时 anchor == origin
+    GameTest 往 run 目录写的残留（配置、世界）测完清理，或用独立目录；报告写怎么处理的。
+A3  专服冒烟（可选，有空就做）：runServer 起到 Done，确认日志里两份 toml 生成在 config/spatial_blueprint/ 下、BlockSubstitutionGenerator 打出候选条数、
+    无本 mod 的 ERROR / WARN；stop 正常退出。开发目录 run\ 的残留同样清理。
+A4  旧文件读取基线（可选，有就做）：本机若有 1.20.1 线捕获的蓝图文件（.litematic，D:\Mods\Spatial_Blueprint 的 run 目录或测试服务端里找），
+    挑 1～3 个用 SafeNbtIo + BlueprintData.deserialize 读一遍（可以写一个临时 GameTest，跑完删掉，不进提交），记录方块数 / 实体数 / 读到的 dataVersion，
+    与 1.20.1 线同一文件的数字对比。这是给 P4 DataFixer 的基线数据，不设通过标准，只记录；读失败也照实记录异常。
+
+【手测】本任务没有需要用户进游戏的项目（没有物品、界面、渲染）。测试清单里写一句「本组无手测项」。
+
+========================================================
+六、验收标准（云端会逐条自己复核，不信报告自述）
+========================================================
+
+V1  git diff --name-status neoforge-1.21.1...task/SBN-001 与第二节允许清单两向一致（多一个少一个都不通过）。
+V2  云端重新编译 BUILD SUCCESSFUL、0 警告；云端能跑的话重跑 runGameTestServer，8 个用例全过。
+V3  每个搬来的文件与 1.20.1 源 diff -w 的残差只有：import / 包名、第三节点名的 API 改写、SB-TODO 桩。出现第三节没提到的逻辑改动 = 不通过（除非报告「任务书出入」里说明了理由）。
+V4  配置键名、默认值、注释与 1.20.1 逐字相同（云端会把两边 define 调用抽出来比）。
+V5  SB-TODO 桩的 grep 实数与报告一致，且每条都有阶段号与类名。
+V6  javap.txt 覆盖 J1～J9。
+V7  开发日志只在文末追加一节；测试清单、规程、通用经验副本只动了允许的部分。
+
+========================================================
+七、报告模板（写到 任务派发与核验\SBN-001_报告.txt；禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-001 报告
+执行：<开始时间> ～ <结束时间>（YYYY-MM-DD HH:mm:ss）
+提交：<本轮推送的提交短哈希>
+
+一、备份：<备份脚本打印的表格行>
+二、完成情况：逐条对照第三节 1～10，每条一句「做了什么 + file:line」
+三、改了写法的调用：表格式纯文本，每行「1.20.1 写法 → 1.21.1 写法 · file:line · 依据（J 编号）」
+四、测试覆盖：A1～A4 结果；g01～g08 每条通过 / 失败；证据文件名
+五、迁移桩清单：新桩 N + 存量 0 = grep 实数 M；逐条 file:line · 阶段 · 类名
+六、任务书出入：逐条「任务书说 X，实际 Y，处理 Z」；没有写「无」
+七、双端同步自查：一句结论
+八、教训同步：规程第五节的 A→C 条数 / C→A 条数 / 冲突（冲突列两版原文）
+九、建议记入：想让云端问用户后写进 T / K / C 的条目，一条一句话；没有写「无」
+十、需要用户做的事：没有写「无」
+
+证据目录 任务派发与核验\SBN-001_证据\：编译.txt、GameTest.txt、改动清单.txt、javap.txt，做了 A3 / A4 的另加 服务端.txt / 旧文件基线.txt。
+
+推送后对用户说：「已推送，去云端说『验收 SBN-001』」。
