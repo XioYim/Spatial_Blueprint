@@ -365,3 +365,52 @@ C1. 云端复核（验收时云端主会话自测，2026-09-30 01:30:00）
     结果：[✓] 全部通过
 
 【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+八、SBN-008 项目写操作与杂项 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 01:05:00 · 测于 2026-09-30 00:56:27
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行（首跑 1 处漏 import 已修）
+    结果：[✓] 全部通过
+A2. GameTest 65 条（SBN001～007 的 56 + SBN008 9）
+    预期：65 进 65 出全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (15 tests)
+          ========= 65 GAME TESTS COMPLETE IN 3.222 s ======================
+          All 65 required tests passed :)
+    t01 65 个 payload ID 命名 + 互不重复（12 新 + 53 旧）
+    t02 12 个消息编码往返字节逐字相等
+    t03 上限 4 组：MAX_ORDER 越界（1025 / -1）回空列表 + 2 个手写超长字符串抛
+    t04 项目创建 / 删除：非 OP 拒、OP 成功、ownerUuid 正确、删除前后文件状态正确
+    t05 蓝图应用 / 取用：次元蓝图归属、工程固定坐标、MODE_PLAN / MODE_IMPORT 的 project_id / task_set_id
+    t06 项目编辑：范围保存 / 重叠拒、排序重编号 / 前置重映射、删子工程与依赖拒
+    t07 领取子工程：工程蓝图 sb_task_set_id / sb_entry_index / 领取进度记录
+    t08 材料清单：非 OP 静默拒 / OP+创造写入读回一致 / 奖励清单清空
+    t09 非法方块：禁捕方块上报、普通方块不报、领地采样（临时监听注册 / 注销）
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.453s)；RCON stop 后正常退出；0 条 ERROR；19 条 WARN 全为既有/无害项；
+          [BlueprintFileLogger] Log directory 日志行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          network / server / log / util 下 SB-TODO( 24 处全部为桩标记；全仓桩数 45 = 44 + 新 1
+    结果：[✓] 全部通过
+
+A5. GameTest t10_submitChangesCountGuard（云端验收修正追加，2026-09-30 02:40:00）
+    预期：C2S_SubmitProjectChangesMessage 解码时 orderCount / deleteCount 越界（Integer.MAX_VALUE、负数）整包拒收（DecoderException），不按计数预分配
+    实际：修正前 t10 失败（1/66，未拒收）；两处计数改走 S2C_OperationResult.checkedCount(buf, buf.readableBytes(), …) 后 All 66 required tests passed
+    结果：[✓] 全部通过（云端复跑）
+C1. 云端复核（验收时云端主会话自测，2026-09-30 02:40:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 65/65（修正后 66/66）；65 条注册方向与 1.20.1 逐条比对无差；A4 grep 云端自跑为空；变异复核 3 处：CreateProject OP → t04、ApplyBlueprint 次元蓝图主人 → t05、RequestIllegalBlocks isCanceled → t09 各自转红（SBN-008_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
