@@ -1,6 +1,6 @@
 # Spatial_Blueprint_NeoForge_1.21.1
 
-Spatial Blueprint 的 **NeoForge 1.21.1** 移植线：NeoForge 21.1.252、Java 21、modid `spatial_blueprint`、包根 `com.xioyim.spatialblueprint`（与 1.20.1 线同 ID）。git 仓库 `XioYim/Spatial_Blueprint` 的 **`neoforge-1.21.1` 分支**；`main` 分支是 Forge 1.20.1 线（本机 `D:\Mods\Spatial_Blueprint`，本项目里**只读**）。**默认所有功能都是服务器级别。**
+Spatial Blueprint 的 **NeoForge 1.21.1** 移植线：NeoForge 21.1.252、Java 21、modid `spatial_blueprint`、包根 `com.xioyim.spatialblueprint`（与 1.20.1 线同 ID）。git 仓库 `XioYim/Spatial_Blueprint` 的 **`neoforge-1.21.1` 分支**；`forge-1.20.1` 分支是 Forge 1.20.1 线（本机 `D:\Mods\Spatial_Blueprint`，本项目里**只读**）。**默认所有功能都是服务器级别。**
 
 **协作方式（2026-09-29 起）：云端会话 = 主会话（规划、写 TASK、验收），本地会话 = 辅助 AI（执行、测试、同步、推送），全部经 git 任务分支 `task/SBN-00N` 往返。开工先读 `#Spatial_Blueprint_NeoForge_1.21.1\云端协作规程.md`。** 本地会话里用户说「执行 SBN-00N」，你就是辅助 AI，照规程第三节走；在云端被要求「验收 SBN-00N」或规划下一阶段，你就是主会话。
 
