@@ -2,7 +2,7 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-更新：2026-09-29 19:25:00
+更新：2026-09-29 20:35:00
 
 ========================================================
 【规矩】
@@ -180,3 +180,45 @@ A4. 旧文件读取基线
     结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
 
 【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+四、SBN-004 数据组件与物品 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 20:35:00 · 测于 2026-09-29 20:23:53
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 33 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 7）
+    预期：33 进 33 出全过
+    实际：Running test batch 'defaultBatch:0' (33 tests)... [+++++++++++++++++++++++++++++++++] All 33 required tests passed :)
+    t01 注册（10 物品 / render_block / 方块实体 / 39 组件 codec+streamCodec）
+    t02 磁盘往返（6 个根物品类 + getter 逐项 + MutableBlockPos immutable）
+    t03 网络往返（STREAM_CODEC）
+    t04 旧物品迁移（真实 DataFixer 3465→当前，9 组；旧键落 custom_data 实证）
+    t05 迁移幂等
+    t06 BuildBlueprintItem.restore 五种 sourceType
+    t07 RenderBlockEntity 存读/更新包/setRealBlock
+    结果：[✓] 全部通过
+A3. 专服冒烟（本任务必做）
+    预期：runServer 起到 Done、stop 正常退出、无本 mod ERROR、配方正常
+    实际：Done (4.876s)；RCON stop 后 Stopping server + All dimensions are saved + BUILD SUCCESSFUL；
+          0 条 ERROR；Loaded 1291 recipes（blank_blueprint 解析错误消失）；18 条 WARN 全为既有/无害项
+    结果：[✓] 全部通过
+
+【手测】需要用户进游戏（H1，辅助 AI 已写好步骤，结果等用户回）：
+H1. runClient 单人验证（构建 3.0.0，本地开发环境）：
+    (1) 前置：runClient 进入单人创造世界。
+    (2) 操作：打开创造模式物品栏 →「工具与实用物品」页。
+        预期：能看到 8 个蓝图物品（空白 / 空间 / 投影 / 次元 / 工程 / 奖励 / 公用项目 / 私人项目），
+              图标正常（非紫黑方块），名字是中文翻译。
+    (3) 操作：拿一枚投影蓝图右键。
+        预期：无反应、无报错（界面在 P6 打桩，属于预期行为）。
+    (4) 操作：执行 /give @s spatial_blueprint:spatial_blueprint[spatial_blueprint:blueprint_name="测试"]。
+        预期：物品名字显示「空间蓝图 - 测试」。
+    结果：[ ] 未测（等用户）

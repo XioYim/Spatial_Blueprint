@@ -1,0 +1,310 @@
+SBN-004 · P2b 数据组件、物品、方块 / 方块实体、创造物品栏、旧物品迁移
+派发：2026-09-29 20:40:00（云端主会话）
+分支：task/SBN-004（从 neoforge-1.21.1 @ d5a8798 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-004 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K5、K6、K7、C2、C5、C8；迁移计划书.md 第四节「1.21 API 的坑」与第五节 D1 / D2 拍板记录；
+通用经验副本第五节（API 对照）。1.20.1 源码：git show origin/forge-1.20.1:<路径>。
+以源码为准。本任务书的 API 结论已在云端 javap 核过（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P2 的后半段。本任务把「物品 NBT」换成自定义数据组件，并把物品、渲染方块、创造物品栏接上：
+
+  组件：新建 item/SpatialBlueprintComponents（39 个组件类型，一键一组件，第三.1 节表）
+  物品：13 个文件（11 个物品类 + AbstractBlueprintItem + SpatialBlueprintItems；注册 10 个物品，ProjectBlueprintItem 只是两个项目蓝图的父类，见第二节）
+  方块：SpatialBlueprintRegistry、block/RenderBlock、block/entity/RenderBlockEntity
+  迁移：新建 item/LegacyItemMigration —— 1.20.1 物品经原版 DataFixer 升级后落在 minecraft:custom_data 里的旧键，搬进本 mod 组件
+  辅助：util/ItemSyncUtil、util/OrphanBlueprintGuard（物品已用到、只依赖原版；网络发送那一句打桩）
+  主类：注册三组 DeferredRegister + 创造物品栏
+
+本任务结束时：10 个物品与渲染方块在游戏里存在、能进创造物品栏、组件能存盘能同步、1.20.1 旧物品载入即迁移；
+右键打开的界面、网络包、客户端缓存、渲染器仍然没有（打桩，P3～P6）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  item/SpatialBlueprintComponents.java                                      ← 1.21.1 独有（三.1）
+  新  item/LegacyItemMigration.java                                             ← 1.21.1 独有（三.3）
+  新  item/AbstractBlueprintItem.java、item/BlankBlueprintItem.java、item/BuildBlueprintItem.java、
+      item/DimensionalBlueprintItem.java、item/EngineeringBlueprintItem.java、item/PrivateProjectBlueprintItem.java、
+      item/ProjectBlueprintItem.java、item/ProjectionBlueprintItem.java、item/PublicProjectBlueprintItem.java、
+      item/RewardBlueprintItem.java、item/SpatialBlueprintItem.java、item/SpatialBlueprintItems.java、
+      item/VoidDimensionalBlueprintItem.java                                    ← 1.20.1 同路径（13 个）
+  新  SpatialBlueprintRegistry.java、block/RenderBlock.java、block/entity/RenderBlockEntity.java   ← 1.20.1 同路径
+  新  util/ItemSyncUtil.java、util/OrphanBlueprintGuard.java                    ← 1.20.1 同路径
+  改  SpatialBlueprintMod.java                                                  ← 三.6
+  新  gametest/SBN004Tests.java
+
+资源：不动（P0 已搬好：物品模型 10 个、render_block 方块状态、lang、recipe/blank_blueprint.json 已是 1.21 格式）。
+      若实测发现缺资源导致报错，停下写进报告，不自己补。
+
+交接件（规程允许范围）：SBN-004_报告.txt、SBN-004_证据\、开发日志.md 文末「## SBN-004 执行记录」、
+测试清单.txt 追加「四、SBN-004 数据组件与物品」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（SBN-001～003 的通过项、gradle 文件、资源、待办、记忆、联动手册、迁移计划书）。
+
+明确不在本任务：网络包（P3）、命令 / 放置 / 捕获逻辑（P4）、客户端缓存 / 渲染器 / RenderBlockEntity 的 BlockEntityRenderer（P5）、
+界面（P6）、旧物品内联 blueprintData 转存（P4，三.3.e）、NotifySound（调用点全在打桩的客户端分支里）。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则：逻辑、判断顺序、注释、翻译键、public static 访问器的**方法名与签名**一律不改（P3～P6 的调用方照原样接）；
+只改「NBT 读写 → 组件读写」、API 签名、下面点名处。每个文件 diff -w 残差逐条进报告「改了写法的调用」。
+
+1. 组件：item/SpatialBlueprintComponents
+   a. DeferredRegister.createDataComponents(Registries.DATA_COMPONENT_TYPE, MODID)（J21）；
+      每个类型 registerComponentType(id, b -> b.persistent(CODEC).networkSynchronized(STREAM_CODEC))，
+      **全部都要 persistent + networkSynchronized** —— 1.20.1 的物品 NBT 本来就整份同步给客户端，界面要读 blueprint_id 等；少一个就是客户端看不见（双端不同步）。
+      公开字段 public static final DeferredHolder<DataComponentType<?>, DataComponentType<T>> 大写蛇形名（如 BLUEPRINT_ID）；
+      static register(IEventBus)。不写 cacheEncoding。
+   b. 一键一组件，组件 ID = 旧 NBT 键的 snake_case（下表）。值类型全部不可变：String、Integer、Long、Double、Boolean、BlockPos、Rotation、CaptureMode。
+      **BlockPos 在 setter 里一律 pos.immutable() 再 set**（调用方可能传 MutableBlockPos，存进组件后被改就是静默串值）。
+      理由（写进类注释）：每个 setter 是一次原子 set，没有「取出副本改完忘写回」这类坑（迁移计划书第四节）；旧键迁移是一张对照表。
+   c. Codec / StreamCodec（J22）：
+      String  → Codec.STRING / ByteBufCodecs.STRING_UTF8
+      Integer → Codec.INT / ByteBufCodecs.VAR_INT        Long → Codec.LONG / ByteBufCodecs.VAR_LONG
+      Double  → Codec.DOUBLE / ByteBufCodecs.DOUBLE      Boolean → Codec.BOOL / ByteBufCodecs.BOOL
+      BlockPos → BlockPos.CODEC / BlockPos.STREAM_CODEC
+      Rotation → Rotation.CODEC / NeoForgeStreamCodecs.enumCodec(Rotation.class)（Rotation 没有 STREAM_CODEC，J22）
+      CaptureMode → Codec.INT.xmap(CaptureMode::fromOrdinal, Enum::ordinal) / ByteBufCodecs.VAR_INT.map(同上)
+                    —— 与 1.20.1 物品 NBT、蓝图文件里的 saveMode 同一个口径（ordinal）；fromOrdinal 越界回 SAFE 已有。
+
+   对照表（NBT 键 1.20.1 → 组件 ID spatial_blueprint:… · 值类型 · 旧值读法（三.3 用））：
+     blueprintId     → blueprint_id      String
+     blueprintName   → blueprint_name    String
+     saveMode        → save_mode         CaptureMode   int → CaptureMode.fromOrdinal
+     animDuration    → anim_duration     Integer
+     creatorName     → creator_name      String
+     rotation        → rotation          Rotation      字符串 = Rotation.name()（大写，如 CLOCKWISE_90）→ Rotation.valueOf，非法跳过
+     xOffset / yOffset / zOffset → x_offset / y_offset / z_offset   Integer
+     alignMode       → align_mode        String
+     locked          → locked            Boolean       byte
+     lockedPos       → locked_pos        BlockPos      compound {x,y,z}（小写，SpatialBlueprintItem 自己写的）
+     clearFirst      → clear_first       Boolean
+     point1 / point2 → point1 / point2   BlockPos      compound {x,y,z}（小写，BlankBlueprintItem 自己写的）
+     completionTime  → completion_time   Long
+     sourceType      → source_type       String
+     captureMin / captureMax → capture_min / capture_max   BlockPos   1.20.1 NbtUtils.writeBlockPos = {X,Y,Z}（大写）→ NbtCompat.readBlockPos
+     tpX / tpY / tpZ → tp_x / tp_y / tp_z   Double
+     tpDimension     → tp_dimension      String
+     worldUuid / worldName → world_uuid / world_name   String
+     engProjectId / engProjectName / engDimension → eng_project_id / eng_project_name / eng_dimension   String
+     engStartX/Y/Z   → eng_start         BlockPos      三个 int 合成一个（三个键都在才迁；缺任一 → 按 0 补，与 1.20.1 getInt 缺键 = 0 一致）
+     engEndX/Y/Z     → eng_end           BlockPos      同上
+     sbTaskSetId     → sb_task_set_id    String
+     sbEntryIndex    → sb_entry_index    Integer
+     projectId / taskSetId / projectName / projectStage / projectDim
+                     → project_id / task_set_id / project_name / project_stage / project_dim   String
+     rangeP1 / rangeP2 → range_p1 / range_p2   BlockPos   {X,Y,Z}（NbtUtils.writeBlockPos）→ NbtCompat.readBlockPos
+   共 39 个。另两个旧键不做组件：forceCancelled（全仓库只有 BuildBlueprintItem 一处 remove、没有写入方 → 废键，迁移时删掉）、
+   blueprintData（内联蓝图数据，见三.3.e）。
+
+2. 物品类（13 个文件）
+   a. 访问器改写口径（逐个对照 1.20.1，语义必须一致）：
+      「stack.hasTag() && contains(k) ? get : 默认」→ stack.getOrDefault(TYPE, 默认)；「contains(k)」→ stack.has(TYPE)；
+      「getOrCreateTag().putX(k, v)」→ stack.set(TYPE, v)；「getTag().remove(k)」→ stack.remove(TYPE)；
+      1.20.1 在缺键时读出 ""/0/false 的，这里默认值同样是 ""/0/false；返回 null 的（getBlueprintId、getLockedPos、getCaptureMin…）照旧返回 null。
+      setAlignModeStr("OFF") 照旧 remove；setLockedPos(null) 照旧 remove；animDuration 的 Math.max(1, …) 两处保留；
+      EngineeringBlueprintItem.clearBoundProject 删 5 个组件（eng_project_id、eng_project_name、eng_dimension、eng_start、eng_end）。
+      getBoundStartPos / getBoundEndPos：没组件时返回 BlockPos.ZERO（与 1.20.1「!hasTag → ZERO、缺键 getInt=0」一致）。
+   b. 1.21 签名（J23）：appendHoverText(ItemStack, Item.TooltipContext, List<Component>, TooltipFlag)；
+      BuildBlueprintItem 的倒计时原来用 level.getGameTime()：改用 context.level()（TooltipContext 的 default 方法，可能为 null），
+      null 时与原来 level == null 一样不显示。use / useOn / getName / isFoil 签名不变。
+   c. @OnlyIn 与客户端分支：NeoForge 1.21 不再按 @OnlyIn 剥离代码。凡方法体引用 gui / client / network / NotifySound 的客户端方法
+      （openPlacementScreen、openSelectionScreen、openEngineeringScreen、openProjectScreen、openRangeScreenDirect、discardInvalidBlueprint、
+      notifyProjectMissing、notifyWrongDimension、notifyQuickPlanNoRange），保留方法签名、去掉 @OnlyIn，**方法体整体**换成一行
+      「// SB-TODO(P6): <原方法做什么>」（每个方法一条）。
+      返回值型的客户端判定（ProjectBlueprintItem.isProjectMissing、knownProjectDimension 的缓存兜底、canEnterQuickPlan 的状态包兜底）：
+      只把引用 ClientProjectStatusCache 的那几行注释掉并在上一行写 SB-TODO(P5)，走「缓存没有」的那条原分支
+      （isProjectMissing → false；knownProjectDimension → 只看物品组件，没有返回 null；canEnterQuickPlan → 只看 stage）。
+      isOutsideProjectDimension / wrongDimensionMessage / isRangeEditableStage / findHeld / findHeldHand 纯逻辑，去掉 @OnlyIn 照搬。
+      SpatialBlueprintItem.openPlacementScreen 里「超出预览范围自动取消」那段（BlueprintSelectionRenderer / ConfigAccess）同样随方法体一起打桩。
+   d. 服务端分支：use / useOn 里 OrphanBlueprintGuard.discardIfFileMissing 保留（本任务搬 OrphanBlueprintGuard）。
+      VoidDimensionalBlueprintItem.handleServerUse 的三处 BlueprintNetwork.CHANNEL.send(...) 各自注释掉，上一行 SB-TODO(P3)（三条）；
+      其余判定（文件存在、存档归属、主人校验）与 setItemInHand / ItemSyncUtil 原样保留。
+   e. AbstractBlueprintItem：
+      getBlueprintDataServer：有 blueprint_id 走 BlueprintStorage.load，否则 null。1.20.1 的内联 blueprintData 回退（readInlineData）删掉，
+      原位置上一行 SB-TODO(P4): 旧物品内联 blueprintData 转存为蓝图文件（D1 / D2，需 DataFixer）—— 只写一条。
+      getBlueprintDataClient：方法体引用 ClientBlueprintCache → 整体换成 SB-TODO(P5) + return null。
+      getMaterialListForTooltip：FMLEnvironment → net.neoforged.fml.loading.FMLEnvironment（J24），逻辑照旧。
+      SpatialBlueprintItem.getBlueprintDataClient 同样 SB-TODO(P5) + return null；setBlueprintData 写 blueprint_id + save_mode。
+   f. BuildBlueprintItem 的服务端 tick：
+      @Mod.EventBusSubscriber(bus = FORGE) → @EventBusSubscriber(modid = MODID)（net.neoforged.fml.common，默认 GAME 总线，J25）；
+      TickEvent.ServerTickEvent + phase END → ServerTickEvent.Post（net.neoforged.neoforge.event.tick，J25），去掉 phase 判断；
+      ServerLifecycleHooks 用 SBN-003 已用过的 neoforge 包。
+      为了能测，把「一枚到期的建造蓝图 → 恢复后的物品」这段抽成 public static ItemStack restore(ItemStack stack)（循环里调用它，行为不变）：
+        sourceType 的 switch 原样；
+        void_dimensional：新栈只 set 这 12 个组件（blueprint_name、save_mode、blueprint_id、capture_min、capture_max、tp_x、tp_y、tp_z、
+          tp_dimension、creator_name、world_uuid、world_name）—— 源有才 set，与 1.20.1 逐键 contains 一致；
+        其余非 blank / engineering：stack.transmuteCopy(restoredItem) 整份带过去，再 remove completion_time、source_type
+          （forceCancelled 已无组件，不用删）；
+        blank / engineering：new ItemStack(restoredItem)，不带组件。
+      getContainerSize 循环、TICK_INTERVAL、ItemSyncUtil.syncSlot 原样。
+   g. ProjectBlueprintItem 构造器 super(properties.stacksTo(1)) 原样；SpatialBlueprintItems 里两个项目蓝图的 new Item.Properties() 原样。
+   h. SpatialBlueprintItems：DeferredRegister.createItems(MODID) + register(name, () -> new X(new Item.Properties().stacksTo(1)))，
+      字段类型 DeferredItem<Item>（J21），注册名、顺序、Properties 与 1.20.1 一致。
+   i. 迁移钩子：六个「根」物品类（BlankBlueprintItem、BuildBlueprintItem、SpatialBlueprintItem、AbstractBlueprintItem、
+      ProjectBlueprintItem、VoidDimensionalBlueprintItem —— 其余都是它们的子类）各加一个
+      @Override verifyComponentsAfterLoad(ItemStack stack) { LegacyItemMigration.migrate(stack); }（J26）。
+
+3. 旧物品迁移：item/LegacyItemMigration
+   a. 路径：1.20.1 存档 / 蓝图文件里的物品先经原版 DataFixer（ItemStackComponentizationFix）升级，本 mod 的自定义键不认识、
+      整体落进 minecraft:custom_data。原版在 ItemStack 构造（磁盘解码、网络解码）与 applyComponents 时调用
+      Item#verifyComponentsAfterLoad（J26：两处构造器 + 两个 applyComponents；PlayerHeadItem 就是在这里改组件的先例）。
+      → 在这里把 custom_data 里的旧键按三.1 对照表搬进组件，搬过的键从 custom_data 删掉；删完为空就 remove(CUSTOM_DATA)。
+   b. 双端：迁移是纯函数（同输入同输出），服务端与客户端各自解码时算出同一结果，不引入不同步；不发包、不读文件、不读配置。
+   c. 幂等：没有 custom_data、或 custom_data 里没有对照表里的键 → 直接返回，不改 stack（热路径，每次构造都会调）。
+      已经有同名组件时（理论上不该发生）：组件为准，旧键照样删掉。
+   d. 只迁对照表里的键 + 删 forceCancelled；类型不对的旧值（例：rotation 不是合法名字）跳过不迁、旧键照样删掉，不抛异常、不刷日志。
+      custom_data 里其它键（别的 mod / 数据包写的）原样保留。
+   e. blueprintData（内联蓝图数据）**不动**，留在 custom_data：它是整份方块数据，D1 要求物品只存引用，转存成蓝图文件要先过 DataFixer（P4）。
+      这是唯一允许留在 custom_data 里的本 mod 旧键；类注释写明。
+   f. public static void migrate(ItemStack stack)；另给测试用 public static boolean needsMigration(CustomData data) 可选。
+
+4. 方块 / 方块实体
+   a. SpatialBlueprintRegistry：DeferredRegister.createBlocks(MODID).register("render_block", RenderBlock::new)（DeferredBlock<Block>）；
+      BLOCK_ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, MODID)，Builder.of(RenderBlockEntity::new, RENDER_BLOCK.get()).build(null)（J27）。
+      不注册方块物品（1.20.1 也没有）。
+   b. RenderBlock：Properties 链原样；onRemove / getRenderShape / propagatesSkylightDown / getShadeBrightness 在 1.21 是 protected（J27），
+      覆盖时保持 public 或改 protected 均可，报告写明。
+      addDestroyEffects 在 NeoForge 1.21 挪到 IClientBlockExtensions（J27）→ 删掉该方法；onRemove 里往 CLIENT_PARTICLE_CACHE put 的那句注释掉；
+      上一行一条 SB-TODO(P5): addDestroyEffects 改走 IClientBlockExtensions（initializeClient），连同 onRemove 的缓存一起恢复。
+      （只注释 put、不删缓存字段：否则客户端只进不出会泄漏。）
+   c. RenderBlockEntity（J28）：
+      load(CompoundTag) → loadAdditional(CompoundTag, HolderLookup.Provider)；saveAdditional 加 Provider；
+      readBlockState 照 SBN-001 口径 BuiltInRegistries.BLOCK.asLookup()；
+      getUpdateTag() → getUpdateTag(HolderLookup.Provider)：new CompoundTag + saveAdditional(tag, registries)（与 1.20.1 同）；
+      handleUpdateTag(tag) → handleUpdateTag(CompoundTag, HolderLookup.Provider)：loadAdditional(tag, registries)；
+      onDataPacket(net, pkt) → onDataPacket(Connection, ClientboundBlockEntityDataPacket, HolderLookup.Provider)：loadAdditional(pkt.getTag(), registries)
+      （1.20.1 的 null 判断保留或说明为何可删）；getUpdatePacket 原样。
+      setRealBlock 里 newBE.load(blockEntityData) → newBE.loadWithComponents(blockEntityData, level.registryAccess())；
+      其余（动画、drawSize、setRenderData、markDirtyClient）原样。存盘键名一个不改。
+
+5. 辅助类
+   ItemSyncUtil 原样（ClientboundContainerSetSlotPacket 构造器 1.21 未变，J29）。
+   OrphanBlueprintGuard：BlueprintNetwork 发送那一句注释掉，上一行 SB-TODO(P3)；其余原样（blueprintIdOf 走两个物品类的访问器）。
+
+6. 主类
+   构造器里按 1.20.1 顺序接上：SpatialBlueprintComponents.register(modEventBus)（新，放在物品之前）、SpatialBlueprintItems.register(modEventBus)、
+   SpatialBlueprintRegistry.register(modEventBus)、modEventBus.addListener(this::addCreative)；
+   删掉三条 SB-TODO(P2)（物品注册、方块注册、创造物品栏）。
+   addCreative 照搬 1.20.1：TOOLS_AND_UTILITIES 里 accept 8 个物品（不含 build_blueprint、void_dimensional_blueprint），顺序不变。
+   BuildCreativeModeTabContentsEvent 在 net.neoforged.neoforge.event（J30）。其余 SB-TODO 不动。
+
+========================================================
+四、取证（云端 2026-09-29 已 javap neoforge-21.1.252-merged.jar；本地只需在证据/javap.txt 里对 J26 贴一次 javap -c 调用点复核）
+========================================================
+
+  J21 DeferredRegister.createDataComponents(ResourceKey, String) → DeferredRegister.DataComponents#registerComponentType(String, UnaryOperator<DataComponentType.Builder<D>>)；
+      createItems(String) → Items#register(String, Supplier)；createBlocks(String) → Blocks#register(String, Supplier)
+  J22 DataComponentType.Builder#persistent(Codec) / #networkSynchronized(StreamCodec<? super RegistryFriendlyByteBuf, T>) / #build；
+      BlockPos.CODEC、BlockPos.STREAM_CODEC；Rotation.CODEC（无 STREAM_CODEC）；NeoForgeStreamCodecs.enumCodec(Class)；
+      ByteBufCodecs.STRING_UTF8 / VAR_INT / VAR_LONG / DOUBLE / BOOL
+  J23 Item#appendHoverText(ItemStack, Item.TooltipContext, List, TooltipFlag)；Item.TooltipContext#level()（default）；
+      Item#use / useOn / getName / isFoil / inventoryTick 签名
+  J24 net.neoforged.fml.loading.FMLEnvironment#dist
+  J25 net.neoforged.fml.common.EventBusSubscriber；net.neoforged.neoforge.event.tick.ServerTickEvent.Post
+  J26 Item#verifyComponentsAfterLoad(ItemStack)：ItemStack 私有构造器 (ItemLike, int, PatchedDataComponentMap) 与
+      applyComponents(DataComponentPatch) / applyComponents(DataComponentMap) 里 invokevirtual；原版覆盖者只有 PlayerHeadItem
+  J27 BlockBehaviour#onRemove / getRenderShape / propagatesSkylightDown / getShadeBrightness 为 protected；
+      IClientBlockExtensions#addDestroyEffects(BlockState, Level, BlockPos, ParticleEngine)；BlockEntityType.Builder#build(Type)
+  J28 BlockEntity#loadAdditional / saveAdditional (CompoundTag, Provider)、getUpdateTag(Provider)、loadWithComponents(CompoundTag, Provider)；
+      IBlockEntityExtension#handleUpdateTag(CompoundTag, Provider) / onDataPacket(Connection, ClientboundBlockEntityDataPacket, Provider)；
+      ClientboundBlockEntityDataPacket.create(BlockEntity)
+  J29 ItemStack#transmuteCopy(ItemLike) / getOrDefault / has / set / remove；CustomData#copyTag / isEmpty / of；ClientboundContainerSetSlotPacket 构造器
+  J30 net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent#getTabKey / accept；CreativeModeTabs.TOOLS_AND_UTILITIES
+  DataVersion：1.20.1 = 3465；当前取 SharedConstants.getCurrentVersion().getDataVersion().getVersion()。
+
+========================================================
+五、测试（真实序列化：新格式 NBT 一律由真实 ItemStack / 方块实体存出；旧格式物品 NBT 是唯一允许手写处 —— 它就是 1.20.1 的存档格式）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：报告写 @GameTest 实数 = 批次条数）。SBN001～003 的 26 条照旧全过。
+    t01_registration        10 个物品、render_block、render_block 方块实体类型都在注册表里；
+                            SpatialBlueprintComponents 的注册项（DeferredRegister#getEntries）正好 39 个，每个 codec() 与 streamCodec() 都非 null。
+    t02_diskRoundTrip       每个根物品类造一枚、用 public setter 把它会用到的组件全部设上（Spatial：id/name/save_mode/anim/rotation/三偏移/align/locked/
+                            locked_pos/clear_first；Blank：point1/2/name；Build：completion_time/source_type/name/save_mode；
+                            Void：capture_min/max、tp_x/y/z、tp_dimension、world_uuid/name、creator、id、name；
+                            Engineering：setBoundProject + task_set/entry_index；Project：project_id/task_set_id/name/stage/dim/range_p1/p2）
+                            → ItemStack.save(provider) → ItemStack.parse(provider, …).orElseThrow() → isSameItemSameComponents；
+                            并逐个用 public getter 断言值相等。另：setLockedPos(传入 MutableBlockPos) 后再改那个 MutableBlockPos，getter 不变（三.1.b）。
+    t03_networkRoundTrip    t02 的每枚：ItemStack.STREAM_CODEC 经 RegistryFriendlyByteBuf(Unpooled.buffer(), registryAccess) 编码再解码
+                            → isSameItemSameComponents（客户端能看到同样的组件）。
+    t04_legacyMigration     手写 1.20.1 物品 NBT（{id, Count:1b, tag:{…}}）→ DataFixers.getDataFixer().update(References.ITEM_STACK,
+                            new Dynamic<>(NbtOps.INSTANCE, tag), 3465, 当前 DataVersion) → ItemStack.parse → getter 断言，覆盖：
+                              空间蓝图：blueprintId、blueprintName、saveMode:2、rotation:"CLOCKWISE_90"、xOffset、locked:1b、lockedPos:{x,y,z}、alignMode、clearFirst、animDuration；
+                              空白蓝图：point1 / point2 {x,y,z}；
+                              工程蓝图：engProjectId/Name/Dimension、engStartX..Z、engEndX..Z、sbTaskSetId、sbEntryIndex；
+                              空置次元蓝图：captureMin / captureMax {X,Y,Z}、tpX/Y/Z、tpDimension、worldUuid、worldName、creatorName；
+                              项目蓝图：projectId、taskSetId、projectName、projectStage、projectDim、rangeP1 {X,Y,Z}；
+                              建造蓝图：completionTime、sourceType、forceCancelled:1b（迁移后 custom_data 里没有它）。
+                            以上每枚迁移后 has(CUSTOM_DATA) 为 false。另三条：
+                              带 blueprintData:{…} 与一个外来键 foo 的投影蓝图 → 迁移后 custom_data 恰好剩 blueprintData 与 foo；
+                              非法 rotation:"SIDEWAYS" → 不迁、不抛、旧键已删；
+                              原版物品（石头）带 custom_data {blueprintId:"x"} → 不动（只迁本 mod 物品）。
+                            把两枚（空间蓝图、空置次元蓝图）的「DataFixer 升级后、迁移前」的 components 用 NbtUtils.prettyPrint（K5）写进 证据/nbt_样本.txt，
+                            确认旧键确实落在 minecraft:custom_data。若实测 DataFixer 不是这样落，停下写清，按实测改迁移入口并写进「任务书出入」。
+    t05_migrationIdempotent 对 t04 迁移后的栈再 applyComponents(DataComponentPatch.EMPTY) 与再存再读各一次 → isSameItemSameComponents 不变。
+    t06_buildRestore        BuildBlueprintItem.restore：sourceType = void_dimensional（12 个组件逐个带过去、其它组件如 rotation 不带）、
+                            project（整份带过去，completion_time / source_type 被删）、blank（空物品）、engineering（空物品）、缺省（→ 空间蓝图）。
+    t07_renderBlockEntity   在测试区放 render_block，setRenderData(石头→空气 与 空气→橡木原木 各一次) + setBlockEntityData(真实箱子存出的 NBT，内含一格物品)
+                            → saveWithFullMetadata(provider) → BlockEntity.loadStatic → 字段逐个相等；getUpdateTag(provider) 读回同样相等；
+                            setRealBlock(箱子方块) 后该位置箱子里的物品与原箱子一致。
+    测试改过的 live 配置 finally 恢复、不 save；run\ 残留清理。
+A3  专服冒烟（必做 —— 注册表从本任务起有内容）：runServer 起到 Done、stop 正常退出；
+    日志里无本 mod 相关 ERROR（注册、配方 blank_blueprint、方块状态）；证据/服务端.txt 摘相关段与全部 ERROR / WARN。
+
+【手测】（需要用户进游戏；辅助 AI 只写步骤进测试清单，结果等用户回）
+H1  runClient 单人：创造模式「工具与实用物品」页能看到 8 个蓝图物品，图标正常（非紫黑方块），名字是中文翻译；
+    背包里拿一枚投影蓝图，右键无反应、无报错（界面打桩）；用 /give @s spatial_blueprint:spatial_blueprint[spatial_blueprint:blueprint_name="测试"] 给一枚，名字显示「空间蓝图 - 测试」。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3 通过。
+V3  18 个新搬文件与 1.20.1 源 diff -w 残差只有：NBT → 组件（三.2.a）、1.21 签名（三.2.b、三.4）、打桩（三.2.c～e、三.4.b、三.5）、
+    三.2.f 的 restore 抽取、三.2.i 的迁移钩子；访问器方法名与签名零改动。
+V4  39 个组件全部 persistent + networkSynchronized；BlockPos setter 全部 immutable()；t03 网络往返成立。
+V5  t04 用真实 DataFixer；nbt_样本 里能看到旧键落在 minecraft:custom_data。
+V6  SB-TODO 实数 = 12 − 3（主类三条 P2）+ 本任务新桩，逐条列出（文件:行 + 阶段）。
+V7  变异复核（K7，云端验收时做）：临时让 migrate 直接 return，t04 应转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-004 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.6 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」
+三、组件与迁移实测：39 个组件清单（ID · 类型 · file:line）；DataFixer 升级后旧键的真实落点（nbt_样本 摘录）
+四、测试覆盖：A1～A3；t01～t07；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（组件同步、迁移确定性、客户端分支打桩后服务端还剩什么）
+八、教训同步
+九、建议记入
+十、需要用户做的事（H1）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-004』」，并列出 H1。
