@@ -914,4 +914,40 @@ public class SBN008Tests {
         }
         helper.succeed();
     }
+
+    // ── t10：C2S 计数预分配（SBN-008 验收修正）───────────────────────────────
+    // decode 在服务端、权限判定之前执行；按客户端给的计数预分配 ArrayList，一个 5 字节 VarInt
+    // 就能让服务端尝试分配 20 亿元素的数组。越界计数必须整包拒收（DecoderException）。
+    // 手写恶意包是唯一允许处（证明该形状可达）。
+
+    @GameTest(template = "empty")
+    public static void t10_submitChangesCountGuard(GameTestHelper helper) {
+        helper.assertTrue(decodeRejected(buf -> {
+            buf.writeUtf("p");
+            buf.writeVarInt(Integer.MAX_VALUE);          // orderCount
+        }), "huge orderCount rejected with DecoderException");
+        helper.assertTrue(decodeRejected(buf -> {
+            buf.writeUtf("p");
+            buf.writeVarInt(0);                          // orderCount
+            buf.writeVarInt(Integer.MAX_VALUE);          // deleteCount
+        }), "huge deleteCount rejected with DecoderException");
+        helper.assertTrue(decodeRejected(buf -> {
+            buf.writeUtf("p");
+            buf.writeVarInt(-5);                         // 负计数
+        }), "negative orderCount rejected with DecoderException");
+        helper.succeed();
+    }
+
+    private static boolean decodeRejected(java.util.function.Consumer<FriendlyByteBuf> writer) {
+        FriendlyByteBuf buf = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        try {
+            writer.accept(buf);
+            C2S_SubmitProjectChangesMessage.decode(buf);
+            return false;
+        } catch (Throwable t) {
+            return t instanceof io.netty.handler.codec.DecoderException;
+        } finally {
+            buf.release();
+        }
+    }
 }

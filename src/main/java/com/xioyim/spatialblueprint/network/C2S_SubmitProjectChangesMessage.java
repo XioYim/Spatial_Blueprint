@@ -108,11 +108,16 @@ public class C2S_SubmitProjectChangesMessage implements CustomPacketPayload {
 
     public static C2S_SubmitProjectChangesMessage decode(FriendlyByteBuf buf) {
         String projectId = buf.readUtf(64);
-        int orderCount = buf.readVarInt();
-        List<Integer> order = new ArrayList<>(Math.max(0, orderCount));
+        // 计数先过 checkedCount（上限 = 剩余字节数：每个 VarInt 元素至少 1 字节）再预分配。
+        // decode 在服务端、权限判定之前执行，1.20.1 原样按客户端计数预分配，一个 5 字节 VarInt
+        // 就能让服务端尝试分配 20 亿元素 —— SBN-008 验收修正，越界整包拒收。
+        int orderCount = com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult
+                .checkedCount(buf, buf.readableBytes(), "orderCount");
+        List<Integer> order = new ArrayList<>(orderCount);
         for (int i = 0; i < orderCount; i++) order.add(buf.readVarInt());
-        int deleteCount = buf.readVarInt();
-        List<Integer> deletes = new ArrayList<>(Math.max(0, deleteCount));
+        int deleteCount = com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult
+                .checkedCount(buf, buf.readableBytes(), "deleteCount");
+        List<Integer> deletes = new ArrayList<>(deleteCount);
         for (int i = 0; i < deleteCount; i++) deletes.add(buf.readVarInt());
         int matCount = buf.readVarInt();
         LinkedHashMap<Integer, MaterialList> materials = new LinkedHashMap<>();
