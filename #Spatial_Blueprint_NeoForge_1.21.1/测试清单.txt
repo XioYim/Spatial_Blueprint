@@ -2,7 +2,7 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-更新：2026-09-29 19:05:00
+更新：2026-09-29 19:25:00
 
 ========================================================
 【规矩】
@@ -73,7 +73,39 @@ A3. 专服冒烟
           minecraft:trial_spawner / minecraft:vault（原文见证据/GameTest.txt）
     结果：[~] 主体通过（等效覆盖）
 A4. 旧文件读取基线
-    实际：未做（同 SBN-001，本机无旧蓝图文件）
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+三·补丁、SBN-003a 材料键保留开关型组件 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 19:25:00 · 测于 2026-09-29 19:13:52
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+来由：SBN-003 验收不通过 —— pruneNoOps 把值为空 compound 的「开关型」组件（unbreakable / hide_tooltip 等）整条剔掉，不可破坏镐与普通镐同键。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 26 条（SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7）
+    预期：26 进 26 出全过
+    实际：Running test batch 'defaultBatch:0' (26 tests)... [++++++++++++++++++++++++++] All 26 required tests passed :)
+    本补丁新增断言（真实 ItemStack + set(DataComponents.XXX, …)）：
+      t01 不可破坏钻石镐 ≠ 普通钻石镐；unbreakable 隐藏提示（show_in_tooltip=false）≠ 默认；
+          HIDE_TOOLTIP 木棍 ≠ 普通木棍；回归：空潜影盒等价、repair_cost 同键仍在
+      t02 以上三个新物品同样验 of == make(id, save().components)
+      t03 不可破坏镐 buildDisplayStack 往返 isSameItemSameComponents
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（同 SBN-003，gametest 已覆盖 mod 加载链）
+    结果：[~] 主体通过（等效覆盖）
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
     结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
 
 【手测】本组无手测项（没有物品、界面、渲染）。

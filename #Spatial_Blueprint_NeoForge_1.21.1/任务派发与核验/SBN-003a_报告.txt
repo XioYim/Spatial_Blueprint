@@ -1,0 +1,36 @@
+SBN-003a 报告
+执行：2026-09-29 19:10:14 ～ 2026-09-29 19:30:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 19:10 | Spatial_Blueprint_NeoForge_1.21.1_20260929_191014 | 914D8C37 | SBN-003a 执行前 |
+
+一、改了什么：
+1. MaterialKey.pruneNoOps 加 boolean topLevel 参数（normalize 传 true）· util/MaterialKey.java:99、116-150：
+   顶层 + 键名含 ':' + 值本来为空 compound → continue 保留（开关型组件，存在即生效）；
+   顶层键值处理后变空的照旧剔除（block_entity_data 剔 id 后为空 → 空潜影盒等价不丢）；
+   旧格式顶层键（不含 ':'，如 display:{}）照旧剔除；递归传 false；"!" 照旧跳过。
+   javadoc 写清为什么（Unbreakable(true) 经 optionalFieldOf 省略默认字段后就是 {}；剔掉会让不可破坏镐与普通镐同键）。
+2. SBN003Tests：t01 追加 3 条断言（不可破坏镐 ≠ 普通镐；unbreakable 隐藏提示 ≠ 默认；HIDE_TOOLTIP 木棍 ≠ 普通木棍），
+   t02 样本表加同 3 个物品，t03 往返加不可破坏镐 · gametest/SBN003Tests.java（t01 段、t02 列表、t03 列表）。
+
+二、开关型组件真实编码（证据/nbt_样本.txt 摘录）：
+- 钻石镐 + Unbreakable(true)：components = {"minecraft:unbreakable": {}}（空 compound；DFU optionalFieldOf 值等于默认时省略字段，datafixerupper 8.0.16 源码确认）；normalize 后保留。
+- 钻石镐 + Unbreakable(false)：{"minecraft:unbreakable": {"show_in_tooltip": 0b}} —— 与默认编码不同，两者不被合并。
+- 木棍 + HIDE_TOOLTIP（Unit 组件）：{"minecraft:hide_tooltip": {}}；normalize 后保留。
+
+三、测试覆盖：
+A1 编译 BUILD SUCCESSFUL、0 警告（源文件:行号: 命中 0）。
+A2 runGameTestServer：26 进 26 出全过（SBN001 8 + SBN002 11 + SBN003 7，@GameTest 实数 26；844ms）。
+   新增断言逐条：t01 不可破坏镐 ≠ 普通（通过）；隐藏提示 ≠ 默认（通过）；HIDE_TOOLTIP 木棍 ≠ 普通（通过）；
+   回归：空潜影盒「放下再挖起来」== 合成（通过）、只差 repair_cost 同键（通过）。
+   t02 三个新物品 of == make(id, save().components)（通过）；t03 不可破坏镐显示栈往返 isSameItemSameComponents（通过）。
+A3 未做（同 SBN-003）。A4 未做（本机无旧蓝图文件）。
+run/ 已整目录删除；临时取样 t99 已删。
+
+四、任务书出入：无（实现与测试照任务书二/三节执行；唯一补充是 javadoc 里写了 DFU 源码依据）。
+五、双端同步自查：只改服务端材料键计算与测试；无网络、无客户端引用。无新增不同步点。
+六、教训同步：基线为 75b70ff 的副本；原件 A、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+七、建议记入：
+1. [建议记入 C] 开关型组件（unbreakable / hide_tooltip 等 Unit 组件与 Unbreakable(true)）在补丁里编码为 {}（空 compound）；材料键规范化必须保留顶层含 ':' 的空 compound，否则「不可破坏」这类存在即生效的标记会与普通物品同键。
+2. [建议记入 K] DFU 8.0.16 的 optionalFieldOf(name, default) 在值等于默认时省略字段（Unbreakable(true) → {}、false → {show_in_tooltip:0b}）；判断组件补丁形状时别假设「有值就一定有字段」。
+3. [供云端问用户] SBN-003 验收通过后把两条并入记忆（C 段 / K 段）。
+八、需要用户做的事：无（本组无手测项）。等云端验收。

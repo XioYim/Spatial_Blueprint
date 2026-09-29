@@ -1,0 +1,23 @@
+SBN-003a 改动清单（V1 两向比对）
+基线：75b70ff（task/SBN-003 验收提交，含 SBN-003a 任务书）
+时间：2026-09-29 19:20 左右
+
+一、git 实际改动（对照任务书第一节允许清单）：
+改 src/main/java/com/xioyim/spatialblueprint/util/MaterialKey.java（pruneNoOps 区分顶层）
+改 src/main/java/com/xioyim/spatialblueprint/gametest/SBN003Tests.java（t01 追加 3 条开关型组件断言、t02 样本加 3 个、t03 往返加不可破坏镐）
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-003a_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-003a_证据/（编译.txt、GameTest.txt、改动清单.txt、nbt_样本.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-003a 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（三组里追加本补丁用例）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+通用经验副本：三方比对 A=C=B 逐字相同（10C89E19…），未动。
+
+二、两向比对结论：允许清单 → 实际全部命中；实际 → 允许清单无清单外文件。
+run/ 残留已删；临时取样 t99 已删。两向一致。
+
+三、MaterialKey 相对 c38004a 的 diff 范围（V3）：
+只有 pruneNoOps 及其调用处参数、javadoc：
+  normalize 调用 pruneNoOps(copy, true)（MaterialKey.java:99）
+  pruneNoOps(CompoundTag, boolean topLevel)：顶层 + 键含 ':' + 原本空 compound → continue 保留；
+  顶层键值处理后变空的照旧剔除；旧格式顶层键（不含 ':'）照旧剔除；递归传 false；"!" 照旧跳过（:116-150）
+SBN-003 其余通过项零改动（git diff --stat：MaterialKey 18 行、SBN003Tests 30 行）。

@@ -26,12 +26,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Unit;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
@@ -137,6 +139,21 @@ public class SBN003Tests {
         CompoundTag noFoodComps = noFoodSaved.getCompound("components");
         boolean hasMarker = noFoodComps.getAllKeys().stream().anyMatch(k -> k.startsWith("!"));
         helper.assertTrue(hasMarker, "removed marker key present in saved components");
+
+        // 开关型组件（SBN-003a）：存在即生效，编码为空 compound，不能被规范化剔掉
+        ItemStack pick = new ItemStack(Items.DIAMOND_PICKAXE);
+        pick.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+        String pickKey = MaterialKey.of(pick, p);
+        helper.assertFalse(MaterialKey.of(new ItemStack(Items.DIAMOND_PICKAXE), p).equals(pickKey),
+                "unbreakable pickaxe differs from plain");
+        ItemStack pickHidden = new ItemStack(Items.DIAMOND_PICKAXE);
+        pickHidden.set(DataComponents.UNBREAKABLE, new Unbreakable(false));
+        helper.assertFalse(pickKey.equals(MaterialKey.of(pickHidden, p)),
+                "hidden-tooltip unbreakable differs from default");
+        ItemStack hideStick = new ItemStack(Items.STICK);
+        hideStick.set(DataComponents.HIDE_TOOLTIP, Unit.INSTANCE);
+        helper.assertFalse(MaterialKey.of(new ItemStack(Items.STICK), p).equals(MaterialKey.of(hideStick, p)),
+                "hide_tooltip stick differs from plain");
         helper.succeed();
     }
 
@@ -152,6 +169,12 @@ public class SBN003Tests {
                 ItemContainerContents.fromItems(List.of(new ItemStack(Items.STONE, 2))));
         ItemStack noFood = new ItemStack(Items.APPLE);
         noFood.remove(DataComponents.FOOD);
+        ItemStack pick = new ItemStack(Items.DIAMOND_PICKAXE);
+        pick.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+        ItemStack pickHidden = new ItemStack(Items.DIAMOND_PICKAXE);
+        pickHidden.set(DataComponents.UNBREAKABLE, new Unbreakable(false));
+        ItemStack hideStick = new ItemStack(Items.STICK);
+        hideStick.set(DataComponents.HIDE_TOOLTIP, Unit.INSTANCE);
 
         List<ItemStack> stacks = new ArrayList<>();
         stacks.add(new ItemStack(Items.STONE, 3));
@@ -161,6 +184,9 @@ public class SBN003Tests {
         stacks.add(pickedUpEmptyShulker(p));
         stacks.add(noFood);
         stacks.add(shulkerWithContents);
+        stacks.add(pick);
+        stacks.add(pickHidden);
+        stacks.add(hideStick);
 
         for (ItemStack stack : stacks) {
             CompoundTag saved = (CompoundTag) stack.save(p);
@@ -177,7 +203,9 @@ public class SBN003Tests {
     public static void t03_displayStackRoundTrip(GameTestHelper helper) {
         HolderLookup.Provider p = provider(helper);
 
-        List<ItemStack> stacks = List.of(enchantedSword(p, true), namedSword(p));
+        ItemStack unbreakablePick = new ItemStack(Items.DIAMOND_PICKAXE);
+        unbreakablePick.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+        List<ItemStack> stacks = List.of(enchantedSword(p, true), namedSword(p), unbreakablePick);
         for (ItemStack stack : stacks) {
             CompoundTag saved = (CompoundTag) stack.save(p);
             CompoundTag comps = saved.contains("components", 10) ? saved.getCompound("components") : null;
