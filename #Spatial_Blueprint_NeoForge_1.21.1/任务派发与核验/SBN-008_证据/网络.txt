@@ -1,0 +1,61 @@
+SBN-008 网络实测证据
+
+一、12 个 payload 的 TYPE id 与注册方向
+（与 1.20.1 BlueprintNetwork.register 的 c2s 归类逐条一致；本批 12 个全部 C2S，注册见 network/BlueprintNetwork.java）
+
+  c2s_create_project_message          C2S_CreateProjectMessage          BlueprintNetwork.java:217
+  c2s_delete_project_message          C2S_DeleteProjectMessage          BlueprintNetwork.java:219
+  c2s_take_project_message            C2S_TakeProjectMessage            BlueprintNetwork.java:221
+  c2s_submit_project_order_message    C2S_SubmitProjectOrderMessage     BlueprintNetwork.java:223
+  c2s_submit_project_changes_message  C2S_SubmitProjectChangesMessage   BlueprintNetwork.java:225
+  c2s_delete_sub_project_message      C2S_DeleteSubProjectMessage       BlueprintNetwork.java:227
+  c2s_save_project_range_message      C2S_SaveProjectRangeMessage       BlueprintNetwork.java:229
+  c2s_claim_sub_project_message       C2S_ClaimSubProjectMessage        BlueprintNetwork.java:231
+  c2s_apply_blueprint_message         C2S_ApplyBlueprintMessage         BlueprintNetwork.java:233
+  c2s_save_material_list_message      C2S_SaveMaterialListMessage       BlueprintNetwork.java:235
+  c2s_reward_materials_message        C2S_RewardMaterialsMessage        BlueprintNetwork.java:237
+  c2s_request_illegal_blocks_message  C2S_RequestIllegalBlocksMessage   BlueprintNetwork.java:239
+
+t01 断言：65 个 TYPE id 与命名规则一致且互不重复（本批 12 + 已注册 53）。
+注册器版本仍为 protocolVersion()（D4，SBN-005 已验）。
+
+二、本批 decode 上限清单（file:line · 语义）
+计数守卫（1.20.1 语义）：
+  C2S_SubmitProjectOrderMessage.java:47/67  MAX_ORDER = 1024；count < 0 或 > 1024 → 返回空列表（不抛）
+字符串长度上限（FriendlyByteBuf.readUtf(cap)；1.21 按编码字节数判，超过 cap×3 抛 DecoderException）：
+  C2S_CreateProjectMessage         readUtf 128 / 15 / 200
+  C2S_DeleteProjectMessage         readUtf 64 / 16
+  C2S_TakeProjectMessage           readUtf 64
+  C2S_SubmitProjectChangesMessage  readUtf 64；材料键 128（两处）
+  C2S_DeleteSubProjectMessage      readUtf 64
+  C2S_ApplyBlueprintMessage        readUtf 64
+  C2S_SaveMaterialListMessage      readUtf 64；键 128（两处）
+  C2S_RewardMaterialsMessage       readUtf 64
+  其余 4 个（SaveProjectRange / ClaimSubProject / RequestIllegalBlocks / DeleteProject 的 tab 外）
+  无字符串上限或计数上限。
+  说明：C2S_SubmitProjectChangesMessage 与 C2S_SaveMaterialListMessage 的列表计数在 1.20.1 源码里
+  本就没有守卫（照原样搬迁，未新增），t03 按 1.20.1 语义只测 MAX_ORDER 与字符串两处。
+t03 实测：MAX_ORDER 越界（1025 / -1）→ 回空列表；CreateProject noteShort、SubmitProjectChanges
+  材料键各手写一个越界包 → DecoderException。
+
+三、本批权限判定清单（file:line）
+  C2S_CreateProjectMessage.java:69       仅 OP（否则 need_op）
+  C2S_DeleteProjectMessage.java:66       仅 OP；另有「有任何任务集占用整单拒」（:68 hasAnyClaimForProject）
+  C2S_TakeProjectMessage.java:91         规划模式仅 OP（:91 plan_need_op）；
+                                         导入 PUBLIC 要有 claim、PRIVATE 走 canAccessPrivate
+  C2S_SubmitProjectOrderMessage.java:83  仅 OP；有任务集占用整单拒
+  C2S_SubmitProjectChangesMessage.java:151 仅 OP；有任务集占用整单拒
+  C2S_DeleteSubProjectMessage.java:75    仅 OP；被引用时拒（delete_has_dependents）
+  C2S_SaveProjectRangeMessage.java:73    仅 OP；:104 项目维度校验；:112 体积上限（projectset）
+  C2S_ClaimSubProjectMessage            无额外权限（走 SubProjectClaimHandler：主手项目蓝图 + 任务集 + 前置 + 冷却）
+  C2S_ApplyBlueprintMessage.java:97      次元蓝图仅主人（isOwnedBy）；已放置蓝图禁取（:85）
+  C2S_SaveMaterialListMessage.java:103   仅「OP + 创造」（不满足静默返回）
+  C2S_RewardMaterialsMessage.java:73     仅「OP + 创造」（否则回 need_op）；:78 分类必须 reward
+  C2S_RequestIllegalBlocksMessage        无 OP 判定；越界 / 体积（MAX_SCAN_VOLUME）防护 + 领地采样上限
+
+四、服务器侧行为核对
+  SubProjectClaimHandler.java:30-130   主手项目蓝图 → 任务集 → claim.projectId 匹配 → 条目 →
+                                       前置 → 冷却 → 造工程蓝图（访问器写 sb_task_set_id / sb_entry_index）
+                                       → markClaimed；与 1.20.1 逐字一致（零残差）
+  util/NotifySound.java:29-50          服务端两个发包（ClientboundSoundPacket，1.21 构造器与 1.20.1 同：J40）；
+                                       客户端两个迁 P5（文件内 1 条 SB-TODO(P5)）
