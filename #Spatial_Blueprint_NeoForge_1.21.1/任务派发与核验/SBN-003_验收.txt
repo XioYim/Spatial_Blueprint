@@ -1,0 +1,26 @@
+SBN-003 验收
+验收：2026-09-29 19:30:00（云端主会话）
+对象：task/SBN-003 @ c38004a（内容主提交 7d05666）
+结论：不通过 → 同一分支补丁任务 SBN-003a（D8 规范化把「开关型」组件剔掉，材料键混同）
+
+V1 改动清单：701dc3e..c38004a 与任务书第二节一致 —— 通过。
+V2 本地证据：编译 0 警告；GameTest 26/26（SBN003 @GameTest 实数 7）。云端 maven.neoforged.net 仍 connect_rejected，未复跑。
+V3 与 1.20.1 源 diff -w（滤 import）：
+   7 个 SavedData 只有 Factory 接线、save / load 带 Provider（WorldIdentity 另换 neoforge 包）—— 通过。
+   BlueprintStorage / ProjectStorage：NbtIo.writeCompressed(tag, File) → (tag, Path)（1.21 签名，任务书未列，行为不变，接受）、
+   两处坐标改走 NbtCompat —— 通过。
+   MaterialSpace.displayStack 加 provider —— 通过。
+   MaterialKey / MaterialList / BlueprintConfig / 主类只改三.3、三.5 点名处 —— 范围通过；实现问题见下。
+V5 SB-TODO 实数 12（15 − 3 − 1 + 1）—— 通过。
+报告两条更正（structureToSnbt 注入的 data / palette 不是方块实体字段；4 个 SavedData 的 load 为 private、测试走反射）—— 接受。
+
+【不通过理由】
+MaterialKey.pruneNoOps 会把「值为空 compound」的键整条剔除。1.20.1 的旧 tag 里这类键都是 display:{} 之类无意义的空壳，剔掉没问题；
+但 1.21 组件补丁里有一类「开关型」组件，存在即生效、编码出来就是空 compound：
+  minecraft:unbreakable（默认显示提示时编码为 {}）、minecraft:hide_tooltip、minecraft:hide_additional_tooltip、
+  minecraft:creative_slot_lock、minecraft:intangible_projectile、minecraft:fire_resistant（非默认带防火的物品）等 Unit 组件。
+它们被剔掉后：不可破坏的钻石镐与普通钻石镐算出同一个键 —— 材料空间里拿普通镐就能满足「不可破坏镐」的需求，界面显示也丢掉该标记。
+1.20.1 的 Unbreakable:1b 是字节不是空 compound，旧线没有这个问题；是 D8 移植新引入的。t01 没覆盖这类组件。
+MaterialKey.java 的 pruneNoOps（if (compound.isEmpty()) tag.remove(key) 那一行）。
+
+其余全部通过项，补丁不许动。报告「建议记入」SBN-003a 通过后一并处理。
