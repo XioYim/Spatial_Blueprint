@@ -1,0 +1,222 @@
+SBN-002 · P1b 净化器：BlueprintSanitizer 迁移 + 1.21 物品存储格式适配
+派发：2026-09-29 16:10:00（云端主会话）
+分支：task/SBN-002（从 neoforge-1.21.1 @ f5784a0 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份（开工前先做）
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-002 执行前"
+打印的表格行记进报告「备份」段。
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 D:\Mods\Spatial_Blueprint_NeoForge_1.21.1\#Spatial_Blueprint_NeoForge_1.21.1\记忆与注意事项\项目记忆.md，按读取顺序走。
+本任务要读：注意事项_目录.md 里的 K1、C1、C2（SBN-001 后新记的三条，都与本任务相关）；
+迁移计划书.md 第五节 D2 / D8 / D9；SBN-001_验收.txt（上一轮的验收口径，本轮照同样的标准验）。
+
+**以源码为准**：云端这一轮仍然跑不了 gradle / javap（环境网络策略拦截 maven.neoforged.net 等，见开发日志 e03）。
+第三节里凡是「1.21.1 的 NBT 长什么样」的结论，都要用 GameTest 里**真实序列化出来的 NBT** 核对（见五.A2 的硬性要求），
+不一致就按实际改，报告「任务书出入」段逐条写。
+
+========================================================
+一、背景与目标
+========================================================
+
+BlueprintSanitizer（1.20.1 线 util/BlueprintSanitizer.java，1317 行）是上传 / 捕获两条路径的安全闸：
+非法方块、容器里的非法物品、告示牌 / 讲台书里的命令点击事件、刷怪笼生成数据、白名单外实体、超大 / 超深 NBT。
+
+它全部靠「NBT 长什么样」来判断。1.20.5 起物品存储从 {id, Count:byte, tag:{...}} 改成 {id, count:int, components:{...}}，
+容器组件里的物品还多包一层 {slot, item:{...}}。原样搬过来**能编译、测试也可能过，但会漏检或留下读不回来的残片**，所以单独一个任务。
+
+目标：搬进 1.21.1，且对 1.21.1 真实产出的 NBT 行为与 1.20.1 对旧格式的行为一致（同一种危险内容，两边同样被判、同样被清）；
+旧格式（tag / Count）照样认（P4 的 DataFixer 之前，旧文件原样进来也不许放行）。
+另按 D9 把 trial_spawner / vault 纳入默认禁捕，并清试炼刷怪笼的生成配置。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  util/BlueprintSanitizer.java                       ← 1.20.1 同路径
+  新  network/s2c/S2C_IllegalBlocksListMessage.java      ← 1.20.1 同路径，**只搬嵌套 record**（见三.9），消息本体留给 P3
+  改  util/BulkMaterialConverter.java                    ← 去掉 SBN-001 的 collectConversions 桩，恢复原方法
+  改  BlueprintConfig.java                                ← 只改 excludedBlocks / excludedItems 两个默认值（见三.8）
+  新  gametest/SBN002Tests.java
+
+交接件（规程允许的范围）：
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002_报告.txt
+  新  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002_证据/
+  改  开发日志.md（文末追加「## SBN-002 执行记录」）、测试清单.txt（追加「二、SBN-002 净化器」一组）、
+      云端协作规程.md（第五节同步表追加一行）、通用经验副本（只按规程第五节三方同步）
+
+不动：gradle.properties、build.gradle、SBN-001 已搬的其它文件、待办事项.html、记忆与注意事项\、功能联动手册.md、迁移计划书.md。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-001：逻辑、字段、键名、lang 键不改，只改 API 与下面点名的格式适配。
+每一处格式适配都**同时认新旧两种格式**（1.21 的 count / components，旧的 Count / tag），宁可多判危险不可漏判（fail-closed）。
+diff -w 残差逐条列进报告「改了写法的调用」。
+
+1. 原样搬、预期零改动的部分（有改动就写进报告）
+   exceedsMaxDepth、estimateNbtBytes、checkNbtBudget、effectiveNbtBytes、containsIllegalItemDeep（它只认键名为 id 的字符串，
+   1.21 物品与实体仍是这个约定，组件里嵌的物品也一样会被 BFS 走到）、isIllegalItemId、HARDCODED_ILLEGAL_ITEMS、
+   告示牌四件（hasSignCommandClickEvent / sanitizeSignMessageJson / findSignRunCommand / sanitizeSignJson），
+   UploadScan / ScanEntry / ScanEntity / scanBlueprintData / countBlocks / scanBlockList、sanitizeForUploadInPlace 及其 strip* 系列、
+   实体白名单 / ALLOWED_MOB_ENTITIES / isEntityAllowed / filterEntitiesInPlace、sanitizePaintingNbt、坐标范围、
+   isIllegalBlock / isIllegalBlockId / removeIllegalMaterialsInPlace / enforceTemplateFieldRules、
+   entityHasIllegalItems / findEntityWithIllegalItems（Entity.save(CompoundTag) 与 getEntitiesOfClass 在 1.21.1 仍在，编译为准）。
+   告示牌：1.21.1 的 front_text / back_text.messages 仍是 JSON 字符串、点击事件键仍是 clickEvent（1.21.5 才改），
+   s05 用真实 SignBlockEntity 存出来的 NBT 验证；若不是，按实际改并报告。
+
+2. 容器组件的「槽位包一层」（stripContainers / listHoldsItemEntries）
+   1.21 容器组件（minecraft:container）存成 [{slot:0, item:{id, count, components}}, …]。1.20.1 的 listHoldsItemEntries 只认
+   「列表元素本身是物品」，于是这种列表会被当成普通列表往里递归，只删掉每个元素里的 item，留下 [{slot:0}, …] 残片 ——
+   这个组件整条解码失败，方块实体 / 物品读回来会报错或静默丢数据。
+   已定：listHoldsItemEntries 对元素的判定改为「isItemEntry(元素) 或 元素有 compound 键 item 且 isItemEntry(元素.item)」，
+   命中即整条列表删除（与 1.20.1「整袋倒掉」口径一致）。isItemEntry 本身不改（id + Count 或 count，1.20.1 已兼容小写）。
+   这同时覆盖一条 1.21 才有的夹带路径：方块实体 NBT 的 components 子标签里塞 minecraft:container，
+   加载时会被 applyImplicitComponents 填进潜影盒 —— 改后它会被整条删掉。s02 必须验证这条。
+
+3. 蜂箱键名
+   1.21.1 蜂箱存 bees（小写，元素里是 entity_data），1.20.1 是 Bees / EntityData。
+   STRIP_SKIP_KEYS 改为 Set.of("Book", "Bees", "bees")。以 s08 里真实 BeehiveBlockEntity 存出的键名为准。
+
+4. 讲台书（hasDangerousBlockNbt / bookContainsCommand）
+   1.20.1：Book.tag.pages（字符串列表）+ Book.tag.filtered_pages（compound）。
+   1.21.1：Book.components."minecraft:written_book_content".pages，每页是一个可过滤文本（预期编码为 {raw:"<JSON>", filtered:"<JSON>"}，
+   也可能是裸字符串）；书与笔（minecraft:writable_book_content）是纯文本，没有点击事件，不用查。
+   已定：抽一个私有方法「从 Book 取出全部页面 JSON 字符串」，同时收：旧 tag.pages / tag.filtered_pages 的全部值，
+   新 components.written_book_content.pages[] 里的裸字符串、raw、filtered。hasDangerousBlockNbt 与 bookContainsCommand 都改走它，
+   applySafetyStripInPlace 里「Book 含命令就整本移除」的条件从「book.contains("tag")」改为「bookContainsCommand(book)」（新旧格式都能触发）。
+   s04 用真实 ItemStack（WRITTEN_BOOK + WrittenBookContent 组件）存出的 NBT 验证；报告里贴出真实页面编码的形状（证据/nbt_样本.txt）。
+
+5. 展示框物品净化（sanitizeItemFrameContentInPlace）
+   1.20.1：安全物品只保留 id + Count(byte)，丢 tag。原样搬到 1.21 会写出 Count 而不是 count，组件也没丢干净的保证。
+   已定：安全物品重建为 {id, count:int}，count 取 count（int）→ 没有再取 Count（byte）→ 都没有记 1；components 与 tag 都丢。
+   危险物品整条删除（不变）。s06 验证重建后的 Item 能被 ItemStack.parse(provider, tag) 解析成功且没有组件。
+
+6. 试炼刷怪笼（D9 净化兜底）
+   1.21.1 的 trial_spawner 方块实体键（预期）：spawn_data、normal_config、ominous_config（后两者里有 spawn_potentials）。
+   已定：hasDangerousBlockNbt 在刷怪笼判断之后追加：spawn_data 为非空 compound，或 normal_config / ominous_config 任一存在且非空 → 危险；
+   applySafetyStripInPlace 追加 remove 这三个键。以 s07 真实 TrialSpawnerBlockEntity 存出的键名为准，不一致按实际改并报告。
+
+7. 刷怪笼（spawner）：SpawnData / SpawnPotentials 键名 1.21.1 不变（预期），s07 顺带用真实 SpawnerBlockEntity 核对。
+
+8. D9 默认禁捕（BlueprintConfig）
+   excludedBlocks 默认列表末尾加 "minecraft:trial_spawner", "minecraft:vault"；excludedItems 默认列表末尾加同样两项。
+   只改这两处默认值，注释与其它项一字不动；报告写清这是有意与 1.20.1 分叉（迁移计划书 D9）。
+   注意：已存在的 toml 不会自动加上，这是 ModConfigSpec 的正常行为，不需要写迁移逻辑。
+
+9. S2C_IllegalBlocksListMessage 的 record 与 BulkMaterialConverter
+   UploadScan 的 conversions 字段与 BulkMaterialConverter.collectConversions 用到 S2C_IllegalBlocksListMessage 的嵌套 record。
+   已定：新建 network/s2c/S2C_IllegalBlocksListMessage.java，**只放 1.20.1 里的全部嵌套 record**（IllegalBlock / SpecialEntity / TargetItem /
+   ConversionEntry / BoxEntity / ProtectedChunk，字段逐字照搬），类体里不写编解码与 handler；类声明上一行写
+   // SB-TODO(P3): S2C_IllegalBlocksListMessage 消息本体（StreamCodec / handler）。
+   record 若引用了 1.20.1 的其它类型（例如 FriendlyByteBuf 的读写方法），只搬 record 声明，方法留给 P3，按迁移桩写注释。
+   BulkMaterialConverter.collectConversions 去掉注释恢复原样，删掉 SBN-001 的那条桩。
+
+10. 发现但不改（写进报告「与 1.20.1 同样存在的问题」段，由云端问用户是否两条线一起修）
+   a. armorStandHasEquipment / nonEmptyItemList 只看列表是否为空，而盔甲架的 ArmorItems / HandItems 空槽也存成 {}，
+      列表恒为 4 / 2 个元素 → 「带装备」恒为真。s09 用真实 ArmorStand 存出的 NBT 核实并记录，不改代码。
+   b. 容器方块实体的 LootTable（1.21.1 预期键名 LootTable / LootTableSeed）没有任何一条路径清理：
+      捕获一个没开过的地牢箱子，蓝图可反复放置 → 每次放出来都能重新生成战利品。s10 用真实箱子 setLootTable 后存出的 NBT
+      记录键名与 stripItemContents 之后是否仍在，不改代码。
+
+========================================================
+四、取证清单（证据/javap.txt 追加 J10～J16；每条一行：类#成员 签名）
+========================================================
+
+  J10 net.minecraft.world.item.component.ItemContainerContents：fromItems / CODEC 的槽位字段名（slot / item）
+  J11 net.minecraft.world.item.component.WrittenBookContent：pages 的 codec（Filterable 的编码形状）
+  J12 net.minecraft.world.level.block.entity.BeehiveBlockEntity：存盘键（bees / entity_data）
+  J13 net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity / TrialSpawnerData：存盘键
+  J14 net.minecraft.world.item.ItemStack#save(HolderLookup.Provider) / parse(HolderLookup.Provider, Tag) / CODEC 的 count 字段
+  J15 net.minecraft.world.level.block.entity.BlockEntity#saveWithFullMetadata(Provider) / loadWithComponents(CompoundTag, Provider)
+  J16 net.minecraft.world.entity.Entity#save(CompoundTag)
+
+javap 只看签名；**NBT 形状以 GameTest 真实序列化结果为准**，两者都写进证据。
+
+========================================================
+五、测试
+========================================================
+
+【自动】
+
+A1  编译：compileJava --rerun，BUILD SUCCESSFUL，警告 0（K1）。
+A2  GameTest：runGameTestServer，SBN001Tests 8 条 + SBN002Tests 全部通过（C2：报告写 @GameTest 注解实数 = 批次条数）。
+    **硬性要求**：凡测试里的方块实体 / 物品 / 实体 NBT，一律由真实对象序列化得到
+    （ItemStack.save(provider)、BlockEntity.saveWithFullMetadata(provider)、Entity.save(tag)，provider 用 helper.getLevel().registryAccess()），
+    不许手写 NBT 形状 —— 手写的形状就是本任务要纠正的那类假设。唯一例外：s02 的「components 夹带」需要把真实潜影盒物品存出来的
+    components 子标签拷进一个空箱子的方块实体 NBT 里，这一步拼接允许手写，但被拼的内容必须来自真实序列化。
+    把 s02 / s04 / s06 / s07 / s08 / s10 各自的真实 NBT（净化前后各一份，SNBT 文本）写进 证据/nbt_样本.txt。
+
+    s01_illegalItemDeep        箱子里放一个潜影盒物品，潜影盒的 container 组件里装一个刷怪蛋 → containsIllegalItemDeep = true、
+                               hasDangerousBlockNbt = true；换成石头 → 两者 = false
+    s02_containerNoResidue     (a) 装着东西的箱子 / 潜影盒方块实体 NBT 经 stripDangerousBlockNbt 后：全树没有任何「只剩 slot 的元素」，
+                               用 loadWithComponents 读回真实 ShulkerBoxBlockEntity 不抛异常、容器为空；
+                               (b) 空箱子方块实体 NBT 的 components 里拼进 minecraft:container（内容来自真实潜影盒物品）→
+                               stripDangerousBlockNbt 后 components 里不再有 minecraft:container，读回箱子为空
+    s03_keepContents           stripDangerousBlockNbtKeepContents：箱子里只有合法物品 → Items 原样保留（条数、id、count 相等）；
+                               混入一个刷怪蛋 → 整箱倒空
+    s04_lecternBook            讲台 + 成书（某页含 run_command 点击事件）→ hasDangerousBlockNbt = true，stripDangerousBlockNbt 后无 Book；
+                               普通成书 → false、Book 保留；再用手写旧格式 {Book:{id,Count,tag:{pages:[...]}}} 验旧格式仍被判危险
+                               （这是唯一允许手写的旧格式样本，用于证明向后兼容）
+    s05_signCommand            真实告示牌正面第一行带 run_command 点击事件 → 判危险；sanitize 后文字还在、clickEvent 没了
+    s06_itemFrame              展示框挂附魔钻石剑 → sanitizeItemFrameContentInPlace 后 Item = {id, count}，ItemStack.parse 成功、组件为默认；
+                               挂刷怪蛋 → Item 被删
+    s07_spawners               真实 SpawnerBlockEntity（设了生成实体）与 TrialSpawnerBlockEntity 的 NBT → 都判危险，strip 后三个 / 两个键都不在；
+                               BlueprintConfig.isExcludedId("minecraft:trial_spawner") / ("minecraft:vault") = true，
+                               isIllegalItemId("minecraft:vault") = true（依赖默认配置；若 run 目录有旧 toml 会影响结果，测试前确认是默认值）
+    s08_beesKept               真实蜂箱（里面有蜜蜂）经 stripItemContents 后 bees 列表仍在、条数不变
+    s09_armorStandEquipment    真实空盔甲架与拿剑的盔甲架：记录 ArmorItems / HandItems 的实际形状与 scanEntityFor 的 hasEquipment 结果（只记录，不断言「应为 false」）；
+                               entityHasIllegalItems：手持刷怪蛋 = true、手持剑 = false
+    s10_lootTableRecorded      真实箱子 setLootTable 后的 NBT：记录键名，以及 stripItemContents / stripDangerousBlockNbt 之后是否仍在（只记录）
+    s11_uploadScanEndToEnd     一份 BlueprintData：基岩 1、带刷怪蛋的箱子 1、水 5、僵尸实体 1、画 1 →
+                               scanBlueprintData：illegal 1、dangerous 1、dropped 1（僵尸）、conversions 含水那条；
+                               sanitizeForUploadInPlace 之后基岩没了、箱子 NBT 无 Items、实体只剩画
+    测试改过的 live 配置 finally 恢复、不 save；run\ 残留清理。
+
+A3  专服冒烟（可选）：runServer 起到 Done，stop 正常退出，确认新 toml 里 excludedBlocks 默认值带上了两项（新生成的 toml）。
+
+【手测】本组无手测项。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动清单与第二节两向一致。
+V2  编译 0 警告、GameTest 全过（云端网络放行后复跑；未放行则按 SBN-001 口径审本地证据）。
+V3  BlueprintSanitizer 与 1.20.1 源 diff -w 的残差只有第三节 2～6 点名的改动 + import；BulkMaterialConverter 与 1.20.1 源 diff 为零（除 import）；
+    BlueprintConfig 与 SBN-001 版本相比只多 4 行默认值。
+V4  测试 NBT 全部来自真实序列化（云端会逐条看 SBN002Tests 里有没有手写形状，允许的两处例外见 A2）。
+V5  SB-TODO 实数 = 15 − 1（BulkMaterialConverter 桩去掉）+ 1（S2C 消息本体）+ 本任务其它新桩，报告逐条列出。
+V6  证据：编译.txt、GameTest.txt、改动清单.txt、javap.txt（J10～J16）、nbt_样本.txt。
+V7  报告第十节 a / b 两条有真实 NBT 为据。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-002 报告
+执行：<开始> ～ <结束>（YYYY-MM-DD HH:mm:ss）
+提交：<短哈希>
+
+一、备份
+二、完成情况：对照第三节 1～9，逐条「做了什么 + file:line」
+三、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据（J 编号 / s 编号）」
+四、真实 NBT 形状：J10～J13 各一句（实际键名 / 编码形状），与任务书预期一致写「一致」，不一致写实际
+五、测试覆盖：A1～A3；s01～s11 通过 / 失败；@GameTest 实数
+六、迁移桩清单：新 / 去掉 / 存量 = grep 实数，逐条 file:line · 阶段 · 类名
+七、任务书出入
+八、与 1.20.1 同样存在的问题：第三节 10.a / 10.b 的实测记录（真实 NBT 摘录 + 结论），另外发现的也写这里
+九、双端同步自查：一句结论
+十、教训同步：A→C / C→A / 冲突
+十一、建议记入
+十二、需要用户做的事
+
+推送后对用户说：「已推送，去云端说『验收 SBN-002』」。
