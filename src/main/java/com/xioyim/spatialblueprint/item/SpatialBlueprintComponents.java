@@ -118,11 +118,20 @@ public final class SpatialBlueprintComponents {
                     b -> b.persistent(Rotation.CODEC)
                           .networkSynchronized(NeoForgeStreamCodecs.<RegistryFriendlyByteBuf, Rotation>enumCodec(Rotation.class)));
 
-    /** 与 1.20.1 物品 NBT、蓝图文件里的 saveMode 同一个口径（ordinal）。 */
+    /**
+     * 与 1.20.1 物品 NBT、蓝图文件里的 saveMode 同一个口径（ordinal）。
+     * 越界值回退 SAFE（同 1.20.1 getSaveMode）：{@code CaptureMode.fromOrdinal} 不防越界，
+     * 而越界值可经 /give、损坏存档或客户端构造的创造栏包进到解码器，抛出去就是整栈解析失败。
+     */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<CaptureMode>> SAVE_MODE =
             COMPONENTS.registerComponentType("save_mode",
-                    b -> b.persistent(Codec.INT.xmap(CaptureMode::fromOrdinal, CaptureMode::ordinal))
-                          .networkSynchronized(ByteBufCodecs.VAR_INT.map(CaptureMode::fromOrdinal, CaptureMode::ordinal)));
+                    b -> b.persistent(Codec.INT.xmap(SpatialBlueprintComponents::captureModeOf, CaptureMode::ordinal))
+                          .networkSynchronized(ByteBufCodecs.VAR_INT.map(SpatialBlueprintComponents::captureModeOf, CaptureMode::ordinal)));
+
+    private static CaptureMode captureModeOf(int ordinal) {
+        CaptureMode[] modes = CaptureMode.values();
+        return ordinal >= 0 && ordinal < modes.length ? modes[ordinal] : CaptureMode.SAFE;
+    }
 
     // ── 注册辅助 ────────────────────────────────────────────────────────────
 

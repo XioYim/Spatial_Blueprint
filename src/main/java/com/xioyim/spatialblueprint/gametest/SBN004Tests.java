@@ -48,7 +48,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * SBN-004 数据组件、物品、渲染方块、旧物品迁移 GameTest（t01～t07）。
+ * SBN-004 数据组件、物品、渲染方块、旧物品迁移 GameTest（t01～t08）。
  * 新格式 NBT 一律由真实 ItemStack / 方块实体存出；旧格式物品 NBT 是唯一允许手写处（它就是 1.20.1 的存档格式）。
  */
 @GameTestHolder(SpatialBlueprintMod.MODID)
@@ -553,6 +553,44 @@ public class SBN004Tests {
         ChestBlockEntity realChest = (ChestBlockEntity) nowThere;
         helper.assertTrue(realChest.getItem(0).getCount() == 5
                 && realChest.getItem(0).getItem() == Items.STONE, "chest item restored");
+        helper.succeed();
+    }
+
+    // ── t08：save_mode 越界值（SBN-004 验收修正）──────────────────────────────
+    // 越界 ordinal 可经 /give、损坏存档或客户端构造的创造栏包到达解码器；
+    // 与 1.20.1 getSaveMode 一致回退 SAFE，不许抛异常。手写越界值是唯一允许处（证明该形状可达）。
+
+    @GameTest(template = "empty")
+    public static void t08_saveModeOutOfRange(GameTestHelper helper) {
+        HolderLookup.Provider p = provider(helper);
+        DataComponentType<CaptureMode> type = SpatialBlueprintComponents.SAVE_MODE.get();
+
+        // 磁盘：真实存出的蓝图，把 save_mode 改成越界值后整栈解析
+        ItemStack stack = new ItemStack(SpatialBlueprintItems.SPATIAL_BLUEPRINT.get());
+        SpatialBlueprintItem.setSaveMode(stack, CaptureMode.FORCE);
+        CompoundTag saved = (CompoundTag) stack.save(p);
+        saved.getCompound("components").putInt("spatial_blueprint:save_mode", 9);
+        Optional<ItemStack> parsed = ItemStack.parse(p, saved);
+        helper.assertTrue(parsed.isPresent(), "out-of-range save_mode parses");
+        helper.assertTrue(SpatialBlueprintItem.getSaveMode(parsed.orElseThrow()) == CaptureMode.SAFE,
+                "out-of-range save_mode falls back to SAFE");
+
+        // 持久化 codec：负数同样回退
+        CaptureMode fromNbt = type.codecOrThrow()
+                .parse(NbtOps.INSTANCE, net.minecraft.nbt.IntTag.valueOf(-1)).getOrThrow();
+        helper.assertTrue(fromNbt == CaptureMode.SAFE, "negative save_mode falls back to SAFE");
+
+        // 网络 codec：越界 VAR_INT 回退，不抛异常
+        RegistryFriendlyByteBuf buf = RegistryFriendlyByteBuf
+                .decorator(helper.getLevel().registryAccess(), ConnectionType.OTHER)
+                .apply(Unpooled.buffer());
+        try {
+            buf.writeVarInt(9);
+            helper.assertTrue(type.streamCodec().decode(buf) == CaptureMode.SAFE,
+                    "out-of-range network save_mode falls back to SAFE");
+        } finally {
+            buf.release();
+        }
         helper.succeed();
     }
 }
