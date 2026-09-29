@@ -1,0 +1,172 @@
+SBN-003 · P2a 存储与 SavedData + D8 材料键组件化
+派发：2026-09-29 18:40:00（云端主会话）
+分支：task/SBN-003（从 neoforge-1.21.1 @ 82e509e 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-003 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理（先 stash 取证，不丢弃、不提交）。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、C2、C3；迁移计划书.md 第五节 D1 / D2 / D8 拍板记录。
+以源码为准；云端这一轮仍然跑不了 gradle / javap，API 结论与 NBT 形状以本地 javap 和 GameTest 真实序列化为准，出入写进报告。
+
+========================================================
+一、背景与目标
+========================================================
+
+P2 拆两段。本任务（P2a）搬「不依赖物品 / 网络 / 界面」的存储层，并落实 D8：
+
+  存储：BlueprintStorage（蓝图 .litematic 文件，591 行）、ProjectStorage（项目目录，209 行）
+  SavedData（7 个）：MaterialSpace、ProjectClaimRegistry、ProjectProgressData、SBSafeCoordData、SBUndoData、TeleportPermissions、WorldIdentity
+  D8：MaterialKey / MaterialList 的物品部分从 SBN-001 的桩改成按组件补丁计算
+
+下一任务 SBN-004（P2b）：数据组件、10 个物品类、RenderBlock / RenderBlockEntity、创造物品栏、旧物品（custom_data）迁移。
+本任务结束时：存储与 SavedData 可在服务端读写、有 GameTest 往返覆盖；仍然没有物品、网络、命令。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  util/BlueprintStorage.java、util/ProjectStorage.java                         ← 1.20.1 同路径
+  新  util/MaterialSpace.java、util/ProjectClaimRegistry.java、util/ProjectProgressData.java、
+      util/SBSafeCoordData.java、util/SBUndoData.java、util/TeleportPermissions.java、util/WorldIdentity.java   ← 1.20.1 同路径
+  改  util/MaterialKey.java、util/MaterialList.java                              ← D8（三.3）
+  改  BlueprintConfig.java                                                       ← 只改 materialSpaceIgnoredNbtKeys 默认值（三.3.e）
+  改  SpatialBlueprintMod.java                                                   ← commonSetup 接上 Storage.init（三.5）
+  新  gametest/SBN003Tests.java
+
+交接件（规程允许范围）：SBN-003_报告.txt、SBN-003_证据\、开发日志.md 文末「## SBN-003 执行记录」、
+测试清单.txt 追加「三、SBN-003 存储与 SavedData」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（SBN-001 / 002 的通过项、gradle 文件、待办、记忆、联动手册、迁移计划书）。
+
+明确不在本任务：物品 / 方块 / 组件（SBN-004）、OrphanBlueprintGuard、ItemSyncUtil、NotifySound（依赖物品或网络，SBN-004 或 P3）、
+旧键与旧 SavedData 内容的 DataFixer 迁移（P4，见三.3.f、三.4.d）。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同前：逻辑、字段、NBT 键名、文件名规则、SavedData 名（SAVE_KEY / DATA_NAME）一律不改，只改 API 与下面点名的地方。
+每个文件 diff -w 残差逐条进报告「改了写法的调用」。
+
+1. FMLPaths / ServerLifecycleHooks
+   FMLPaths → net.neoforged.fml.loading.FMLPaths（SBN-001 已用过）。
+   ServerLifecycleHooks → net.neoforged.neoforge.server.ServerLifecycleHooks（javap 核对，J17）。
+
+2. SavedData（7 个类同一套改法）
+   a. save(CompoundTag) → save(CompoundTag, HolderLookup.Provider)；load(CompoundTag) → load(CompoundTag, HolderLookup.Provider)（provider 暂不用也照签名收）。
+   b. getDataStorage().computeIfAbsent(X::load, X::new, KEY) → computeIfAbsent(new SavedData.Factory<>(X::new, X::load, null), KEY)
+      （第三参数 DataFixTypes 传 null，与 HD 一致；J18 核对 Factory 构造器）。
+   c. 不改 SAVE_KEY / DATA_NAME，也不改存盘结构 —— 1.20.1 世界升级上来，data/*.dat 要能原样读回。
+   d. WorldIdentity 里「computeIfAbsent 之后手动 setDirty + getDataStorage().save()」那段照搬（1.21.1 DimensionDataStorage#save() 仍在，J18）。
+   e. SBUndoData 的 BlockState 读写（NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), …) / writeBlockState）照 SBN-001 的口径保留；
+      快照里的方块实体 / 实体 NBT 是写入时的版本格式，不做升级（见 4.d）。
+
+3. D8：材料复合键组件化（迁移计划书 D8 拍板原文为准）
+   a. MaterialKey.make(String id, CompoundTag raw) / idOf / hasTag / normalize / canonical / digest 保持不变（纯字符串 / NBT 逻辑）。
+   b. MaterialKey.of(ItemStack) → MaterialKey.of(ItemStack, HolderLookup.Provider)：
+      空栈返回 ""；否则 raw = 该栈组件补丁按 DataComponentPatch.CODEC、以 provider.createSerializationContext(NbtOps.INSTANCE) 编码成的 CompoundTag
+      （补丁为空 → null）；return make(id, raw)。去掉 SBN-001 的桩。
+      **一致性要求**：这个 raw 必须与 ItemStack.save(provider) 写出的 "components" 子标签逐字相同（t02 断言）——
+      实体身上的物品（MaterialList.mergeItemCount 读的是实体 NBT）和手里的物品必须算出同一个键。
+      若 javap / 实测发现两者编码不同，停下来在报告里写清差异，按「以 ItemStack.save 的 components 为准」统一，并写进「任务书出入」。
+   c. pruneNoOps：对键 "minecraft:block_entity_data" 的 compound 与旧 "BlockEntityTag" 同样处理（删掉其中的 id 再递归剔除空结构）。
+      补丁里「移除某组件」的标记键（形如 "!minecraft:xxx"，值为空 compound）**不许被当成空结构剔掉** —— 它表示「这个物品没有该默认组件」，
+      是真差异。pruneNoOps 遇到以 "!" 开头的键跳过（t01 用一个移除了默认组件的物品验证键与普通物品不同；若找不到自然会产生移除标记的原版物品，
+      用 stack.remove(DataComponents.XXX) 人为造一个）。
+   d. MaterialList.mergeItemCount：raw 取 item.components（compound，1.21 格式）；没有再取 item.tag（旧格式）；
+      去掉 SBN-001 的 SB-TODO(P2)。count 双读（count / Count）保留。
+   e. BlueprintConfig.materialSpaceIgnoredNbtKeys 默认值由 ["RepairCost"] 改为 ["RepairCost", "minecraft:repair_cost"]，注释不动。
+      MaterialKey.ignoredKeys() 的「配置未加载」回退值同步改成这两项。
+   f. MaterialList.buildDisplayStack(String key, CompoundTag tag) → buildDisplayStack(String key, CompoundTag tag, HolderLookup.Provider provider)：
+      tag 非空时按 DataComponentPatch.CODEC 用同一个 ops 解析，成功就 stack.applyComponents(patch)；解析失败（旧格式 tag）→ 返回无组件的普通栈，
+      不抛异常、不刷日志（旧格式键的迁移在 P4）。getDisplayStack 同步加 provider 参数。去掉 SBN-001 的桩。
+      上一行写 // SB-TODO(P4): 旧格式 tag 摘要的材料键随 DataFixer 迁移（D2 / D8）—— 放在「解析失败」分支处，只写一条。
+   g. MaterialSpace.displayStack(String) 同步加 provider 参数，透传给 buildDisplayStack。其余 MaterialSpace 逻辑原样。
+
+4. BlueprintStorage / ProjectStorage
+   a. 目录、文件名规则、原子写（writeCompressedAtomic）、摘要缓存、listSummaries 原样。
+   b. 读文件走 SafeNbtIo（1.20.1 若已如此则原样）；坐标读写一律 NbtCompat（1.20.1 的 NbtUtils.readBlockPos(getCompound(…)) 那两处，见 BlueprintStorage 约 519–521 行），
+      缺键语义按 SBN-001 三.4 保持。
+   c. BlueprintStorage.load 读出的是 BlueprintData.deserialize 的结果；不在这里插 DataFixer（P4 在 deserialize 之前插，SBN-001 已留桩）。
+   d. 旧数据：1.20.1 世界升级上来的 SBUndoData 快照、MaterialSpace 里按旧 tag 摘要的键、旧蓝图文件里 materialList 的旧键，本任务都原样读写、不迁移；
+      报告里列出「会原样带过来的旧格式数据」清单（按类 + 字段），给 P4 用。
+
+5. 主类
+   commonSetup 里按 1.20.1 顺序接上 BlueprintStorage.init()、ProjectStorage.init()，删掉 SBN-001 对应的那条 SB-TODO(P2): Storage.init。
+   其余 SB-TODO 不动。
+
+========================================================
+四、取证清单（证据/javap.txt 追加 J17～J20）
+========================================================
+
+  J17 net.neoforged.neoforge.server.ServerLifecycleHooks#getCurrentServer
+  J18 net.minecraft.world.level.saveddata.SavedData.Factory 构造器；SavedData#save(CompoundTag, HolderLookup.Provider)；
+      DimensionDataStorage#computeIfAbsent(Factory, String) / #save()
+  J19 net.minecraft.core.component.DataComponentPatch#CODEC / #EMPTY / #isEmpty；ItemStack#getComponentsPatch / #applyComponents(DataComponentPatch)
+  J20 net.minecraft.world.item.ItemStack#save(HolderLookup.Provider) 里 "components" 字段用的 codec（确认与 J19 同一个）
+
+========================================================
+五、测试（真实序列化要求照 SBN-002：NBT 一律由真实对象存出；拼接只允许在注明处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：报告写 @GameTest 实数 = 批次条数）。
+    t01_materialKeyComponents   石头 → "minecraft:stone"；附魔钻石剑 → 带 #；两把附魔相同但附魔添加顺序不同的剑 → 同键；
+                                只差 repair_cost 的两把剑 → 同键；改了名的剑 ≠ 未改名的剑；
+                                「放下再挖起来的空潜影盒」（真实 ShulkerBoxBlockEntity 收集组件后生成的物品）与合成出来的空潜影盒 → 同键；
+                                移除了一个默认组件的物品 ≠ 普通同种物品（三.3.c 的 "!" 标记）
+    t02_keyConsistency          对 t01 里每个物品：MaterialKey.of(stack, provider) == MaterialKey.make(id, stack.save(provider).getCompound("components") 或 null)
+    t03_displayStackRoundTrip   附魔剑与改名剑：key + keyTags 里存的 tag → buildDisplayStack → 与原栈 isSameItemSameComponents；
+                                旧格式 tag（手写 {Enchantments:[…]}，唯一允许手写处）→ 返回无组件普通栈、不抛异常
+    t04_entityItemKey           真实盔甲架手持附魔剑 → MaterialList.fromBlueprintData 得到的键 == MaterialKey.of(那把剑, provider)
+    t05_savedDataRoundTrip      7 个 SavedData 各造一份非空数据 → save(new CompoundTag(), provider) → Factory 的 load → 再 save，两次 NBT 相等；
+                                另对其中 MaterialSpace 用 helper.getLevel().getServer().overworld().getDataStorage() 真实 computeIfAbsent 取一次，确认 Factory 接线可用
+    t06_storageRoundTrip        BlueprintStorage.save(一份含方块实体与 fixedStartPos 的 BlueprintData) → findFile 找得到 → load 逐字段相等 → delete 后 findFile 为 null；
+                                ProjectStorage 同样做一次保存 / 读回 / 删除。测试写进 run 目录的文件在 finally 里删干净
+    t07_legacyCoords            旧格式 {X,Y,Z} 坐标的蓝图 NBT（由 SBN-001 的 NbtCompat.writeBlockPos 写出）经 BlueprintStorage 的摘要读取路径（listSummaries）读出正确坐标
+    测试改过的 live 配置 finally 恢复、不 save；run\ 残留清理。
+A3  专服冒烟（可选）：runServer 起到 Done、stop 正常退出；新生成 toml 的 materialSpaceIgnoredNbtKeys 为两项；config/spatial_blueprint/ 下目录按 init 建出。
+
+【手测】无。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端网络放行则复跑，否则审本地证据）。
+V3  9 个新文件与 1.20.1 源 diff -w 残差只有三.1、三.2、三.4.b 与 MaterialSpace.displayStack 的 provider 参数；
+    MaterialKey / MaterialList 相对 SBN-001 版本只改三.3 点名处；BlueprintConfig 只多一个默认值项。
+V4  t02 一致性成立；测试 NBT 来源符合真实序列化要求。
+V5  SB-TODO 实数 = 15 − 3（MaterialKey 1 + MaterialList 2）− 1（主类 Storage.init）+ 1（buildDisplayStack 旧格式 P4）+ 本任务其它新桩，逐条列出。
+V6  报告有「会原样带过来的旧格式数据」清单（三.4.d）。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-003 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」
+三、D8 实测：补丁 NBT 与 ItemStack.save components 是否同一编码（J19 / J20 + t02）；"!" 标记的真实形状
+四、测试覆盖：A1～A3；t01～t07；@GameTest 实数
+五、迁移桩清单
+六、会原样带过来的旧格式数据清单（三.4.d）
+七、任务书出入
+八、双端同步自查
+九、教训同步
+十、建议记入
+十一、需要用户做的事
+
+推送后对用户说：「已推送，去云端说『验收 SBN-003』」。
