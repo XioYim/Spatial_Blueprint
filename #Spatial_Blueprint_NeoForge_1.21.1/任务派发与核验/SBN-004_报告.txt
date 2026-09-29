@@ -1,0 +1,81 @@
+SBN-004 报告
+执行：2026-09-29 19:58:00 ～ 2026-09-29 20:40:00
+提交：<COMMIT_A>（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 19:58 | Spatial_Blueprint_NeoForge_1.21.1_20260929_195800 | A0C39239 | SBN-004 执行前 |
+
+一、完成情况（对照任务书三.1～三.6）：
+1. 组件：新建 item/SpatialBlueprintComponents（DeferredRegister.createDataComponents；39 个一键一组件，ID = 旧 NBT 键 snake_case；全部 persistent + networkSynchronized；BlockPos setter 一律 immutable()；save_mode 用 ordinal）。逐条清单见第三节。
+2. 物品 13 个文件：NBT 访问全部改组件读写（口径：hasTag&&contains → has/getOrDefault；getOrCreateTag().putX → set；getTag().remove → remove）；缺键默认值与返回 null 语义逐个保留；appendHoverText 换 1.21 签名、BuildBlueprintItem 用 context.level()；客户端方法体整体打桩（openPlacementScreen / openSelectionScreen / openEngineeringScreen / openProjectScreen / openRangeScreenDirect / discardInvalidBlueprint / notifyProjectMissing / notifyWrongDimension / notifyQuickPlanNoRange 各 1 条）；返回值型客户端判定只注释缓存行、走「缓存没有」原分支（isProjectMissing → false、knownProjectDimension → 只看组件、canEnterQuickPlan → 只看 stage）；isOutsideProjectDimension / wrongDimensionMessage / isRangeEditableStage / findHeld / findHeldHand 去 @OnlyIn 照搬。
+3. LegacyItemMigration：43 个旧键按对照表迁移（engStart/End 三个 int 合一个 BlockPos、缺键按 0；lockedPos/point1/point2 读小写 {x,y,z}；captureMin/Max、rangeP1/P2 走 NbtCompat（大写 {X,Y,Z} 或 int 数组）；rotation 非法跳过；saveMode 越界回 SAFE——fromOrdinal 本身不防越界，在迁移里防的）；forceCancelled 删除；blueprintData 保留；其它外来键保留；删空后 remove(CUSTOM_DATA)；幂等。六个根物品类覆写 verifyComponentsAfterLoad 调用 · item/LegacyItemMigration.java:64-160。
+4. 方块：SpatialBlueprintRegistry（DeferredRegister.createBlocks + create(Registries.BLOCK_ENTITY_TYPE)；BlockEntityType.Builder.of(...).build(null)）；RenderBlock（getRenderShape/propagatesSkylightDown/getShadeBrightness 改 protected；onRemove 的缓存 put 注释 + SB-TODO(P5)，addDestroyEffects 删除）；RenderBlockEntity（loadAdditional/saveAdditional 带 Provider、getUpdateTag(Provider)、handleUpdateTag(tag, Provider)、onDataPacket(net, pkt, Provider)、setRealBlock 走 loadWithComponents）。
+5. 辅助：ItemSyncUtil 原样；OrphanBlueprintGuard 发送句打桩 SB-TODO(P3) · util/OrphanBlueprintGuard.java:38。
+6. 主类：SpatialBlueprintComponents.register → SpatialBlueprintItems.register → SpatialBlueprintRegistry.register + addListener(addCreative)；addCreative 照搬（TOOLS_AND_UTILITIES 8 个物品，不含 build/void_dimensional）；删 3 条 P2 桩 · SpatialBlueprintMod.java:44-74。
+
+二、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）：
+- stack.getOrCreateTag().putX(k,v) → stack.set(COMPONENT, v)（全物品类）；hasTag&&contains → has / getOrDefault；getTag().remove(k) → remove(COMPONENT) · 13 个物品文件（明细逐方法，见文件 diff） · 三.2.a / J21-J22
+- NbtUtils.writeBlockPos/readBlockPos（物品）→ BlockPos 组件 / NbtCompat.readBlockPos（迁移） · LegacyItemMigration.java:139-155 · 三.1 表
+- appendHoverText(ItemStack, Level, List, TooltipFlag) → (ItemStack, Item.TooltipContext, List, TooltipFlag) · SpatialBlueprintItem 等 7 处 · J23
+- level.getGameTime()（tooltip）→ context.level()（可 null） · BuildBlueprintItem.java:73-75 · J23
+- @Mod.EventBusSubscriber(bus = FORGE) → @EventBusSubscriber(modid)（GAME 总线）；TickEvent.ServerTickEvent + phase END → ServerTickEvent.Post · BuildBlueprintItem.java:27、96 · J25
+- Forge DeferredRegister<Item>/<Block>/<BlockEntityType> + RegistryObject → DeferredRegister.Items/Blocks + DeferredItem/DeferredBlock/DeferredHolder · SpatialBlueprintItems.java、SpatialBlueprintRegistry.java · J21
+- 物品 NBT 整份同步（隐式）→ 每个组件显式 networkSynchronized · SpatialBlueprintComponents.java（39 处） · 三.1.a
+- BlockEntity.load/saveAdditional/getUpdateTag/handleUpdateTag/onDataPacket 旧签名 → 带 HolderLookup.Provider 的 1.21 签名 · RenderBlockEntity.java:139-189 · J28
+- newBE.load(blockEntityData) → newBE.loadWithComponents(blockEntityData, level.registryAccess()) · RenderBlockEntity.java:63 · J28
+- RenderBlock 的 public 覆盖 → protected（1.21 基类签名）；addDestroyEffects 删除（挪 IClientBlockExtensions） · RenderBlock.java:59-80 · J27
+- FMLEnvironment → net.neoforged.fml.loading.FMLEnvironment · AbstractBlueprintItem.java:105 · J24
+- 主类构造器 context.getModEventBus → (modEventBus, modContainer) 直收 · SpatialBlueprintMod.java:35 · P0 已定
+
+三、组件与迁移实测：
+1. 39 个组件清单（ID · 类型 · file:line 全在同一文件）：
+   blueprint_id/blueprint_name/creator_name/align_mode/source_type/tp_dimension/world_uuid/world_name/
+   eng_project_id/eng_project_name/eng_dimension/sb_task_set_id/project_id/task_set_id/project_name/
+   project_stage/project_dim → String（SpatialBlueprintComponents.java:44-93）
+   anim_duration/x_offset/y_offset/z_offset/sb_entry_index → Integer（:96-110）
+   completion_time → Long；tp_x/tp_y/tp_z → Double；locked/clear_first → Boolean（:104-122）
+   locked_pos/point1/point2/capture_min/capture_max/eng_start/eng_end/range_p1/range_p2 → BlockPos（:125-148）
+   rotation → Rotation（:151）；save_mode → CaptureMode（ordinal，:157）
+   共 39，t01 断言 getEntries().size()==39 且 codec/streamCodec 全非 null。
+2. DataFixer 升级后旧键真实落点（nbt_样本.txt 摘录）：空间蓝图的 blueprintId/blueprintName/rotation/saveMode
+   全部落在 components."minecraft:custom_data" 下；空置次元蓝图的 captureMin 是 {X:1,Y:2,Z:3}（1.20.1 大写复合标签）、
+   tpX 是 double。迁移入口（verifyComponentsAfterLoad）正确。
+3. "!" 与其他形状：本任务组件不涉及补丁规范化；迁移后 custom_data 仅当剩 blueprintData / 外来键时保留（t04 第 7 组）。
+
+四、测试覆盖：
+A1 编译 BUILD SUCCESSFUL、0 警告。
+A2 runGameTestServer：33 进 33 出全过（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 7，@GameTest 实数 33）；t01～t07 全部通过（首跑 t07 因 getUpdateTag 无 id 走 loadStatic 失败，改走 handleUpdateTag 后通过）。
+A3 专服冒烟（必做）：runServer 起到 Done（4.876s），RCON stop 正常退出；0 ERROR；Loaded 1291 recipes（blank_blueprint 解析错误消失）；18 条 WARN 全为既有/无害（配置 correction 7、命令歧义 5、offline 提示 4、assets URL 2）。证据/服务端.txt。
+证据：编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt、服务端.txt。run/ 已删；临时取样 t99 已删。
+
+五、迁移桩清单：新 22 + 存量 9 = grep -rn "SB-TODO(" src 实数 31。新增逐条（file:line · 阶段）：
+SpatialBlueprintMod.java:46 P3 网络；:47 P4 命令；:48 P4 登录登出；:49 P5 clientSetup；:50 P4 ForagersInsightCompat；:51 P4 FileLogger（主类存量 6，删 3 条 P2）
+item/AbstractBlueprintItem.java:63 P4（旧物品内联 blueprintData 转存）；:76 P5（ClientBlueprintCache）
+item/SpatialBlueprintItem.java:73 P6（放置界面）；:83 P6（废蓝图回收）；:106 P5（ClientBlueprintCache）
+item/BlankBlueprintItem.java:47 P6（点选界面）
+item/ProjectionBlueprintItem.java:79 P6（放置界面）
+item/EngineeringBlueprintItem.java:43 P6（工程界面）
+item/ProjectBlueprintItem.java:108 P5（项目缺失判定缓存）；:114 P6（横幅）；:127 P5（维度缓存兜底）；:143 P6（横幅）；:172 P5（快捷规划缓存兜底）；:178 P6（横幅）；:182 P6（项目界面）；:186 P6（范围界面）
+item/VoidDimensionalBlueprintItem.java:92/:102/:111 P3（三条 S2C_OperationResult）；:115 P3（S2C_OpenVoidScreenMessage）
+block/RenderBlock.java:80 P5（addDestroyEffects 改走 IClientBlockExtensions）
+util/OrphanBlueprintGuard.java:38 P3（S2C_OperationResult）
+存量 9：network/s2c/S2C_IllegalBlocksListMessage.java:5、util/BlueprintData.java:323、util/MaterialList.java:179（其余见 SBN-003 报告）。
+
+六、任务书出入：
+1. 三.2.d 说 VoidDimensional 的 BlueprintNetwork.CHANNEL.send 有「三处」；实际四处（失效 / 外档 / 非主人 3 条 S2C_OperationResult + 1 条 S2C_OpenVoidScreenMessage），按实际四处打桩。
+2. 三.3.e 说 fromOrdinal 越界回 SAFE 已有 —— 实际 CaptureMode.fromOrdinal 直接 values()[ordinal]（越界抛 AIOOBE，与 1.20.1 相同）；迁移里自行做了范围判断回 SAFE，未改 CaptureMode（保持与 1.20.1 零残差）。
+3. 任务书 2.c 的客户端方法清单里 openSelectionScreen 等按「方法体整体换成一行 SB-TODO」处理；ProjectBlueprintItem 的 isProjectMissing 等返回值型按任务书要求只注释缓存行。均照做。
+4. 任务书三.3 未点名：1.20.1 的 lockedPos/point1/point2 是小写 {x,y,z}、captureMin 等是大写 {X,Y,Z} —— 迁移按两种形状分别读，t04 覆盖。
+5. 测试保真修正（非任务书错误）：测试里一度用 1.21 的 NbtUtils.writeBlockPos 生成 captureMin（int[3]），不是 1.20.1 形状；改为手写大写 {X,Y,Z} 后重跑。
+
+七、双端同步自查：39 个组件全部 persistent + networkSynchronized（缺一个客户端就看不见 → 双端不同步）；迁移是纯函数（同输入同输出，不发包不读文件不读配置），服务端与客户端各自解码算出同一结果；客户端分支打桩后服务端仍保留：物品注册与组件、use/useOn 的孤儿回收（OrphanBlueprintGuard）、VoidDimensional 的文件/存档归属/主人校验与换物、BuildBlueprintItem 的服务端 tick 恢复。结论：无新增不同步点。
+
+八、教训同步：基线为 10d3b1c 的副本；原件 A、副本 C、基线 B 三方逐字相同（SHA256 均 10C89E19…）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+九、建议记入：
+1. [建议记入 C] 1.21 物品自定义数据一律走自定义组件 + 全部 persistent + networkSynchronized；每个 setter 是原子 set，没有「取出副本忘写回」的坑；BlockPos setter 一律 immutable()。
+2. [建议记入 C] 旧物品迁移入口 = Item#verifyComponentsAfterLoad（ItemStack 私有构造器 + applyComponents 三处调用；磁盘/网络解码都经构造器）；旧键落点在 components."minecraft:custom_data"；迁移必须幂等且双端确定性。
+3. [建议记入 K] 测试里造 1.20.1 旧物品 NBT 时别用 1.21 的 NbtUtils.writeBlockPos（那是 int[3]）；旧格式坐标是 {X,Y,Z} 大写复合标签，物品自己写的 lockedPos/point1/2 是小写 {x,y,z}。
+4. [供云端问用户] H1 手测需要用户进游戏（步骤已在测试清单组四）；`blank_blueprint` 配方解析错误随本任务物品注册消失（P2 遗留问题闭环）。
+
+十、需要用户做的事：H1 手测（步骤见测试清单「四、SBN-004」末尾）：
+   (1) runClient 进单人创造世界；(2) 创造物品栏「工具与实用物品」页应见 8 个蓝图物品、图标与中文名正常；
+   (3) 投影蓝图右键无反应无报错（界面 P6 打桩）；(4) /give 带组件参数的名字显示「空间蓝图 - 测试」。

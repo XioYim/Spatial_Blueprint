@@ -1,0 +1,56 @@
+﻿SBN-004 真实 NBT 样本（证据）：旧物品经 DataFixer 升级后、迁移前的落点
+采集：2026-09-29 20:20（GameTest 服务器内，临时 t99 用例；采集后已从 SBN004Tests.java 删除）
+来源：手写 1.20.1 物品 NBT（{id, Count:1b, tag:{…}}，旧格式唯一允许手写处）→
+  DataFixers.getDataFixer().update(References.ITEM_STACK, 3465 → 当前 DataVersion) 后的 Tag，
+  取 components 子标签打印（即「升级后、迁移前」的形状）。
+格式：NbtUtils.prettyPrint 输出的 SNBT 文本（K5）。
+样本：
+  spatial-fixed-components  空间蓝图：旧键全部落进 minecraft:custom_data（blueprintId / blueprintName /
+                            rotation / saveMode），与任务书预期一致 —— 迁移入口正确。
+  void-fixed-components     空置次元蓝图：captureMin 是 1.20.1 的 {X:1,Y:2,Z:3} 复合标签（大写）；
+                            tpX 是 double；tpDimension 是字符串。都在 custom_data 下。
+
+### spatial-fixed-components
+ { "minecraft:custom_data": {
+    "blueprintId"  : "11111111-2222-3333-4444-555555555555",
+    "blueprintName": "OldSpatial",
+    "rotation"     : "CLOCKWISE_90",
+    "saveMode"     : 2
+  }
+}
+### void-fixed-components
+ { "minecraft:custom_data": {
+    "captureMin" : {
+      "X": 1,
+      "Y": 2,
+      "Z": 3
+    },
+    "tpDimension": "minecraft:overworld",
+    "tpX"        : 1.5d
+  }
+}
+[20:20:25] [Server thread/DEBUG] [ne.ne.ne.co.ModConfigSpec/CORE]: Range value 0.0 is not within its bounds 1.0-1600000.0
+[20:20:25] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [BlueprintStorage] Saved blueprint 't06' 鈫?D:\Mods\Spatial_Blueprint_NeoForge_1.21.1\run\config\spatial_blueprint\create\create_Tester_39b90c19-32e1-476b-b088-432028e9625f.litematic
+[20:20:25] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [ProjectStorage] Saved project 't06p' 鈫?D:\Mods\Spatial_Blueprint_NeoForge_1.21.1\run\config\spatial_blueprint\projects\30efcb88-60ee-471a-9f3b-a4713ac3869d\project.dat
+[20:20:25] [Server thread/INFO] [co.xi.sp.SpatialBlueprintMod/]: [ProjectStorage] Deleted project 30efcb88-60ee-471a-9f3b-a4713ac3869d
+[20:20:25] [Server thread/INFO] [minecraft/GameTestServer]: [++++++++++++++++++++++++++++++++++]
+[20:20:25] [Server thread/INFO] [minecraft/GameTestServer]: ========= 34 GAME TESTS COMPLETE IN 1.277 s ======================
+[20:20:25] [Server thread/INFO] [minecraft/GameTestServer]: All 34 required tests passed :)
+[20:20:25] [Server thread/INFO] [minecraft/GameTestServer]: ====================================================
+[20:20:25] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+[20:20:25] [Server thread/INFO] [minecraft/MinecraftServer]: Saving players
+[20:20:25] [Server thread/INFO] [minecraft/MinecraftServer]: Saving worlds
+[20:20:26] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:overworld
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_end
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_nether
+[20:20:27] [Server thread/DEBUG] [ne.ne.ne.co.CommonHooks/WP]: Gathered mod list to write to world save Test Level
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (world): All chunks are saved
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM1): All chunks are saved
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM-1): All chunks are saved
+[20:20:27] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+[20:20:27] [Server thread/DEBUG] [ne.ne.fm.co.ConfigTracker/CONFIG]: Unloading configs type SERVER
+[20:20:27] [Server thread/INFO] [minecraft/GameTestServer]: Game test server shutting down
+
+BUILD SUCCESSFUL in 22s
+8 actionable tasks: 2 executed, 6 up-to-date
+Configuration cache entry reused.

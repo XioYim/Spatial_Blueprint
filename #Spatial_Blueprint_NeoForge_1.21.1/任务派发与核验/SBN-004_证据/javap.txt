@@ -1,0 +1,22 @@
+SBN-004 javap 证据（J21～J30 云端已核；本地补 J26 调用点复核）
+merged.jar：build/moddev/artifacts/neoforge-21.1.252-merged.jar
+
+J26 复核（本地 javap -c net.minecraft.world.item.ItemStack，3 处 invokevirtual）：
+  public void applyComponentsAndValidate(DataComponentPatch)  → invokevirtual Item.verifyComponentsAfterLoad(ItemStack)
+  public void applyComponents(DataComponentPatch)             → 同上
+  public void applyComponents(DataComponentMap)               → 同上
+  另有私有构造器 (Holder<Item>, int, PatchedDataComponentMap)：源码（merged-sources ItemStack.java）中
+  `this.getItem().verifyComponentsAfterLoad(this);` —— 磁盘解码（ItemStack.parse → CODEC）与网络解码
+  （OPTIONAL_STREAM_CODEC）都经它，t04/t05 实测迁移在 parse 时确实执行（断言成立）。
+  结论：迁移钩子覆盖「磁盘 / 网络解码」与 applyComponents 两条路径，与任务书 J26 描述一致。
+
+本地抽查补充（与任务书四节一致）：
+  DeferredRegister.createDataComponents(ResourceKey, String) → DataComponents#registerComponentType(String,
+    UnaryOperator<DataComponentType$Builder<D>>) → DeferredHolder<DataComponentType<?>, DataComponentType<D>>
+  DeferredRegister.createItems(String) → Items#register(String, Supplier) → DeferredItem<I>
+  DeferredRegister.createBlocks(String) → Blocks#register(String, Supplier) → DeferredBlock<B>
+  DataComponentType$Builder#persistent(Codec) / #networkSynchronized(StreamCodec<? super RegistryFriendlyByteBuf,T>)
+  NeoForgeStreamCodecs.enumCodec(Class) → StreamCodec<B extends FriendlyByteBuf, V>（Rotation 无 STREAM_CODEC）
+  BlockPos.CODEC / BlockPos.STREAM_CODEC（ByteBuf 变体，可作 RegistryFriendlyByteBuf 的超类型参数）
+  Item.TooltipContext#level()（default，可为 null）
+  Item#verifyComponentsAfterLoad(ItemStack) 为 public（覆盖处直接调用 LegacyItemMigration）

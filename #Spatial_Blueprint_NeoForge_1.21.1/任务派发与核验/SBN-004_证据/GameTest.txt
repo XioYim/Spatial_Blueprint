@@ -1,0 +1,20 @@
+SBN-004 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 20:22 左右
+日志关键行：
+  Running test batch 'defaultBatch:0' (33 tests)...
+  [+++++++++++++++++++++++++++++++++]
+  ========= 33 GAME TESTS COMPLETE IN 1.305 s ======================
+  All 33 required tests passed :)
+  BUILD SUCCESSFUL in 20s
+用例数核对（C2）：SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7 + SBN004Tests 7 = 33，与批次条数一致。
+SBN001～003 的 26 条照旧全过。
+t01 注册（10 物品 + render_block + 方块实体 + 39 组件 codec/streamCodec 非 null）；
+t02 磁盘往返（6 个根物品类 + getter 逐项 + MutableBlockPos immutable 断言）；
+t03 网络往返（ItemStack.STREAM_CODEC 经 RegistryFriendlyByteBuf）；
+t04 旧物品迁移（真实 DataFixer 3465→当前；9 组断言：空间/空白/工程/空置次元/项目/建造 blueprintData 保留/非法 rotation/原版物品不动）；
+t05 迁移幂等（applyComponents(EMPTY) + 再存再读）；
+t06 BuildBlueprintItem.restore 五种 sourceType；
+t07 RenderBlockEntity（setRenderData 两次、真实箱子 NBT 存取、getUpdateTag、setRealBlock 恢复箱内物品）。
+临时取样 t99 已删（SBN-SAMPLE5 的 SNBT 存 nbt_样本.txt）。
+run/ 已整目录删除。

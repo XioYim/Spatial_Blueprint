@@ -1,0 +1,22 @@
+SBN-004 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 20:22（BUILD SUCCESSFUL in 8s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 首编译 4 错：① SpatialBlueprintRegistry 把 DeferredHolder 写成 DeferredRegister 内部类（实际是顶层类
+   net.neoforged.neoforge.registries.DeferredHolder）；②③④ Dimensional/Engineering/Projection 三个类
+   的 appendHoverText 用了 Item.TooltipContext 但没 import Item。修正后通过。
+2. SBN004Tests 首编译 5 错：Dynamic 包名（com.mojang.serialization 而非 datafixers）；
+   RegistryFriendlyByteBuf.decorator 吃 RegistryAccess 不是 Provider；loadAdditional 是 protected
+   （测试改走 handleUpdateTag 真实报文路径）；SpatialBlueprintItem 没有 setBlueprintId（改直接 set 组件）。
+3. 运行时 1 次失败：t07 getUpdateTag 不含 id，BlockEntity.loadStatic 认不出类型 → 改走
+   handleUpdateTag（真实客户端收包路径）后通过。
+4. 取样发现测试保真问题：captureMin/rangeP1 等用了 1.21 的 NbtUtils.writeBlockPos（int[3]），
+   1.20.1 实际是 {X,Y,Z} 复合标签 → 测试改为手写大写 {X,Y,Z}（旧格式唯一允许手写处），重跑通过。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 8s
+2 actionable tasks: 1 executed, 1 up-to-date
