@@ -310,12 +310,12 @@ public class SBN010Tests {
         };
         Set<String> ids = new HashSet<>();
         for (String[] pair : expected) {
-            helper.assertValueEqual(pair[0], pair[1], "TYPE id naming");
+            helper.assertValueEqual(pair[1], pair[0], "TYPE id naming");
             ids.add(pair[1]);
         }
-        helper.assertValueEqual(76, ids.size(), "76 unique payload ids");
-        helper.assertValueEqual(SpatialBlueprintMod.MODID,
-                CaptureAreaMessage.TYPE.id().getNamespace(), "namespace");
+        helper.assertValueEqual(ids.size(), 76, "76 unique payload ids");
+        helper.assertValueEqual(CaptureAreaMessage.TYPE.id().getNamespace(),
+                SpatialBlueprintMod.MODID, "namespace");
         helper.succeed();
     }
 
@@ -446,7 +446,7 @@ public class SBN010Tests {
             files.add(bpId);
             BlueprintData data = BlueprintStorage.load(bpId);
             helper.assertTrue(data != null, "blueprint file saved");
-            helper.assertValueEqual(4, totalBlocks(data), "3 stone + 1 chest captured");
+            helper.assertValueEqual(totalBlocks(data), 4, "3 stone + 1 chest captured");
             helper.assertTrue(data.saveMode == CaptureMode.SAFE, "saveMode SAFE");
             helper.assertTrue(!data.opBypassCapture, "non-FORCE opBypassCapture=false");
 
@@ -475,7 +475,7 @@ public class SBN010Tests {
             helper.assertTrue(level.getBlockState(p1).is(Blocks.STONE), "source stone kept");
             helper.assertTrue(level.getBlockState(helper.absolutePos(new BlockPos(2, 2, 2))).is(Blocks.CHEST),
                     "source chest kept");
-            helper.assertValueEqual(5, worldChest.getItem(0).getCount(), "source chest items kept");
+            helper.assertValueEqual(worldChest.getItem(0).getCount(), 5, "source chest items kept");
             AABB box = new AABB(p1.getX(), p1.getY(), p1.getZ(),
                     p2.getX() + 1.0, p2.getY() + 1.0, p2.getZ() + 1.0);
             helper.assertTrue(!level.getEntitiesOfClass(ArmorStand.class, box, e -> true).isEmpty(),
@@ -536,16 +536,16 @@ public class SBN010Tests {
                     "capture_min normalized");
             helper.assertTrue(expectMax.equals(VoidDimensionalBlueprintItem.getCaptureMax(hand)),
                     "capture_max normalized");
-            helper.assertValueEqual(player.getScoreboardName(),
-                    VoidDimensionalBlueprintItem.getCreatorName(hand), "creator_name");
+            helper.assertValueEqual(VoidDimensionalBlueprintItem.getCreatorName(hand),
+                    player.getScoreboardName(), "creator_name");
 
             // 次元袋按语义入账：3 石头 + 1 箱子
             bagId = SpatialBlueprintItem.getBlueprintId(hand);
             helper.assertTrue(bagId != null && !bagId.isEmpty(), "bag blueprint_id");
             files.add(bpIdOf(hand));
             Map<String, Integer> bag = space.bag(player.getUUID(), bagId);
-            helper.assertValueEqual(3, bag.getOrDefault("minecraft:stone", -1), "bag stone x3");
-            helper.assertValueEqual(1, bag.getOrDefault("minecraft:chest", -1), "bag chest x1");
+            helper.assertValueEqual(bag.getOrDefault("minecraft:stone", -1), 3, "bag stone x3");
+            helper.assertValueEqual(bag.getOrDefault("minecraft:chest", -1), 1, "bag chest x1");
 
             // 次元蓝图 KeepContents：箱内物品跟着走（合法内容保留）
             BlueprintData data = BlueprintStorage.load(bagId);
@@ -553,7 +553,7 @@ public class SBN010Tests {
             BlueprintData.BlockEntry chestEntry = findChestEntry(helper, data);
             helper.assertTrue(chestEntry.nbt != null && chestEntry.nbt.contains("Items"),
                     "dimensional chest contents kept");
-            helper.assertValueEqual(player.getUUID().toString(), data.ownerUuid, "file ownerUuid");
+            helper.assertValueEqual(data.ownerUuid, player.getUUID().toString(), "file ownerUuid");
             helper.assertTrue(gotCooldown(received), "sink got cooldown");
         } finally {
             BlueprintNetwork.fakePlayerSink = (p, payload) -> {};
@@ -666,13 +666,13 @@ public class SBN010Tests {
             CaptureAreaMessage.handleServer(new CaptureAreaMessage("t07-claim", true, 0,
                     FluidCaptureFilter.ALL, false, false, CaptureMode.SAFE, "", ""), player);
             S2C_OperationResult denied = firstOperationResult(helper, received);
-            helper.assertValueEqual("spatial_blueprint.error.no_break_permission",
-                    denied.messageKey, "claim denied key");
+            helper.assertValueEqual(denied.messageKey, "spatial_blueprint.error.no_break_permission",
+                    "claim denied key");
             helper.assertTrue(level.getBlockState(p1).is(Blocks.STONE)
                     && level.getBlockState(p2).is(Blocks.STONE), "area untouched after deny");
             helper.assertTrue(player.getMainHandItem().getItem()
                     == SpatialBlueprintItems.BLANK_BLUEPRINT.get(), "hand still blank");
-            helper.assertValueEqual(beforeFiles, BlueprintStorage.listSummaries().size(),
+            helper.assertValueEqual(BlueprintStorage.listSummaries().size(), beforeFiles,
                     "no new file after deny");
 
             // 注销监听 → 同一操作成功（与 t05 同口径）
@@ -727,12 +727,12 @@ public class SBN010Tests {
             helper.assertTrue(projId != null && !projId.isEmpty(), "projection blueprint_id");
             files.add(projId);
             BlueprintData proj = BlueprintStorage.load(projId);
-            helper.assertValueEqual("project", proj.category, "projection category");
+            helper.assertValueEqual(proj.category, "project", "projection category");
             helper.assertTrue(!findChestEntry(helper, proj).nbt.contains("Items"),
                     "projection chest stripped (anti-dupe)");
             helper.assertTrue(level.getBlockState(chestAbs).is(Blocks.CHEST), "source not cleared");
             ChestBlockEntity src = (ChestBlockEntity) level.getBlockEntity(chestAbs);
-            helper.assertValueEqual(5, src.getItem(0).getCount(), "source chest items kept");
+            helper.assertValueEqual(src.getItem(0).getCount(), 5, "source chest items kept");
 
             // reward = true 但非 OP → 按普通投影
             giveBlankWithPoints(p2, p1pos, p2pos);
@@ -740,8 +740,8 @@ public class SBN010Tests {
                     new CaptureProjectionMessage("t08-reward-denied", 5, CaptureMode.SAFE, "", "", true), p2);
             String deniedId = AbstractBlueprintItem.getBlueprintId(p2.getMainHandItem());
             files.add(deniedId);
-            helper.assertValueEqual("project",
-                    BlueprintStorage.load(deniedId).category, "non-OP reward falls back to project");
+            helper.assertValueEqual(BlueprintStorage.load(deniedId).category, "project",
+                    "non-OP reward falls back to project");
 
             // OP + 创造 + reward → 奖励蓝图（无材料清单）
             grantOp(helper, op);
@@ -754,7 +754,7 @@ public class SBN010Tests {
             String rewardId = AbstractBlueprintItem.getBlueprintId(op.getMainHandItem());
             files.add(rewardId);
             BlueprintData reward = BlueprintStorage.load(rewardId);
-            helper.assertValueEqual("reward", reward.category, "reward category");
+            helper.assertValueEqual(reward.category, "reward", "reward category");
             helper.assertTrue(reward.materialList == null
                     || reward.materialList.blockCounts.isEmpty(), "reward has no material list");
             helper.assertTrue(gotCooldown(received), "sink got cooldown");
@@ -818,8 +818,8 @@ public class SBN010Tests {
             stranger.setItemInHand(InteractionHand.MAIN_HAND, strangerStack);
             received.clear();
             C2S_VoidRecaptureMessage.handleServer(new C2S_VoidRecaptureMessage(), stranger);
-            helper.assertValueEqual("spatial_blueprint.message.void_blueprint.not_owner",
-                    firstOperationResult(helper, received).messageKey, "non-owner denied");
+            helper.assertValueEqual(firstOperationResult(helper, received).messageKey,
+                    "spatial_blueprint.message.void_blueprint.not_owner", "non-owner denied");
             helper.assertTrue(BlueprintStorage.load(dimId).placed, "file untouched after deny");
 
             // world_uuid 为别的存档 → foreign 分支
@@ -828,8 +828,8 @@ public class SBN010Tests {
             owner.setItemInHand(InteractionHand.MAIN_HAND, foreignStack);
             received.clear();
             C2S_VoidRecaptureMessage.handleServer(new C2S_VoidRecaptureMessage(), owner);
-            helper.assertValueEqual("spatial_blueprint.error.foreign_world.discarded",
-                    firstOperationResult(helper, received).messageKey, "foreign denied");
+            helper.assertValueEqual(firstOperationResult(helper, received).messageKey,
+                    "spatial_blueprint.error.foreign_world.discarded", "foreign denied");
             helper.assertTrue(BlueprintStorage.load(dimId).placed, "file untouched after foreign");
 
             // 主人 → 覆盖写回原文件（blueprint_id 不变）、placed = false
@@ -839,21 +839,21 @@ public class SBN010Tests {
             C2S_VoidRecaptureMessage.handleServer(new C2S_VoidRecaptureMessage(), owner);
             S2C_OperationResult done = firstOperationResult(helper, received);
             helper.assertTrue(done.success, "owner recapture succeeded");
-            helper.assertValueEqual("spatial_blueprint.message.void_recapture_completed",
-                    done.messageKey, "recapture done key");
+            helper.assertValueEqual(done.messageKey,
+                    "spatial_blueprint.message.void_recapture_completed", "recapture done key");
             BlueprintData rewritten = BlueprintStorage.load(dimId);
             helper.assertTrue(!rewritten.placed, "placed cleared after recapture");
-            helper.assertValueEqual(2, totalBlocks(rewritten), "recaptured 2 blocks");
+            helper.assertValueEqual(totalBlocks(rewritten), 2, "recaptured 2 blocks");
             ItemStack gained = owner.getMainHandItem();
             helper.assertTrue(gained.getItem() == SpatialBlueprintItems.DIMENSIONAL_BLUEPRINT.get(),
                     "gained dimensional item");
-            helper.assertValueEqual(dimId, bpIdOf(gained), "same blueprint_id");
+            helper.assertValueEqual(bpIdOf(gained), dimId, "same blueprint_id");
             helper.assertTrue(capMin.equals(VoidDimensionalBlueprintItem.getCaptureMin(gained)),
                     "new item capture_min");
             helper.assertTrue(capMax.equals(VoidDimensionalBlueprintItem.getCaptureMax(gained)),
                     "new item capture_max");
-            helper.assertValueEqual(owner.getScoreboardName(),
-                    VoidDimensionalBlueprintItem.getCreatorName(gained), "new item creator");
+            helper.assertValueEqual(VoidDimensionalBlueprintItem.getCreatorName(gained),
+                    owner.getScoreboardName(), "new item creator");
         } finally {
             BlueprintNetwork.fakePlayerSink = (p, payload) -> {};
             BlueprintValidator.clearCooldown(owner.getUUID());
@@ -895,17 +895,17 @@ public class SBN010Tests {
             String engId = AbstractBlueprintItem.getBlueprintId(engStack);
             helper.assertTrue(engId != null && !engId.isEmpty(), "engineering blueprint_id");
             files.add(engId);
-            helper.assertValueEqual(engId, EngineeringBlueprintItem.getBoundProjectId(engStack),
+            helper.assertValueEqual(EngineeringBlueprintItem.getBoundProjectId(engStack), engId,
                     "eng_project_id bound");
-            helper.assertValueEqual(dim, EngineeringBlueprintItem.getBoundDimension(engStack),
+            helper.assertValueEqual(EngineeringBlueprintItem.getBoundDimension(engStack), dim,
                     "eng dimension bound");
             helper.assertTrue(start.equals(EngineeringBlueprintItem.getBoundStartPos(engStack)),
                     "eng_start bound");
             helper.assertTrue(end.equals(EngineeringBlueprintItem.getBoundEndPos(engStack)),
                     "eng_end bound");
             BlueprintData engData = BlueprintStorage.load(engId);
-            helper.assertValueEqual("engineering", engData.category, "engineering category");
-            helper.assertValueEqual(3, totalBlocks(engData), "engineering 3 blocks");
+            helper.assertValueEqual(engData.category, "engineering", "engineering category");
+            helper.assertValueEqual(totalBlocks(engData), 3, "engineering 3 blocks");
 
             // 子工程：OP + 项目蓝图（服务端两点）+ 范围内箱子内容被清
             grantOp(helper, op);
@@ -929,15 +929,15 @@ public class SBN010Tests {
             C2S_CreateSubProjectMessage.handleServer(
                     new C2S_CreateSubProjectMessage("t10-sub", 5, 1, projectId.toString(), "s", "l"), op);
             ProjectData after = ProjectStorage.loadProject(projectId);
-            helper.assertValueEqual(1, after.entries.size(), "one sub entry added");
+            helper.assertValueEqual(after.entries.size(), 1, "one sub entry added");
             ProjectData.EntryData entry = after.entries.get(0);
-            helper.assertValueEqual(1, entry.index, "entry index");
-            helper.assertValueEqual("t10-sub", entry.label, "entry label");
+            helper.assertValueEqual(entry.index, 1, "entry index");
+            helper.assertValueEqual(entry.label, "t10-sub", "entry label");
             entries.add(new String[]{projectId.toString(), entry.filename});
             BlueprintData sub = ProjectStorage.loadEntry(projectId, entry.filename);
             helper.assertTrue(sub != null, "sub entry file saved");
-            helper.assertValueEqual("subproject", sub.category, "subproject category");
-            helper.assertValueEqual(projectId.toString(), sub.parentProjectId, "parent project id");
+            helper.assertValueEqual(sub.category, "subproject", "subproject category");
+            helper.assertValueEqual(sub.parentProjectId, projectId.toString(), "parent project id");
             helper.assertTrue(!findChestEntry(helper, sub).nbt.contains("Items"),
                     "sub entry chest stripped");
             helper.assertTrue(new BlockPos(1, 0, 1).equals(entry.relP1), "relP1 relative to anchor");

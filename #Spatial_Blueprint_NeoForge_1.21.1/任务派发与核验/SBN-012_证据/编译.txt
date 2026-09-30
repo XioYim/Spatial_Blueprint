@@ -1,0 +1,9 @@
+SBN-012 编译证据（A1，必做）
+命令：$env:JAVA_HOME = "C:\Program Files\Zulu\zulu-21"; .\gradlew.bat compileJava --rerun
+
+输出尾部：
+  > Task :compileJava
+  BUILD SUCCESSFUL in 9s
+  2 actionable tasks: 1 executed, 1 up-to-date
+
+警告 / 注行数：0（期望 0，K1 基线）

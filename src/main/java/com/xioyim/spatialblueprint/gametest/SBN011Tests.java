@@ -121,8 +121,10 @@ public class SBN011Tests {
     /**
      * 手写完整 1.20.1 格式蓝图 NBT：Version 7、MinecraftDataVersion 3465、单区域 Main（2x1x1：
      * x=0 为 grass、x=1 为箱子）、箱子方块实体、一个物品展示框实体、材料清单（石头 x2）。
+     *
+     * <p>包内可见，供 SBN-012 t04 复用（SBN-012 任务书允许）。</p>
      */
-    private static CompoundTag legacyBlueprintRoot() {
+    static CompoundTag legacyBlueprintRoot() {
         CompoundTag root = new CompoundTag();
         root.putInt("Version", 7);
         root.putInt("MinecraftDataVersion", 3465);
@@ -193,8 +195,8 @@ public class SBN011Tests {
         // 方块状态：grass（1.20.3 起改名 short_grass）
         CompoundTag grass = stateEntry("minecraft:grass");
         CompoundTag fixedGrass = LegacyDataFixer.fixBlockState(grass, 3465);
-        helper.assertValueEqual("minecraft:short_grass", fixedGrass.getString("Name"), "grass renamed");
-        helper.assertValueEqual("minecraft:grass", grass.getString("Name"), "input not mutated");
+        helper.assertValueEqual(fixedGrass.getString("Name"), "minecraft:short_grass", "grass renamed");
+        helper.assertValueEqual(grass.getString("Name"), "minecraft:grass", "input not mutated");
 
         // 物品：旧附魔剑 → components（与 1.21 真实剑逐格一致）
         CompoundTag fixedSword = LegacyDataFixer.fixItemStack(oldItem("minecraft:diamond_sword", oldSwordTag()), 3465);
@@ -243,9 +245,9 @@ public class SBN011Tests {
     // ── t02：蓝图文件升级 ────────────────────────────────────────────────────
 
     private static void assertT02(GameTestHelper helper, BlueprintData data, int expectedVersion) {
-        helper.assertValueEqual(expectedVersion, data.dataVersion, "dataVersion keeps file value");
-        helper.assertValueEqual(2, data.normalBlocks.size() + data.dependentBlocks.size()
-                + data.lateBlocks.size(), "2 blocks captured");
+        helper.assertValueEqual(data.dataVersion, expectedVersion, "dataVersion keeps file value");
+        helper.assertValueEqual(data.normalBlocks.size() + data.dependentBlocks.size()
+                + data.lateBlocks.size(), 2, "2 blocks captured");
         BlueprintData.BlockEntry grassEntry = null;
         for (BlueprintData.BlockEntry e : data.dependentBlocks) {
             if (e.state.is(Blocks.SHORT_GRASS)) grassEntry = e;
@@ -262,14 +264,13 @@ public class SBN011Tests {
         fresh.loadWithComponents(chestEntry.nbt, provider(helper));
         helper.assertTrue(ItemStack.isSameItemSameComponents(fresh.getItem(0), realSword(helper)),
                 "chest sword upgraded");
-        helper.assertValueEqual("Test Blade",
-                fresh.getItem(0).get(net.minecraft.core.component.DataComponents.CUSTOM_NAME).getString(),
-                "chest sword custom name");
+        helper.assertValueEqual(fresh.getItem(0).get(net.minecraft.core.component.DataComponents.CUSTOM_NAME).getString(),
+                "Test Blade", "chest sword custom name");
 
         // 展示框 NBT 还原：框里的物品同样正确
-        helper.assertValueEqual(1, data.entities.size(), "one entity");
+        helper.assertValueEqual(data.entities.size(), 1, "one entity");
         BlueprintData.EntityEntry frame = data.entities.get(0);
-        helper.assertValueEqual("minecraft:item_frame", frame.type, "frame type");
+        helper.assertValueEqual(frame.type, "minecraft:item_frame", "frame type");
         Optional<Entity> recreated = EntityType.create(frame.nbt, helper.getLevel());
         helper.assertTrue(recreated.isPresent() && recreated.get() instanceof ItemFrame,
                 "frame recreated");
@@ -278,7 +279,7 @@ public class SBN011Tests {
 
         // 材料清单（石头 x2，无 tag 键原样）
         helper.assertTrue(data.materialList != null, "materialList present");
-        helper.assertValueEqual(2, data.materialList.blockCounts.getOrDefault("minecraft:stone", -1),
+        helper.assertValueEqual(data.materialList.blockCounts.getOrDefault("minecraft:stone", -1), 2,
                 "stone count kept");
     }
 
@@ -307,7 +308,7 @@ public class SBN011Tests {
         BlueprintData back = BlueprintData.deserialize(root1);
         CompoundTag root2 = back.serialize();
         helper.assertTrue(root1.equals(root2), "current data byte-identical through deserialize");
-        helper.assertValueEqual(LegacyDataFixer.current(), back.dataVersion, "current version recorded");
+        helper.assertValueEqual(back.dataVersion, LegacyDataFixer.current(), "current version recorded");
 
         // 缺 MinecraftDataVersion 键 → 按 3465 处理（t02 样本去键，结果与 t02 相同，版本号记 0）
         CompoundTag noKey = legacyBlueprintRoot();
@@ -338,9 +339,9 @@ public class SBN011Tests {
         tag.put("keyTags", keyTags);
 
         MaterialList ml = MaterialList.deserialize(tag, 3465);
-        helper.assertValueEqual(5, ml.blockCounts.getOrDefault(expectedKey, -1), "merged count 5");
-        helper.assertValueEqual(5, ml.blockCounts.getOrDefault("minecraft:stone", -1), "stone kept");
-        helper.assertValueEqual(2, ml.blockCounts.size(), "two keys after merge");
+        helper.assertValueEqual(ml.blockCounts.getOrDefault(expectedKey, -1), 5, "merged count 5");
+        helper.assertValueEqual(ml.blockCounts.getOrDefault("minecraft:stone", -1), 5, "stone kept");
+        helper.assertValueEqual(ml.blockCounts.size(), 2, "two keys after merge");
         CompoundTag newComponents = ml.keyTags.get(expectedKey);
         helper.assertTrue(newComponents != null, "keyTags migrated to new components");
         // 新 components 能组出与真实剑一致的展示栈
@@ -461,20 +462,20 @@ public class SBN011Tests {
         archive.put("bagNames", new CompoundTag());
 
         MaterialSpace space = MaterialSpace.load(archive, p);
-        helper.assertValueEqual(2, space.count(pid, expectedKey), "pool migrated count 2");
-        helper.assertValueEqual(5, space.count(pid, "minecraft:stone"), "pool stone kept");
-        helper.assertValueEqual(3, space.bag(pid, "bp1").getOrDefault(expectedKey, -1), "bag migrated count 3");
+        helper.assertValueEqual(space.count(pid, expectedKey), 2, "pool migrated count 2");
+        helper.assertValueEqual(space.count(pid, "minecraft:stone"), 5, "pool stone kept");
+        helper.assertValueEqual(space.bag(pid, "bp1").getOrDefault(expectedKey, -1), 3, "bag migrated count 3");
         helper.assertTrue(space.tagFor(expectedKey) != null, "tagRegistry migrated");
         helper.assertTrue(space.tagFor("minecraft:diamond_sword#legacyA") == null, "old registry key gone");
         helper.assertTrue(space.isDirty(), "dirty after migration");
 
         // save 写版本字段；再 load 不再迁移
         CompoundTag saved = space.save(new CompoundTag(), p);
-        helper.assertValueEqual(LegacyDataFixer.current(), saved.getInt("DataVersion"), "version stamped");
+        helper.assertValueEqual(saved.getInt("DataVersion"), LegacyDataFixer.current(), "version stamped");
         MaterialSpace reloaded = MaterialSpace.load(saved, p);
         helper.assertTrue(!reloaded.isDirty(), "clean on second load");
-        helper.assertValueEqual(2, reloaded.count(pid, expectedKey), "pool kept after roundtrip");
-        helper.assertValueEqual(3, reloaded.bag(pid, "bp1").getOrDefault(expectedKey, -1),
+        helper.assertValueEqual(reloaded.count(pid, expectedKey), 2, "pool kept after roundtrip");
+        helper.assertValueEqual(reloaded.bag(pid, "bp1").getOrDefault(expectedKey, -1), 3,
                 "bag kept after roundtrip");
         helper.succeed();
     }
@@ -521,12 +522,12 @@ public class SBN011Tests {
 
         // 经 save 读回快照内容验证（load 的内部表无 getter，走公开 save）
         CompoundTag saved = data.save(new CompoundTag(), p);
-        helper.assertValueEqual(LegacyDataFixer.current(), saved.getInt("DataVersion"), "version stamped");
+        helper.assertValueEqual(saved.getInt("DataVersion"), LegacyDataFixer.current(), "version stamped");
         CompoundTag blockBack = saved.getList("players", 10).getCompound(0)
                 .getList("records", 10).getCompound(0)
                 .getList("blocks", 10).getCompound(0);
-        helper.assertValueEqual("minecraft:short_grass",
-                blockBack.getCompound("state").getString("Name"), "snapshot state upgraded");
+        helper.assertValueEqual(blockBack.getCompound("state").getString("Name"), "minecraft:short_grass",
+                "snapshot state upgraded");
         CompoundTag beBack = blockBack.getCompound("be");
         ChestBlockEntity fresh = new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
         fresh.loadWithComponents(beBack, p);
@@ -572,11 +573,11 @@ public class SBN011Tests {
                 helper.fail("read back failed: " + e.getMessage());
                 return;
             }
-            helper.assertValueEqual(LegacyDataFixer.current(),
-                    onDisk.getInt("MinecraftDataVersion"), "written back as current");
+        helper.assertValueEqual(onDisk.getInt("MinecraftDataVersion"), LegacyDataFixer.current(),
+                "written back as current");
             BlueprintData reloaded = BlueprintStorage.load(id.toString());
             assertT02Content(helper, reloaded);
-            helper.assertValueEqual(LegacyDataFixer.current(), reloaded.dataVersion, "current version");
+            helper.assertValueEqual(reloaded.dataVersion, LegacyDataFixer.current(), "current version");
         } finally {
             if (id != null) BlueprintStorage.delete(id.toString());
         }
@@ -585,15 +586,15 @@ public class SBN011Tests {
 
     /** t02 的内容断言（不含版本号，t07 写回后版本已变）。 */
     private static void assertT02Content(GameTestHelper helper, BlueprintData data) {
-        helper.assertValueEqual(2, data.normalBlocks.size() + data.dependentBlocks.size()
-                + data.lateBlocks.size(), "2 blocks kept");
+        helper.assertValueEqual(data.normalBlocks.size() + data.dependentBlocks.size()
+                + data.lateBlocks.size(), 2, "2 blocks kept");
         boolean grassOk = false;
         for (BlueprintData.BlockEntry e : data.dependentBlocks) {
             if (e.state.is(Blocks.SHORT_GRASS)) grassOk = true;
         }
         helper.assertTrue(grassOk, "short_grass kept");
-        helper.assertValueEqual(1, data.entities.size(), "entity kept");
-        helper.assertValueEqual(2, data.materialList.blockCounts.getOrDefault("minecraft:stone", -1),
+        helper.assertValueEqual(data.entities.size(), 1, "entity kept");
+        helper.assertValueEqual(data.materialList.blockCounts.getOrDefault("minecraft:stone", -1), 2,
                 "material list kept");
     }
 

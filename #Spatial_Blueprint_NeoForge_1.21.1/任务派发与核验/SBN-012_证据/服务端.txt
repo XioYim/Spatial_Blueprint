@@ -1,0 +1,18 @@
+SBN-012 专服冒烟证据（A3，必做）
+时间：2026-09-30 15:27:04
+方式：run\ 预置 eula.txt + server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest, online-mode=false），`Start-Process` 后台起 `gradlew.bat runServer --console=plain`（stdout 重定向到 sbn012_runserver_stdout.log），轮询到 Done 后 RCON（Source 协议，rcon_stop.ps1）发 stop，等待正常退出。未强杀进程树。
+
+  [15:27:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.454s)! For help, type "help"
+  [15:27:04] [Server thread/INFO] [minecraft/GenericThread]: Thread RCON Listener started
+  [15:27:04] [Server thread/INFO] [minecraft/RconThread]: RCON running on 0.0.0.0:25585
+  [15:27:19] [RCON Listener #1/INFO] [minecraft/GenericThread]: Thread RCON Client /127.0.0.1 started
+  [15:27:19] [RCON Client /127.0.0.1 #2/INFO] [minecraft/RconClient]: Thread RCON Client /127.0.0.1 shutting down
+  [15:27:19] [Server thread/INFO] [minecraft/GenericThread]: Thread RCON Listener stopped
+  rcon response: Stopping the server（rcon_stop.ps1 输出）
+  随后 java 进程全部消失；gradle runServer 任务 BUILD SUCCESSFUL（重定向日志尾行校验）。
+
+ERROR 统计：0 条（全文 grep [ERROR]）。
+本 mod 相关 WARN：2 条，均为「配置文件 correction」日志（ConfigTracker / ModConfigSpec 的列表项校验）—— C1 既有行为，
+1.20.1 起就存在、与本任务无关，非错误。全部 WARN 共 20 条（其余为原版命令歧义 / 资产 URL / 离线模式提示 / 终端提示）。
+PlayerLoggedIn 路径：dev 服无人登录；该路径由 GameTest mock 玩家覆盖（SBN012 t05/t06 的 handleServer 全路径，onPlayerLogin 的相位异常已按 try/catch 处理并全过）。
+取证后 run\ 整目录删除（沿 SBN-008/010/011 做法，dev 产物可再生）。
