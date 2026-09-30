@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入；SBN-015 自动部分 2026-09-30 22:05:00 移入；SBN-016 自动部分 2026-09-30 23:05:00 移入）。
-更新：2026-09-30 23:05:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入；SBN-015 自动部分 2026-09-30 22:05:00 移入；SBN-016 自动部分 2026-09-30 23:05:00 移入；SBN-015 / 016 手测 2026-10-01 00:05:00 移入）。
+更新：2026-10-01 00:05:00
 
 ========================================================
 【规矩】
@@ -37,61 +37,3 @@ A1. 旧文件读取基线
     结果：[~] 升级逻辑已由手写样本覆盖；待用户提供真实旧文件
 
 【手测】无。
-
---------------------------------------------------------
-十五（手测）、SBN-015 客户端入口与缓存 —— H1 / H2 待用户 runClient [ ]
---------------------------------------------------------
-
-登记 2026-09-30 21:30:00 · 测于 —（自动部分已归档，见 测试清单_归档.txt 十五）
-
-【手测】需要用户进游戏（本任务验收的一部分；做完回一句结果，写回本组）：
-H1. runClient 单人持久性（前置：本机开发环境 `.\gradlew.bat runClient`）
-    操作：进单人新存档 → 创造模式拿空白 / 空间 / 投影蓝图各一个，鼠标悬停看提示 → 退出到标题，再进另一个存档
-    预期：全程不崩、日志 0 条本 mod ERROR；tooltip 正常显示
-    实际：—
-    结果：[ ] 未测
-H2. runClient 连本机专服（前置：`.\gradlew.bat runServer` 起服；runClient 多人连接 127.0.0.1）
-    操作：登录 → 走动 / 拿蓝图悬停 → 断开连接 → 重连一次
-    预期：登录成功不断开；客户端与服务端日志均无 invalid dist / Attempted to load class / 本 mod ERROR；重连正常
-    实际：—
-    结果：[ ] 未测
-
---------------------------------------------------------
-十六（手测）、SBN-016 渲染底座 —— H1～H4 待用户 runClient [ ]
---------------------------------------------------------
-
-登记 2026-09-30 22:25:00 · 测于 —（自动部分已归档，见 测试清单_归档.txt 十六）
-
-【手测】需要用户进游戏（辅助 AI 本机 CLI 会话无显示 / 无法驱动 runClient 窗口，四项「未能目视」，见报告四）：
-H1. 渲染方块生长动画（前置：runClient 进新建单人创造世界）
-    操作：站在空地，依次执行（每条间隔几秒）：
-        /setblock ~2 ~ ~ spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:diamond_block"}}
-        /setblock ~2 ~ ~3 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:glass"},targetBlock:{Name:"minecraft:gold_block"}}
-        /setblock ~2 ~ ~6 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:oak_leaves"},targetBlock:{Name:"minecraft:emerald_block"}}
-        /setblock ~2 ~ ~9 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:grass_block"},targetBlock:{Name:"minecraft:iron_block"}}
-        /setblock ~2 ~ ~12 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:water"},targetBlock:{Name:"minecraft:lapis_block"}}
-        /setblock ~2 ~ ~15 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:lava"},targetBlock:{Name:"minecraft:redstone_block"}}
-    预期：每个位置先出现从中心平滑长大的小方块（石头 / 玻璃半透明 / 树叶镂空 / 草方块带草地染色 / 水蓝色玻璃 /
-        岩浆橙色玻璃），长到整格后变成对应目标方块；全程无黑紫缺失纹理、无闪烁、日志 0 条本 mod ERROR
-    实际：—（未能目视）
-    结果：[ ] 未测
-H2. 收缩（替换）动画
-    操作：/setblock ~4 ~ ~ spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:air"},shrinking:1b,drawSize:20b}
-    预期：整格石头平滑缩小直至消失，位置变成空气
-    实际：—（未能目视）
-    结果：[ ] 未测
-H3. 破坏特效
-    操作：/setblock ~4 ~ ~3 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:diamond_block"},serverTickCount:-100000}
-          （方块停在长满状态）→ 徒手（创造）打掉；再执行
-          /setblock ~4 ~ ~6 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},serverTickCount:-100000} → 同样打掉
-    预期：第一个飞溅钻石块纹理碎片（不是黑紫方块）；第二个（目标为空气）打掉后无粒子、无黑紫方块
-    实际：—（未能目视）
-    结果：[ ] 未测
-H4. outliner 线框（前置：PowerShell 先 $env:SB_DEBUG_OUTLINER = "1"，再 .\gradlew.bat runClient；
-    进单人创造世界垫平地面，P+(3,0,0) 与 P+(-3,0,0) 旁各竖一堵实心墙）
-    操作：站着不动看 A / B / D；再用准星扫过不同方块看 C；转头、走动、切第三人称（F5）各看一遍；准星移向天空看 C 淡出
-    预期：A 有线框与半透明面、被墙挡住时看不见；B 隔墙可见；C 平滑追随准星方块、离开后约半秒淡出；D 三条角标；
-        所有框严格贴合方块网格，转头 / 走动 / 第三人称不漂移、不抖动、不错位（若错位 = AFTER_PARTICLES 的 pose stack
-        约定变了，云端按报告六.5 修 OutlinerDebug.onRenderLevel）；线粗细正常、半透明面无黑块、日志 0 本 mod ERROR
-    实际：—（未能目视）
-    结果：[ ] 未测
