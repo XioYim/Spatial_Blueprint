@@ -1,0 +1,179 @@
+SBN-012 · 放置引擎：BlueprintPlacementHandler + PlaceBlueprintMessage（新旧数据往返）
+派发：2026-09-30 13:55:00（云端主会话）
+分支：task/SBN-012（从 neoforge-1.21.1 @ 4a93e0f 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-012 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2；本机取 git 输出按 K15。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、K11、K12、K13、K16、K17、C2、C5、C6、C12、C14、C18、C23；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-010_任务_P3c捕获.txt 第三节（物品写入走组件访问器、方块实体 provider）；
+通用经验第五节（API 对照）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+「捕获 → DataFixer → 放置」三步走的最后一步。捕获（SBN-010）产出 1.21 原生格式；DataFixer（SBN-011）让 1.20.1 旧数据载入即升级。
+本任务搬放置引擎与放置消息，并用真实捕获数据与手写 1.20.1 样本各做一次「捕获 / 载入 → 放置 → 世界里逐格比对」的往返。
+
+云端已查（去注释后逐个核过依赖，全部已在集成分支）：
+  util/BlueprintPlacementHandler.java（1.20.1 1311 行）：precheckPlacement / startPlacement / placeImmediately / 逐 tick 动画放置 /
+      forcePlaceAllBlocks / 区块强加载与释放 / 发光提示 / 盒型实体（画、展示框）/ snapshotRegion / restoreUndo；
+      事件：ServerTick、ServerStopping、PlayerLoggedOut、PlayerLoggedIn（下发 S2C_ConfigSyncMessage）、BreakSpeed、LevelEvent.Unload。
+      引用的 59 个「类.成员」云端逐个在 1.21.1 找到定义，唯一缺的是 BlueprintNetwork.CHANNEL（按口径换 sendToPlayer）。
+  network/PlaceBlueprintMessage.java（631 行，C2S）：物品识别 → 次元归属 → 数据载入 → 已放置 / 存档归属 → 工程边界 → 距离与偏移夹取 →
+      校验 → 领地预检 → 材料扣除 / 物品替换 → 撤销快照 → 日志 → startPlacement → 大型播报。
+  客户端引用：两个文件都没有；S2C_PlacementProgressMessage 的客户端体已是 SB-TODO(P5) 桩（SBN-007）。预期新桩 0。
+
+留给后面：SBCommands（含 /sb undo 调 restoreUndo，P4）、旧物品内联 blueprintData 转存（AbstractBlueprintItem 的 SB-TODO(P4)）、放置界面（P6）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  util/BlueprintPlacementHandler.java                                        ← 1.20.1 同路径
+  新  network/PlaceBlueprintMessage.java                                         ← 1.20.1 同路径（network\ 根下）
+  改  network/BlueprintNetwork.java                                              ← 只加 1 条注册
+  新  gametest/SBN012Tests.java
+  改  gametest/SBN010Tests.java、gametest/SBN011Tests.java                       ← 只改 assertValueEqual 参数顺序（见三.5），断言内容不动
+
+交接件（规程允许范围）：SBN-012_报告.txt、SBN-012_证据\、开发日志.md 文末「## SBN-012 执行记录」、
+测试清单.txt 追加「十二、SBN-012 放置引擎」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切。主类不改 —— BlueprintPlacementHandler 用 @EventBusSubscriber 自注册（与 BuildBlueprintItem 同写法），不在主类里加监听。
+若实测引用了第二节以外、尚未迁移的类：该调用按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005～010：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）改写。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork：register 里追加 PlaceBlueprintMessage 一条，playToServer（1.20.1 是 c2s）。payload ID place_blueprint_message。其余零改动。
+
+2. BlueprintPlacementHandler 改写点
+   a. 事件：@Mod.EventBusSubscriber → @EventBusSubscriber(modid = SpatialBlueprintMod.MODID)（游戏总线）；
+      TickEvent.ServerTickEvent + phase END → ServerTickEvent.Post（去掉 phase 判断）；
+      ServerStoppingEvent / PlayerEvent.PlayerLoggedInEvent / PlayerLoggedOutEvent / BreakSpeed / LevelEvent.Unload 换 net.neoforged.neoforge.event 同名类。
+   b. 领地：BlockSnapshot.create(dim, level, pos) 与 BlockEvent.EntityPlaceEvent(snapshot, placedAgainst, entity) 换 neoforge 包，
+      MinecraftForge.EVENT_BUS.post → NeoForge.EVENT_BUS.post，取消判定用 isCanceled()（C23 同口径）；BreakEvent 同 SBN-010。
+   c. 方块实体：be.load(nbt) → be.loadWithComponents(nbt, level.registryAccess())（全部 8 处，含 restoreUndo）；
+      saveWithFullMetadata() → saveWithFullMetadata(level.registryAccess())（snapshotRegion）。
+   d. MobEffects.GLOWING 在 1.21 是 Holder，new MobEffectInstance(Holder, int, int, boolean, boolean) 构造直接可用（J45）。
+   e. 网络：CHANNEL.send(PLAYER…) → BlueprintNetwork.sendToPlayer（sendPlacementFailure 2 处、onPlayerLogin 1 处、sendPlacementProgress 1 处）。
+   f. EntityType.create(CompoundTag, Level)、setChunkForced、BlockState.rotate(Rotation)、playSound 在 1.21 签名不变（J45），原样。
+   g. pendingPlacements / pendingGlowTasks 仍是 static 表，只在服务端主线程读写（onServerTick、handleServer 都在主线程），原样。
+
+3. PlaceBlueprintMessage 改写点
+   a. 消息改写：record 或 final 字段均可；encode / decode 原样（writeUtf / readUtf 上限 32、未知 rotation 回退 NONE、FluidDisplayMode.fromByte）；
+      handle(IPayloadContext) + handleServer(msg, ServerPlayer)；
+      decode 无按计数分配（K13 自查一遍写进报告）。
+   b. 物品数据直读 → 访问器（C12）：
+      stack.getTag().getString("blueprintId") → AbstractBlueprintItem.getBlueprintId(stack)，null 补 ""（与 1.20.1 缺键语义一致，SBN-010 同）；
+      stack.getTag().contains("creatorName") / getString → stack.has(CREATOR_NAME) / VoidDimensionalBlueprintItem.getCreatorName。
+   c. 建造蓝图物品（BuildBlueprintItem）三处 buildNbt → 组件逐项 set，键名对照 功能联动手册 NBT 键 → 组件表：
+      blueprintName→BLUEPRINT_NAME、saveMode→SAVE_MODE（CaptureMode 本体，不再存 ordinal）、completionTime→COMPLETION_TIME、
+      sourceType→SOURCE_TYPE、blueprintId→BLUEPRINT_ID、captureMin/Max→CAPTURE_MIN/MAX、tpX/Y/Z→TP_X/Y/Z、tpDimension→TP_DIMENSION、
+      worldUuid→WORLD_UUID、worldName→WORLD_NAME、creatorName→CREATOR_NAME。
+      投影蓝图分支的 src.contains("blueprintData") 复制：旧内联数据在 1.21 留在 custom_data（LegacyItemMigration 类注释），
+      改为「源有 custom_data 且含 blueprintData → 复制到建造蓝图的 custom_data」；BuildBlueprintItem.restore 的 transmuteCopy 会带回去。
+      判据：BuildBlueprintItem.restore(建造蓝图) 得到的物品与 1.20.1 语义一致（void_dimensional 12 个组件、project 整份组件去掉两个）。
+   d. 网络：sendResult / sendPlacementCancelled / markPlacedAndSync 的 CHANNEL.send → BlueprintNetwork.sendToPlayer；
+      markPlacedAndSync 里 sendBlueprintTo 原样。
+   e. runCompletionCommand：createCommandSourceStack().withPermission(2).withSuppressedOutput() + performPrefixedCommand 在 1.21 原样可用（J45）。
+   f. 判断顺序一个都不许挪：冷却 → 物品识别 → 次元归属 → 数据 → 已放置 → 存档归属 → 工程边界 → 距离 → 校验 → 领地预检 → 材料 / 物品 → 快照 → 日志 → 放置。
+      尤其「领地预检必须先于任何材料、物品、文件状态修改」（1.20.1 注释原话），测试 t07 要证明。
+
+4. 双端同步：放置只在服务端改世界，客户端看到的是原版方块同步 + S2C_PlacementProgressMessage（客户端体仍是 P5 桩）；
+   物品替换后 ItemSyncUtil.syncHand 原样。报告第七节逐条自查。
+
+5. 顺手：SBN010Tests、SBN011Tests 里 assertValueEqual 的参数顺序改成（实际, 期望, 名字）—— 以 javap GameTestHelper.assertValueEqual 的形参名为准，
+   断言内容与条数不变（SBN-010 / 011 验收附注）。改完这两个文件的测试照旧全过；改动逐处计数进报告。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged）
+========================================================
+
+  J45 EntityType#create(CompoundTag, Level) → Optional<Entity>；BlockSnapshot#create(ResourceKey<Level>, LevelAccessor, BlockPos)；
+      BlockEvent$EntityPlaceEvent(BlockSnapshot, BlockState, Entity)；ServerTickEvent$Post；PlayerEvent$BreakSpeed（getPosition 返回 Optional<BlockPos>）；
+      ServerLevel#setChunkForced(int, int, boolean)；BlockEntity#loadWithComponents(CompoundTag, Provider) / saveWithFullMetadata(Provider)；
+      MobEffectInstance(Holder<MobEffect>, int, int, boolean, boolean)；Commands#performPrefixedCommand(CommandSourceStack, String)；
+      BlockStateBase#rotate(Rotation)
+  其余沿用 J31～J44。
+
+========================================================
+五、测试（新格式数据由真实对象产生；1.20.1 旧数据用 SBN011Tests 的手写样本；伪造 / 越界包是唯一允许手写处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～011 的 92 条照旧全过。
+    t01_registration         place_blueprint_message 符合命名规则；合计 77 个互不重复；方向与 1.20.1 逐条一致（53 C2S / 24 S2C，清单进证据）。
+    t02_codec                真实实例（非零偏移、CLOCKWISE_90、clearFirst、非默认 fluidMode）编码 → 解码 → 再编码逐字相等；
+                             越界包：rotation 字符串超 32 字节 → 按 1.20.1 语义（抛出）；未知 rotation 名 → NONE；fluidMode 非法字节 → fromByte 的回退值。
+    t03_roundTripNew         搭一个真实小结构：朝向楼梯、带锋利 III 有名字钻石剑的箱子、写了字的告示牌、挂着物品的展示框、一幅画、一只盔甲架；
+                             用 SBN-010 的真实捕获路径得到 BlueprintData（FORCE / OP 走通保留箱子内容，K11）→ placeImmediately 到另一处：
+                             Rotation.NONE 逐格方块状态相等、方块实体 NBT（去 x/y/z）相等、实体按类型 / 相对位置 / 关键 NBT 相等；
+                             再以 CLOCKWISE_90 放一次：楼梯朝向按 rotate 结果、画 / 展示框朝向与位置按 1.20.1 盒型实体规则。
+    t04_roundTripLegacy      SBN011Tests.legacyBlueprintRoot 的手写 1.20.1 蓝图 → BlueprintData.deserialize → placeImmediately：
+                             世界里是 short_grass、箱子第 0 格是带锋利 III 且有名字的钻石剑、展示框物品正确（结论写进报告：旧数据放置不需要额外处理）。
+    t05_animated             startPlacement（非 OP 生存假玩家）：GameTest 等待到完成（timeoutTicks 按 ANIMATION_DURATION_MIN 与 ANIMATION_SPEED 算够）→
+                             世界逐格与 t03 NONE 相同、render_block 无残留、本次新强加载的区块已释放、sink 收到过 0 < p < 1 与 p = 1 的进度包。
+    t06_placeMessage         handleServer 各分支（每支断言世界、物品、材料空间、文件四样）：
+                             · 生存空间蓝图 → 结构放出、主手清空；
+                             · 生存投影蓝图、材料空间不够 → insufficient_materials、世界不变、物品不变、材料不变；
+                               材料够 → 扣除、主手变建造蓝图（SOURCE_TYPE=project、BLUEPRINT_ID 同源），restore 后是投影蓝图且组件同源；
+                             · 次元蓝图非主人（包括 OP）→ not_owner、什么都不变；主人生存 → 次元袋消耗、文件 placed 标记、
+                               主手变建造蓝图（void_dimensional，12 个组件逐项断言），restore 后是空置次元蓝图；
+                             · 创造空间蓝图 → SBUndoData 多一条记录；BlueprintPlacementHandler.restoreUndo 该记录 → 世界回到放置前。
+    t07_claimPrecheck        临时注册取消全部 EntityPlaceEvent 的监听（SBN-010 t07 写法，finally 注销）：生存投影蓝图、材料够 →
+                             被拒、材料空间不扣、物品不变、世界不变、蓝图文件不变（证明领地预检先于一切状态修改）。
+    t08_foreignAndPlaced     已放置（placed 标记）的次元蓝图 → blueprint_already_placed；worldUuid 为别的存档 → foreign_world；两者都什么都不变。
+    测试 finally 恢复 fakePlayerSink、op 状态、配置、游戏模式、事件监听；删测试文件与 run\ 残留；区块强加载表回到测试前。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR（K16）；日志里 PlayerLoggedIn 监听注册无异常。
+A4  grep 门禁（必做）：network\、server\、log\、util\ 下无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 引用；注释里无 SB-TODO( 字样（K10）。
+
+【手测】无（放置界面在 P6；实机放置随 P6 一起测）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  两个搬迁文件与 1.20.1 源 diff -w 残差只在口径内；PlaceBlueprintMessage 的 return 分支数、sendResult 调用数、判断顺序与 1.20.1 逐条相等；
+    BlueprintPlacementHandler 的 isEntityPlaceEventAllowed / isEntityBreakEventAllowed 调用处数与 1.20.1 相等。
+V4  77 条注册方向与 1.20.1 逐条一致；A4 为空。
+V5  SB-TODO( 实数 = 44 + 本任务新桩（预期 0），逐条列出。
+V6  变异复核（云端验收时做）：PlaceBlueprintMessage 次元归属判定、precheckPlacement 的 EntityPlaceEvent 判定、投影材料 consume 判定、
+    placeImmediately 里的 loadWithComponents，各临时短路一次 → t06 / t07 / t06 / t03+t04 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-012 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按文件分组）
+三、网络实测：payload ID 与方向；decode 上限清单；PlaceBlueprintMessage 判断顺序清单（file:line，与 1.20.1 行号对照）
+四、测试覆盖：A1～A4；t01～t08；@GameTest 实数；三.5 改动计数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（放置期间客户端看到什么；物品替换同步；进度包；已放置标记与蓝图库推送）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-012』」。
