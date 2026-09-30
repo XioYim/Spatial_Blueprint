@@ -1,0 +1,23 @@
+SBN-014 A3 专服冒烟证据
+时间：2026-09-30 19:59:33 ～ 19:59:53
+方式：run\ 预置 eula.txt；server.properties 改 enable-rcon=true / rcon.port=25585 / rcon.password=sbtest /
+  online-mode=false；Start-Process 后台起 runServer（stdout 重定向），轮询到 Done 后 RCON 发 stop，
+  等待 java 进程消失 + gradle 任务结束（K16）。
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat runServer --offline
+关键日志：
+  [19:59:34] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: [BlueprintFileLogger] Log directory: ...\run\config\spatial_blueprint\logs
+  [19:59:34] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: Spatial Blueprint mod loaded!
+  [19:59:35] [Worker-Main-3/INFO] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] Registered command: /sb undo, /sb config, /sb reload, /sb space, /sb tpperm, /sb project
+  [19:59:36] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.394s)! For help, type "help"
+  [19:59:41] [Server thread/INFO] [minecraft/MinecraftServer]: [Rcon: Stopping the server]
+  rcon response: Stopping the server（rcon_stop.ps1 输出）
+  随后 java 进程全部消失（java processes still running: 0）；gradle BUILD SUCCESSFUL in 25s。
+
+ERROR 统计：0 条（全部 logger；本 mod ERROR 0，本 mod WARN 0）。
+ForagersInsight 检查：stdout 无任何 ForagersInsight 相关行 —— FI 未安装在 run\ 上，patchCropHarvestXpOff
+  静默跳过（文件不存在直接 return），无异常、无多余日志。
+WARN 分类（共 19 条，均非本 mod 行）：
+  ne.ne.ne.co.ModConfigSpec/CORE 7 + ne.ne.fm.co.ConfigTracker/CONFIG 1（列表配置 correction，C1 既有行为）
+  minecraft/Commands 5；minecraft/DedicatedServer 4；minecraft/VanillaPackResourcesBuilder 2。
+取证后 run\ 整目录删除（沿 SBN-008/010/012/013 做法）。

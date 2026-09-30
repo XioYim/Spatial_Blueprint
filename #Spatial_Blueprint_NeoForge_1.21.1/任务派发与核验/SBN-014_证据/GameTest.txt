@@ -1,0 +1,35 @@
+SBN-014 A2 GameTest 证据（K21 兜底 / 孤儿袋提示 / 内联回退 / 端到端放置）
+时间：2026-09-30 19:57:58 ～ 19:58:04
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat runGameTestServer --offline
+  （stdout 重定向保存为临时文件，下面按行摘录；本轮批次前完整跑过一轮，本轮为第二轮，run\ 数据未清空，C28 口径）
+
+批次结果：
+  [19:58:04] [Server thread/INFO] [minecraft/GameTestServer]: ========= 117 GAME TESTS COMPLETE IN 5.569 s ======================
+  [19:58:04] [Server thread/INFO] [minecraft/GameTestServer]: All 117 required tests passed :)
+  BUILD SUCCESSFUL in 24s（gradle 任务尾部）
+
+@GameTest 注解实数（C2，grep 统计）：117 = SBN001～013 原有 109 + SBN014Tests 新增 8
+  （t01_login / t02_orphanNotice / t03_mockLogin / t04_gameModeChange / t05_logout / t06_foragersCompat /
+    t07_inlineFallback / t08_inlinePlace）→ 与批次 117 一致。
+
+t03 的 K21 证据（配置相位 mock 玩家 SB14Mock 的四步逐一被 sendLoginStep 兜住，debug 级别）：
+  [19:58:04] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] teleport permission sync skipped for SB14Mock89c7: Payload spatial_blueprint:s2c_teleport_perm_message may not be sent to the client!
+  [19:58:04] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] world identity sync skipped for SB14Mock89c7: Payload spatial_blueprint:s2c_world_identity_message may not be sent to the client!
+  [19:58:04] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] orphan bag notice sync skipped for SB14Mock89c7: Payload spatial_blueprint:s2c_operation_result may not be sent to the client!
+  [19:58:04] [Server thread/DEBUG] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] config permission sync skipped for SB14Mock89c7: Payload spatial_blueprint:s2c_config_perm_message may not be sent to the client!
+  （同刻放置引擎自身监听也命中同类兜底：Config sync skipped for SB14Mock89c7 ... s2c_config_sync_message）
+  → 四步都走到了，且每一步的 UnsupportedOperationException 都被各自兜住、没有炸掉事件链。
+
+t03 的第三步落盘证据（发包抛异常后 orphanBagsDetected 仍执行，写进管理员日志文件）：
+  [2026-09-30 19:58:04] ORPHAN_BAGS_DETECTED | Player: SB14Mock89c7 (9c1d6f31-023d-4f2b-8d30-e06d0645db35)
+    Orphaned void bags on login: 1
+    Cause: the matching blueprint files no longer exist (deleted or archived)
+  （文件：run\config\spatial_blueprint\logs\admin_2026-09-30.log；同一 post 不抛异常在测试内断言）
+
+t07 坏内联数据的 WARN（deserialize 对 saveMode=99 抛数组越界，被 readInlineData 的 catch 兜住返回 null，不抛给调用方）：
+  [19:58:04] [Server thread/WARN] [co.xi.sp.SpatialBlueprintMod/]: [AbstractBlueprintItem] Failed to deserialize inline blueprintData: Index 99 out of bounds for length 3
+
+备注（既有噪声，非本任务）：批次中另有 DFU 自身打印的 "Failed to parse either ... Unsupported key: minecraft:chest /
+  minecraft:item_frame" ERROR 行，来自 LegacyDataFixer 对 1.20.1 样本的探测（SBN-011/012 同款既有噪声；异常已被
+  runUpdate 的 catch (Throwable) 兜住）。A3 专服冒烟里 0 条 ERROR。

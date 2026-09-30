@@ -3,6 +3,7 @@ package com.xioyim.spatialblueprint.item;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialList;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
@@ -48,10 +49,15 @@ public abstract class AbstractBlueprintItem extends Item {
         stack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(), id);
     }
 
-    // ── 蓝图数据（只认文件，D1）──────────────────────────────────────────────
+    // ── 蓝图数据（优先文件；文件读不到回退旧物品的内联数据）──────────────────
 
     /**
-     * 服务端读法：<b>文件是唯一权威</b>，没有再回退内联 NBT。
+     * 服务端读法：<b>优先文件；文件读不到时回退旧物品的内联数据</b>（与 1.20.1 同语义）。
+     *
+     * <p>1.20.1 时代的物品可以整份内联存数据（{@code custom_data.blueprintData}）；D1 之后
+     * 新物品只存 blueprintId 引用、数据一律在文件里，但旧物品没有文件可读，只好读它带着的
+     * 内联数据（经 {@link BlueprintData#deserialize} 的 DataFixer 自动升级）。只读：不改物品、
+     * 不写文件、不发包 —— 不做「读到内联就转存为文件」，那会引入新状态与双端不同步。</p>
      *
      * <p>服务端逻辑一律走这条，包括单人与局域网主机的集成服务器 —— 那两种情况下
      * 服务端跑在客户端进程里，但它要读的仍然是自己硬盘上的文件，不是某个玩家的内存缓存。</p>
@@ -59,11 +65,32 @@ public abstract class AbstractBlueprintItem extends Item {
     @Nullable
     public static BlueprintData getBlueprintDataServer(ItemStack stack) {
         String id = getBlueprintId(stack);
-        if (id == null || id.isEmpty()) {
-            // SB-TODO(P4): 旧物品内联 blueprintData 转存为蓝图文件（D1 / D2，需 DataFixer）
+        if (id != null && !id.isEmpty()) {
+            BlueprintData fromFile = BlueprintStorage.load(id);
+            if (fromFile != null) return fromFile;
+        }
+        return readInlineData(stack);
+    }
+
+    /**
+     * 旧物品内联数据回退：从 {@code custom_data.blueprintData} 读整份蓝图数据。
+     * 反序列化失败记 warn 并返回 null，不让异常抛给调用方（1.20.1 同文本）。
+     */
+    @Nullable
+    private static BlueprintData readInlineData(ItemStack stack) {
+        net.minecraft.world.item.component.CustomData data =
+                stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        if (data == null) return null;
+        CompoundTag tag = data.copyTag();
+        if (!tag.contains("blueprintData")) return null;
+        try {
+            return BlueprintData.deserialize(tag.getCompound("blueprintData"));
+        } catch (Exception e) {
+            com.xioyim.spatialblueprint.SpatialBlueprintMod.LOGGER.warn(
+                    "[AbstractBlueprintItem] Failed to deserialize inline blueprintData: {}",
+                    e.getMessage());
             return null;
         }
-        return BlueprintStorage.load(id);
     }
 
     /**
