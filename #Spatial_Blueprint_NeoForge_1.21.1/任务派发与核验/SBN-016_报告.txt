@@ -1,0 +1,131 @@
+SBN-016 报告
+执行：本地辅助 AI · 2026-09-30 22:25:00 · 分支 task/SBN-016（origin 同名，切自 origin/task/SBN-016 @ 802ef0e；工作区开工时干净）
+提交：待推送（本报告 + 证据 + 交接件随本次提交）
+备份：D:\Mods\项目备份\Spatial_Blueprint_NeoForge_1.21.1_20260930_220750（SHA-256 前 8 位 217492D9，SBN-016 执行前）
+
+一、完成情况：三.1～三.5 逐条
+三.1 顶点 API（outliner 5 个文件）：Outline.java 的 36 条顶点链全部按 J49 改写 ——
+  vertex→addVertex、color→setColor、uv→setUv、overlayCoords→setOverlay、uv2→setLight、normal→setNormal、去 endVertex
+  （示例：Outline.java:169-170）；字段顺序与六项齐全未动。**实测出入：addVertex 只有 (float,float,float) 重载，
+  而 1.20.1 该处传的是 double 的 x0..z0 → 48 个顶点各加显式 (float) 转换**（见六.1）。
+  pose.normal() 仍 Matrix3f（Outline.java:156 等），未用 Pose 版重载。
+  SBOutlinerRenderTypes：两处 new ResourceLocation("textures/misc/white.png") →
+  ResourceLocation.withDefaultNamespace(…)（:29/:41），其余 CompositeState 建造链原样。
+三.2 RenderBlockRenderer：render 方法签名与字段读取原样；ModelData 换 neoforge 包（:20）；
+  tesselateBlock 十二参数重载与 renderSingleBlock 回退照 1.20.1 原样（:60/:64/:66）；tickClient 的
+  drawSize/nextDrawSize 缩放 / lerp 逻辑零改动。注册：SpatialBlueprintClient.registerRenderers（:54-57）
+  经 EntityRenderersEvent.RegisterRenderers。
+三.3 BlueprintFakeWorld：去 @OnlyIn / forge import（+0/-3）；实现的 BlockAndTintGetter 方法原样
+  （getShade 五档 :54-62、亮度恒 15、getBlockTint 用 origin 偏移取真实世界色 :65-68）；1.21.1 编译直接通过
+  （getBrightness/getRawBrightness 为 default 但 override 保留）。
+三.4 破坏特效：
+  a. client/RenderBlockParticleCache（纯逻辑）：put（:23，内部 pos.immutable()）/ remove（:28）/ clear（:32）；
+     并入断线清缓存（SpatialBlueprintClient.clearAllCaches 第 13 个，:109）—— 1.20.1 的静态表从未清过，这条是有意增加。
+  b. block/RenderBlock.onRemove 桩 → 调 RenderBlockParticleCache.put（:75，仅在 level.isClientSide() 分支，
+     移除为空气、targetBlock 非空气的判断原样 :71-74）；连带删除已死的 CLIENT_PARTICLE_CACHE 字段与 HashMap/Map import。
+  c. client/RenderBlockClientExtensions implements IClientBlockExtensions.addDestroyEffects（:18-26）：
+     cache.remove(pos)，非空且非空气 → engine.destroy(pos, target)；无论有无缓存都 return true（抑制黑紫默认粒子）；
+     注册经 RegisterClientExtensionsEvent.registerBlock（SpatialBlueprintClient:60-62，块取 SpatialBlueprintRegistry.RENDER_BLOCK）。
+  d. RenderBlock 的 SB-TODO(P5) 桩注释已删。
+三.5 调试驱动 OutlinerDebug：仅 SB_DEBUG_OUTLINER 非空时由 SpatialBlueprintClient 注册（:33-37，游戏总线）；
+  每 tick 刷新 A（P+(3,0,0) 常规框 :47）/ B（P+(-3,0,0) noDepth :49）/ C（chaseAABB 追随准星方块，未指向时
+  不刷新让它淡出 :51-54）/ D（P+(0,0,3) 角标 0.5 :56-57），随后 tickOutlines（:59）；渲染在 AFTER_PARTICLES，
+  与 1.20.1 BlueprintSelectionRenderer.renderOutlines 同写法（pushPose → bufferSource → renderOutlines →
+  popPose → endBatch；partialTick 取 event.getPartialTick().getGameTimeDeltaPartialTick(false)，:63-76）。
+  P 取 mc.player.blockPosition()（玩家脚所在方块）。未设置环境变量时不注册、零行为。
+
+二、改了写法的调用：「1.20.1 → 1.21.1 · file:line · 依据」（按文件分组；diff -w 残差全在口径内）
+client/outliner/Outline.java：
+  consumer.vertex(x,y,z).color(...).uv(...).overlayCoords(...).uv2(...).normal(...).endVertex()
+    → consumer.addVertex(...).setColor(...).setUv(...).setOverlay(...).setLight(...).setNormal(...) · :169-272 全部 36 条链 · J49
+  addVertex 的 double 实参 → (float) 显式转换 · :169/:171/…（48 处）· 实测（六.1）
+client/outliner/SBOutlinerRenderTypes.java：
+  new ResourceLocation("textures/misc/white.png") → ResourceLocation.withDefaultNamespace(同路径) · :29/:41 · J49（构造器私有）
+client/outliner/AABBOutline / ChasingAABBOutline / CornerOutline / Outliner：
+  零残差（逐字节拷贝；这些文件不引用 forge / 顶点链）。
+client/renderer/RenderBlockRenderer.java：
+  net.minecraftforge.client.model.data.ModelData → net.neoforged.neoforge.client.model.data.ModelData · :20 · J49
+client/BlueprintFakeWorld.java：
+  @OnlyIn(Dist.CLIENT) 与 forge import 删除 · :13-14 原行 · K29/口径
+client/RenderBlockParticleCache / RenderBlockClientExtensions / OutlinerDebug：新文件（1.20.1 无对应文件；
+  缓存从 RenderBlock 静态表抽出，扩展从 RenderBlock.addDestroyEffects 搬来，调试驱动为云端新增需求）
+block/RenderBlock.java：
+  onRemove 桩注释 → RenderBlockParticleCache.put(...) · :75 · 任务书三.4.b（isClientSide 分支内，K29）
+  静态字段 CLIENT_PARTICLE_CACHE 与 import 删除（缓存迁 client 包）· :16-24 原行
+client/SpatialBlueprintClient.java：
+  + registerRenderers（:54-57）+ registerClientExtensions（:60-62）+ 调试驱动注册（:33-37）· J49
+  clientSetup 里 SB-TODO(P5) 渲染器桩删除 · :47-49
+  clearAllCaches + RenderBlockParticleCache.clear()（第 13 个）· :109
+
+三、分边实测
+1. 公共包（主类 + block/command/item/log/network/server/util）对 net.minecraft.client / net.minecraftforge：0 命中。
+2. 公共包对 client 包引用：22 处 = SBN-015 的 21 处 + 本任务新增 block/RenderBlock.java:75（onRemove 的
+   level.isClientSide() 分支内，专服不执行；K29 口径）。
+3. A3 分边门禁：runServer 与 runGameTestServer 两份 stdout 的 invalid dist / Attempted to load class /
+   NoClassDefFoundError / ClassNotFoundException 全 0；两份日志本 mod ERROR 均 0。
+   **反向实证**：SBN016Tests 第一版直接加载 Outliner 时，专服 RuntimeDistCleaner 报
+   "Attempted to load class net/minecraft/client/renderer/MultiBufferSource for invalid dist DEDICATED_SERVER"
+   —— 证明门禁不是摆设，客户端类在专服确实加载不了（六.2）。
+4. 附带观察：冒烟后系统里 1 个 java（PID 23120、监听 25567、启动 22:01）是用户自己的测试服，不是本次残留。
+
+四、测试覆盖
+A1 compileJava --rerun：BUILD SUCCESSFUL、0 警告（证据 编译.txt）。
+A2 runGameTestServer：129/129（@GameTest 实数 129 = 既有 126 + 新增 3；连跑两轮一致，22:18:59 / 22:19:48）；
+  SBN015Tests t07 已按三.4.a 更新为 13 个缓存后照旧通过。
+  t01 BlueprintFakeWorld：命中/未命中、流体、亮度恒 15、getShade 五档 + shade=false、BE null、高度取真实世界。
+  t02 RenderBlockParticleCache：put→remove→再 remove null、clear 全空、clearAllCaches 后第 13 个也空。
+  t03 客户端边界：Class.forName(Outliner) 必被 dist guard 拒绝（消息含 "invalid dist"）—— 见六.2。
+A3 专服冒烟：Done (0.622s)、RCON stop 后 gradle BUILD SUCCESSFUL、0 ERROR、0 本 mod WARN、分边门禁四项 0（证据 服务端.txt）。
+A4 grep 门禁：公共包 0 命中；client 引用 22 处逐条（证据 门禁.txt）；SB-TODO( 实数 22（24 − 2；P5 3 / P6 19）。
+H1～H4：**辅助 AI 本机没有可供目视 / 驱动的显示会话（CLI 会话不能操作 runClient 窗口、也看不到画面），
+  故四个手测项全部「未能目视」**，按任务书写进测试清单十六【手测】待用户复测。作为替代，本轮已把可自动化的
+  部分钉死：渲染注册走真实 EventBus 编译期类型检查（A1）、破坏粒子缓存与断线清理有 t02、假世界颜色/亮度
+  有 t01、客户端边界有 t03；真正「画得对不对」只能由 H1～H4 在 runClient 里确认（尤其 H4 的 AFTER_PARTICLES
+  pose stack 约定，见六.4）。
+
+五、迁移桩清单
+清掉 2 条：SpatialBlueprintClient 的「注册 RenderBlockRenderer」（原 :34）、RenderBlock 的破坏特效桩（原 :80）。
+新增 0 条（新文件与改动处无 SB-TODO）。
+总数：22 = 24 − 2 + 0；P5 = 3（ClientProjectStatusCache:41/:47 预览渲染接线、S2C_PlacementProgressMessage:40 放置进度），
+P6 = 19。与 V4 预期一致。
+
+六、任务书出入（照实测做 / 如实报告，共 5 处）
+1. 顶点 API 的 addVertex：任务书 J49 写 addVertex(float,float,float)，但 1.20.1 的链使用 double 的 x0..z0，
+   Java 不会隐式窄化 —— 48 处顶点补显式 (float) 转换（Outline.java:169 起）。其余改名零出入。
+2. **RuntimeDistCleaner 仍在**：NeoForge 21.1.252 专服上加载 net.minecraft.client 类会直接抛
+   "Attempted to load class ... for invalid dist DEDICATED_SERVER"。任务书说「尝试加载 Outliner，能则测」——
+   实测不能：Outliner 的字段 / 方法签名引用 MultiBufferSource。按「不要为此改生产类」把 t03 改成边界断言
+   （记录不可测 + 守住 dist 门禁），outliner 行为随 SBN-017 手测覆盖。K29 的说法（「没有按端剥离类」）需按此细化：
+   不是剥离，但加载仍被主动拒绝。
+3. tesselateBlock 十二参数重载与 renderSingleBlock 七参数回退照 1.20.1 原样编译通过，无出入。
+4. Outline 系对渲染器内部类（OpenTopAABBOutline 等）的依赖：6 个搬迁文件里没有；OpenTopAABBOutline 定义在
+   BlueprintSelectionRenderer 里，SBN-017 搬渲染器时再处理，本任务无出入。
+5. H4 的 AFTER_PARTICLES pose stack 约定：本机会话未能目视（四），渲染调用按 1.20.1 同写法（无相机平移、
+   Outline 内部 -camera），是否在 1.21.1 仍然一致只能等 H4 实机确认；若错位，按任务书要求修在渲染调用处
+   （OutlinerDebug.onRenderLevel）并追记报告。
+
+七、双端同步自查
+- 渲染纯客户端：服务端 RenderBlockEntity.tickServer 按 animTicks 计时 → setRealBlock(targetBlock) 把幽灵块
+  换成真方块；客户端 tickClient 独立推进 drawSize（+animationSpeed/帧）配合 nextDrawSize 与 partialTicks lerp
+  出平滑生长 / 收缩；renderBlock / targetBlock / shrinking / exchanging / blockEntityData 随方块更新包
+  （getUpdatePacket / getUpdateTag）同步到客户端 BE，Renderer 只读客户端字段。破坏粒子缓存也只在客户端写读。
+- 破坏特效缓存断线清理：RenderBlockParticleCache 并入 clearAllCaches（第 13 个）—— 1.20.1 的静态表跨会话残留，
+  这里有意修正；t02 与 SBN015 t07 都有断言。
+- 调试驱动默认零影响（环境变量未设置不注册），不会进正式构建的行为。
+- 无网络协议改动（本任务未增删 payload / 改 wire format）。
+
+八、教训同步（规程第五节）
+A（本机原件）与 C（仓库副本）sha256 均为 CCF5F8D8004334685620584DD92200A503DD95066205CE610BBAAE7E3340E544，
+逐字一致 —— 本轮 A→C 0 条、C→A 0 条、无冲突，无需合并。规程表追加 SBN-016 一行（同步提交待回填）。
+
+九、建议记入（供云端验收时问用户；一句话要点 + 指向开发日志 SBN-016 执行记录）
+- K：NeoForge 21.1.252 专服仍有 RuntimeDistCleaner：加载任何 net.minecraft.client 类直接抛
+  "invalid dist DEDICATED_SERVER" —— K29 的补充（不是剥离，是加载即拒）。
+- K：1.21.1 顶点链 addVertex 只有 float 重载，1.20.1 的 double 坐标要显式转换。
+- K：要在 GameTest 里钉「客户端边界」时，Class.forName + 断言被拒是可用手段（t03 先例）。
+
+十、需要用户做的事
+H1～H4 复测（步骤见测试清单十六；H4 前置要设 SB_DEBUG_OUTLINER=1 再 runClient）：
+  H1 渲染方块生长动画（6 条 /setblock 各看一遍）；H2 收缩动画；H3 破坏粒子（钻石纹理碎片 / 空气无粒子）；
+  H4 outliner 线框 A/B/C/D（贴格、淡出、隔墙可见、无漂移）。
+推送后对用户说：「已推送，去云端说『验收 SBN-016』；H1～H4 需要你 runClient 复测」。

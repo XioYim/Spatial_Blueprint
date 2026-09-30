@@ -1,0 +1,27 @@
+SBN-016 验收
+验收：2026-09-30 23:05:00（云端主会话）
+对象：task/SBN-016 @ ea57024（+ e443aec 规程回填；+ 云端验收补丁，见 V4 / V2）
+结论：PASS（自动部分）→ 合并进 neoforge-1.21.1；H1～H4 渲染手测待用户，留在测试清单正文单独跟踪
+
+V1 改动清单：802ef0e..e443aec 的 outliner 6 个、RenderBlockRenderer、BlueprintFakeWorld、RenderBlockParticleCache、RenderBlockClientExtensions、OutlinerDebug、
+   入口注册、RenderBlock.onRemove 桩处、SBN015Tests t07、SBN016Tests 与任务书第二节两向一致 —— 通过。
+V2 云端复编译 0 警告；GameTest 首轮 129/129，第二轮 128/129（SBN012 t03_roundTripNew：「painting placed」）。
+   **既有间歇失败（非本任务引入）**：SBN012 t03 与画有关，全套 14 轮里 2 次失败（另一次是「frame + painting + stand captured」），其余 12 轮通过；
+   隔离压测（同结构同 NBT 连建 300 次画、连捕 120 次）0 失败，说明单 tick 内创建 / 捕获稳定，间歇性来自跨 tick 或测试间因素，暂未定位。
+   已在 t03 两处断言加诊断信息（捕获到的实体清单、放置点附近实体清单），并登记待办：再出现时按诊断信息定位；不影响本任务判定。
+   **日志门禁被自己的测试污染（云端已修）**：t03_clientOnlyBoundary 用 Class.forName 真去加载 Outliner，每轮在日志里留一条
+   "Attempted to load class ... for invalid dist DEDICATED_SERVER" 的 ERROR，导致「两份日志该词 0 条」的门禁 grep 实际是 1 条。
+   云端改为只读 .class 字节断言（存在 + 常量池含客户端类引用），不触发加载；改后日志 0 条、129/129。
+   云端自跑专服 runServer：Done（0.440s），invalid dist / Attempted to load class / NoClassDefFoundError / ERROR 0 条 —— 通过。
+V3 搬迁文件与 1.20.1 diff -w：outliner 6 个只差顶点 API（addVertex / setColor / setUv / setOverlay / setLight / setNormal，坐标补显式 float 转换）与 ResourceLocation.withDefaultNamespace；
+   颜色参数 float 0..1 与 setColor(float×4) 重载匹配；RenderBlockRenderer 只差 ModelData 包；BlueprintFakeWorld 只差去 @OnlyIn；几何 / 批次 / 淡出零改动 —— 通过。
+   破坏特效：RenderBlock 只动 onRemove（写 RenderBlockParticleCache，仅 isClientSide 分支）；扩展类无论有无缓存都 return true，语义同 1.20.1；入口注册 RegisterClientExtensionsEvent / EntityRenderersEvent。
+V4 A4：公共包 net.minecraft.client 0 命中；桩 24 → 22（P5 3 / P6 19）；断线清单 13 个，t07 已更新 —— 通过。
+V5 **K29 有误（云端的锅，已订正）**：K29 写「1.21.1 没有 RuntimeDistCleaner」是错的 —— NeoForge 21.1.252 专服仍拒绝加载任何 net.minecraft.client 类（不是剥离，是加载即拒）。
+   任务书里 SBN-015 / 016 的分边门禁与设计（入口类 + 客户端执行体）本就按「加载即拒」设计，结论不受影响；K29 正文已订正。
+V6 变异复核（K7）：RenderBlockParticleCache.remove 改成 get → t02；clearAllCaches 漏第 13 个 → t02 / t07；BlueprintFakeWorld DOWN 阴影改值 → t01，各自转红；
+   第 4 项（Outliner 淡出计时）因专服不可加载而无法测（如实记录，由 SBN-017 / H4 覆盖）—— 通过（3 / 4，第 4 项不可测）。
+V7 手测：H1～H4 辅助 AI 无显示环境，均「未能目视」，云端同样无法目视；留待用户 runClient。
+   **重点提醒（H4）**：outliner 内部按 -camera 平移，AFTER_PARTICLES 的 pose stack 约定在 1.21 是否仍一致只能靠眼睛确认；错位则改 OutlinerDebug.onRenderLevel（报告六.5）。
+
+报告「任务书出入」1～5 接受（第 1 条：坐标补 float 转换属 J49 遗漏，云端的锅）。报告九三条建议待用户点头。

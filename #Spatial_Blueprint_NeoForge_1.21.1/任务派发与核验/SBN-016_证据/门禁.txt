@@ -1,0 +1,18 @@
+SBN-016 A4 grep 门禁证据
+时间：2026-09-30 22:21:3x
+范围：公共包 = 主类 SpatialBlueprintMod.java + block\ command\ item\ log\ network\ server\ util\ 全部 .java
+
+1) net.minecraft.client / net.minecraftforge 引用（模式 net\.minecraft\.client|net\.minecraftforge）：命中 0。
+
+2) 公共包对 spatialblueprint.client 的引用：共 22 处（SBN-015 的 21 处 + 本任务新增 1 处），
+   本任务新增：block\RenderBlock.java:75 —— `RenderBlockParticleCache.put(pos.immutable(), rbe.targetBlock)`，
+   位于 onRemove 的 `if (level.isClientSide() && …)` 分支内（K29：只在客户端执行的方法体，专服不会执行到）。
+   其余 21 处与 SBN-015 门禁清单逐条相同（14 个 S2C 客户端体 + 物品 5 处 *Client 读法/客户端分支 +
+   3 处 Javadoc + SpatialBlueprintClient 调用），此处不重复列。
+
+3) SB-TODO 桩数：22 = 24 − 2（本任务清掉：SpatialBlueprintClient 的 RenderBlockRenderer 注册、RenderBlock 的破坏特效桩）。
+   分项：P5 = 3、P6 = 19。
+   剩余 P5 3 条：client\ClientProjectStatusCache.java:41（预览渲染接线 onStatus，SBN-016/017）、
+     client\ClientProjectStatusCache.java:47（ClientSubProjectPreview.clear，SBN-017）、
+     network\s2c\S2C_PlacementProgressMessage.java:40（放置进度 → BlueprintSelectionRenderer，SBN-017）。
+   （校验命令：Get-ChildItem -Recurse -Filter *.java -Path src | Select-String 'SB-TODO\(' | 统计；示例字样全角 1 处同 SBN-015。）

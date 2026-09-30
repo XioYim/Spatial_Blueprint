@@ -762,3 +762,46 @@ C1. 云端复核（验收时云端主会话自测，2026-09-30 22:05:00）
     结果：[✓] 全部通过
 
 【手测】H1 / H2 未做，已转 测试清单.txt 正文「十五（手测）」单独跟踪。
+
+--------------------------------------------------------
+十六、SBN-016 渲染底座 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]（自动部分；H1～H4 手测转正文跟踪）
+--------------------------------------------------------
+
+登记 2026-09-30 22:25:00 · 测于 2026-09-30 22:19:48
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 129 条（SBN001～015 计 126 + SBN016 3）
+    预期：129 条全过
+    实际：========= 129 GAME TESTS COMPLETE IN 7.430 s ======================
+          All 129 required tests passed :)（连跑两轮一致）
+    t01 假世界：命中/未命中（空气）、流体、block/sky/raw 亮度恒 15、getShade 五档 + shade=false、
+        getBlockEntity null、高度取真实世界
+    t02 破坏粒子缓存：put→remove 取回并移除、再取 null；clear 全空；clearAllCaches 后第 13 个也空
+    t03 客户端边界：读 Outliner.class 字节，断言存在且常量池含客户端类引用（云端验收由 Class.forName 改写：原写法每轮在日志留一条
+        "Attempted to load class" ERROR 污染门禁）—— outliner 专服不可测，行为随 SBN-017 的 runClient 手测覆盖
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做，分边门禁）
+    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR；两份日志 invalid dist / Attempted to load class /
+        NoClassDefFoundError 0 条（云端复核：t03 改写前日志里每轮有 1 条自己测试触发的拒绝，已消除）（K16 / K29）
+    实际：Done (0.622s)；RCON stop 后 gradle BUILD SUCCESSFUL；0 ERROR、0 本 mod WARN；
+        两份日志 invalid dist / Attempted to load class / NoClassDefFoundError / ClassNotFoundException 全 0
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+        spatialblueprint.client 引用逐处列出
+    实际：0 命中；对 client 包引用 22 处（+RenderBlock.java:75 在 isClientSide 分支内，逐条见报告三 / 门禁.txt）；
+        全仓桩数 22 = 基线 24 − 2（渲染器注册 + 破坏特效），P5 3 / P6 19
+    结果：[✓] 全部通过
+C1. 云端复核（验收时云端主会话自测，2026-09-30 23:05:00）
+    实际：compileJava --rerun 0 警告；GameTest 129/129（另见：SBN012 t03 画相关间歇失败 14 轮 2 次，已加诊断，登记待办）；云端自跑专服 runServer 到 Done、
+          分边门禁 0 条（t03 改写后 GameTest 日志亦 0 条）；A4 grep 云端自跑为空、SB-TODO( 22；变异复核 3 处：粒子缓存 remove → t02、
+          断线漏第 13 个 → t02 / t07、假世界阴影 → t01 各自转红，第 4 项 outliner 淡出不可测（SBN-016_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】H1～H4 未做，已转 测试清单.txt 正文「十六（手测）」单独跟踪。

@@ -1,0 +1,30 @@
+SBN-016 A2 GameTest 证据
+时间：2026-09-30 22:18:59（第一轮）／22:19:48（第二轮）
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat runGameTestServer --offline
+
+批次结果（两轮一致）：
+  第一轮：[22:18:59] ========= 129 GAME TESTS COMPLETE IN 7.430 s ====================== / All 129 required tests passed :)
+  第二轮：[22:19:48] ========= 129 GAME TESTS COMPLETE IN 9.612 s ====================== / All 129 required tests passed :)
+  BUILD SUCCESSFUL（两轮）
+
+@GameTest 注解实数（C2，grep 统计）：129 = SBN001～015 既有 126 + SBN016Tests 新增 3
+  （t01_fakeWorld / t02_particleCache / t03_clientOnlyBoundary）→ 与批次 129 一致。
+  SBN015Tests t07 按任务书三.4.a 更新为 13 个缓存（+ RenderBlockParticleCache）后照旧通过。
+
+t03 的重要实测（任务书五「能则测、不能则报告不可测」）：
+  第一版 t03 直接调 Outliner.getInstance() → 测试失败，日志：
+    [Server thread/ERROR] [ne.ne.fm.co.as.RuntimeDistCleaner/DISTXFORM]: Attempted to load class
+    net/minecraft/client/renderer/MultiBufferSource for invalid dist DEDICATED_SERVER
+    [Server thread/ERROR] [minecraft/LogTestReporter]: t03_outlinerlogic failed ...! 同上文本
+  结论：NeoForge 21.1.252 的 RuntimeDistCleaner 仍拦 net.minecraft.client 类在 DEDICATED_SERVER 上加载
+  → outliner（签名引用 MultiBufferSource）在专用测试服不可测。按任务书「不要为此改生产类」：
+  t03 改为边界断言（Class.forName 必被 dist guard 拒绝、消息含 "invalid dist"），把「不可测」钉进回归；
+  outliner 的槽位 / 淡出行为随 SBN-017 的 runClient 手测覆盖（报告六.5）。
+
+t01 要点：BlueprintFakeWorld 命中 / 未命中（空气）、流体状态、block/sky/raw 亮度恒 15、
+  getShade 五档（DOWN 0.5 / N-S 0.8 / W-E 0.6 / UP 1.0 / shade=false 1.0）、getBlockEntity null、
+  getHeight / getMinBuildHeight 取真实世界（V6：改任一档 → t01 转红）。
+t02 要点：put→remove 取回并移除、再取 null；clear 后全空；SpatialBlueprintClient.clearAllCaches()
+  后第 13 个缓存也空（V6：漏清第 13 个 → t02 转红）。
+t03 要点：见上（客户端边界）。
