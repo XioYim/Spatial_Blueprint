@@ -1,0 +1,21 @@
+SBN-010 改动清单（V1，两向比对）
+时间：2026-09-30 11:40:00 · 基准 origin/neoforge-1.21.1（分支 task/SBN-010 未提交改动）
+
+工作区改动（git status）：
+ M src/main/java/com/xioyim/spatialblueprint/network/BlueprintNetwork.java
+ 新 src/main/java/com/xioyim/spatialblueprint/network/CaptureAreaMessage.java
+ 新 src/main/java/com/xioyim/spatialblueprint/network/CaptureProjectionMessage.java
+ 新 src/main/java/com/xioyim/spatialblueprint/network/C2S_VoidRecaptureMessage.java
+ 新 src/main/java/com/xioyim/spatialblueprint/network/C2S_CreateEngineeringBlueprintMessage.java
+ 新 src/main/java/com/xioyim/spatialblueprint/network/C2S_CreateSubProjectMessage.java
+ 新 src/main/java/com/xioyim/spatialblueprint/gametest/SBN010Tests.java
+
+允许清单（任务书第二节）→ 实际：
+ 新 第一节 5 个消息（network\ 根下，1.20.1 同路径）→ 5 个新文件齐备，无多无少
+ 改 network/BlueprintNetwork.java（只加 5 条注册）→ git diff 仅 +13 行（SBN-010 注释块 + 5 条 playToServer），零其他改动
+ 新 gametest/SBN010Tests.java → 已建
+交接件：SBN-010_报告.txt、SBN-010_证据\（本目录）、开发日志.md 执行记录节、
+ 测试清单.txt 组十、云端协作规程.md 第五节一行、通用经验副本（同步无改动，见报告八）
+
+反向（实际 → 允许）：生产代码无允许清单外文件；测试文件 1 个在清单内。
+不动项确认：物品类零改动（访问器沿用）；其他消息零改动；gradle/资源/记忆/手册/计划书零改动。
