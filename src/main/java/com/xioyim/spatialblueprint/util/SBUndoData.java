@@ -55,6 +55,7 @@ public class SBUndoData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
+        tag.putInt("DataVersion", LegacyDataFixer.current());
         ListTag playersTag = new ListTag();
         for (Map.Entry<UUID, ArrayDeque<UndoRecord>> entry : history.entrySet()) {
             if (entry.getValue().isEmpty()) continue;
@@ -73,6 +74,11 @@ public class SBUndoData extends SavedData {
 
     public static SBUndoData load(CompoundTag tag, HolderLookup.Provider provider) {
         SBUndoData data = new SBUndoData();
+        // D2（SBN-011）：读不到版本字段视为 1.20.1 存档，快照按旧格式升级
+        int from = LegacyDataFixer.effectiveFrom(
+                tag.contains("DataVersion", Tag.TAG_INT) ? tag.getInt("DataVersion") : 0);
+        boolean fix = LegacyDataFixer.needsFix(from);
+        int[] unupgraded = new int[1];
         ListTag playersTag = tag.getList("players", Tag.TAG_COMPOUND);
         for (int i = 0; i < playersTag.size(); i++) {
             CompoundTag playerTag = playersTag.getCompound(i);
@@ -81,13 +87,21 @@ public class SBUndoData extends SavedData {
             ListTag recordsTag = playerTag.getList("records", Tag.TAG_COMPOUND);
             for (int j = 0; j < recordsTag.size(); j++) {
                 try {
-                    UndoRecord r = deserializeRecord(recordsTag.getCompound(j));
+                    UndoRecord r = deserializeRecord(recordsTag.getCompound(j), from, fix, unupgraded);
                     if (r != null) deque.addLast(r);
                 } catch (Exception e) {
                     SpatialBlueprintMod.LOGGER.warn("[SBUndo] Failed to deserialize undo record: {}", e.getMessage());
                 }
             }
             if (!deque.isEmpty()) data.history.put(uuid, deque);
+        }
+        if (fix) {
+            data.setDirty();
+            if (unupgraded[0] > 0) {
+                SpatialBlueprintMod.LOGGER.warn(
+                        "[SBUndo] {} snapshot entries could not be upgraded from dataVersion {}",
+                        unupgraded[0], from);
+            }
         }
         return data;
     }
@@ -124,7 +138,7 @@ public class SBUndoData extends SavedData {
     }
 
     @Nullable
-    private static UndoRecord deserializeRecord(CompoundTag tag) {
+    private static UndoRecord deserializeRecord(CompoundTag tag, int from, boolean fix, int[] unupgraded) {
         ResourceLocation dim = ResourceLocation.tryParse(tag.getString("dim"));
         if (dim == null) return null;
 
@@ -136,8 +150,19 @@ public class SBUndoData extends SavedData {
         for (int i = 0; i < blocksTag.size(); i++) {
             CompoundTag bt = blocksTag.getCompound(i);
             BlockPos pos = BlockPos.of(bt.getLong("pos"));
-            BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), bt.getCompound("state"));
+            CompoundTag stateTag = bt.getCompound("state");
+            if (fix) {
+                LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockState(stateTag, from);
+                if (!r.ok()) unupgraded[0]++;
+                stateTag = r.tag();
+            }
+            BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), stateTag);
             CompoundTag beNbt = bt.contains("be") ? bt.getCompound("be") : null;
+            if (fix && beNbt != null) {
+                LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockEntity(beNbt, from);
+                if (!r.ok()) unupgraded[0]++;
+                beNbt = r.tag();
+            }
             blocks.add(new UndoRecord.SnapshotBlock(pos, state, beNbt));
         }
 
@@ -145,7 +170,13 @@ public class SBUndoData extends SavedData {
         ListTag entitiesTag = tag.getList("entities", Tag.TAG_COMPOUND);
         for (int i = 0; i < entitiesTag.size(); i++) {
             CompoundTag et = entitiesTag.getCompound(i);
-            entities.add(new UndoRecord.SnapshotEntity(et.getString("type"), et.getCompound("nbt")));
+            CompoundTag entityNbt = et.getCompound("nbt");
+            if (fix) {
+                LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixEntity(entityNbt, from);
+                if (!r.ok()) unupgraded[0]++;
+                entityNbt = r.tag();
+            }
+            entities.add(new UndoRecord.SnapshotEntity(et.getString("type"), entityNbt));
         }
 
         return new UndoRecord(dim, min, max, blocks, entities);

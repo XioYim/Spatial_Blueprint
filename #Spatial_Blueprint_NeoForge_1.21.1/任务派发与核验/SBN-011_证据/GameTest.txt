@@ -1,0 +1,18 @@
+SBN-011 GameTest 证据（A2，必做）
+命令：$env:JAVA_HOME = "C:\Program Files\Zulu\zulu-21"; .\gradlew.bat runGameTestServer
+时间：2026-09-30 12:53:11（第三次运行全过；前两次 t04/t05 因迁移键与真实键摘要不同各失败，
+根因为修复器 custom_name 写展开形、1.21 存盘写裸形，见报告六.1，修 LegacyDataFixer 后通过）
+运行输出：
+  Running test batch 'defaultBatch:0' (50 tests)...
+  Running test batch 'defaultBatch:1' (41 tests)...
+  All 91 required tests passed :)
+注解实数：gametest/*.java 内 @GameTest 共 91 处（SBN001～010 计 84 + SBN011 7），与 N 一致（C2 口径）。
+SBN011 7 条：t01 修复器单元（grass 改名、旧剑转 components 并与真实剑逐格一致、current/更大原样、
+无 id 原样、恶意输入不抛）/ t02 手写 1.20.1 蓝图升级（草→short_grass、箱剑锋利 III 有名、
+展示框物品正确、dataVersion 仍 3465）/ t03 真实 1.21 数据 serialize→deserialize 逐字相等、
+缺键按 3465（内容同 t02、版本记 0）/ t04 旧键迁移合并（两旧键→同一新键数量 5、stone 原样、
+新 components 可组展示栈）/ t05 旧 MaterialSpace 存档（键迁移合并、registry 更新、dirty→save 打版本→再 load 不脏）/
+t06 旧 SBUndoData 存档（快照状态与箱物品升级、dirty→打版本→再 load 不脏）/
+t07 真实文件往返（旧字节落盘→load 同 t02→save 写回当前版本→再 load 不走修复内容相同）。
+注：DFU 在升级旧箱子/展示框 NBT 时打了数条 mojang/DataFixerUpper ERROR（Index mismatch / Unsupported key，
+schema 遍历的内部恢复日志），升级结果正确（t02/t06/t07 断言），非本 mod 错误。
