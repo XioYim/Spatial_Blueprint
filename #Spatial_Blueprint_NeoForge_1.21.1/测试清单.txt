@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入）。
-更新：2026-09-30 13:45:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入）。
+更新：2026-09-30 15:50:00
 
 ========================================================
 【规矩】
@@ -37,49 +37,3 @@ A1. 旧文件读取基线
     结果：[~] 升级逻辑已由手写样本覆盖；待用户提供真实旧文件
 
 【手测】无。
-
---------------------------------------------------------
-十二、SBN-012 放置引擎 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
---------------------------------------------------------
-
-登记 2026-09-30 15:35:00 · 测于 2026-09-30 15:29:47
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，警告 0 条
-    结果：[✓] 全部通过
-A2. GameTest 100 条（SBN001～011 计 92 + SBN012 8）
-    预期：100 条全过
-    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (50 tests)
-          All 100 required tests passed :)
-    t01 注册：place_blueprint_message 命名合规、合计 77 个互不重复、命名空间正确
-    t02 编解码：真实实例（非零偏移 / CLOCKWISE_90 / clearFirst / 非默认 fluidMode）编码→解码→再编码逐字相等；
-        rotation 超 32 字节拒收；未知 rotation 名回退 NONE；fluidMode 非法字节回退 SHOW_ALL
-    t03 新格式往返：真实捕获（楼梯 / 带名锋利 III 剑箱子 / 写字告示牌 / 带物展示框 / 画 / 盔甲架）→ placeImmediately
-        NONE 与 CLOCKWISE_90 各一次，方块状态 / 方块实体 NBT（去 xyz）/ 实体类型与相对位置逐格相等；楼梯 NONE 北、90° 东
-    t04 旧格式往返：SBN011 手写 1.20.1 蓝图 → deserialize → placeImmediately：short_grass、箱内剑升级正确、展示框物品正确
-    t05 动画放置：生存假玩家 handleServer 全路径 → 动画完成、逐格与 t03 NONE 相同、render_block 无残留、
-        强加载前后集一致（无泄漏）、进度包收到 0<p<1 与 p=1
-    t06 放置消息分支：空间（结构放出 + 主手清空）；投影欠料（insufficient_materials、世界 / 物品 / 材料 / 文件四不变）与
-        材料够（扣除、主手变建造蓝图、restore 回投影且 id 同源）；次元非主人含 OP（not_owner、四不变）；
-        次元主人（袋消耗、文件 placed、主手建造蓝图、restore 回空置次元且 12 组件逐项一致）；
-        创造空间（SBUndoData 多一条 + restoreUndo 世界回到放置前）
-    t07 领地预检：取消 EntityPlaceEvent → placement_protected、材料 / 物品 / 世界 / 文件四不变（预检先于一切状态修改）
-    t08 已放置与外档：placed 标记 → blueprint_already_placed；worldUuid 异档 → foreign_world；两者四不变
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做）
-    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR（K16）
-    实际：Done (0.454s)；RCON stop 后 java 进程全部消失、gradle 任务 BUILD SUCCESSFUL；
-          全文 0 条 ERROR、0 条本 mod WARN
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：network\、server\、log\、util\ 无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 类引用；注释无 SB-TODO(
-    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；两个新文件 0 处 SB-TODO(；
-          全仓桩数 44 = 基线 44 + 本任务 0
-    结果：[✓] 全部通过
-
-【手测】无（放置界面在 P6；实机放置随 P6 一起测）。
-

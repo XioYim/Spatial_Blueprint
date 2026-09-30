@@ -1,0 +1,31 @@
+SBN-012 验收
+验收：2026-09-30 15:50:00（云端主会话）
+对象：task/SBN-012 @ b00f20b（+ 云端验收补 894ec85）
+结论：PASS（带一处云端收窄）→ 合并进 neoforge-1.21.1
+
+V1 改动清单：bac25ef..b00f20b 的 BlueprintPlacementHandler（新）、PlaceBlueprintMessage（新）、BlueprintNetwork（+1 注册）、SBN012Tests（新）、
+   SBN010Tests / SBN011Tests（只对换 assertValueEqual 参数 + legacyBlueprintRoot 改包内可见）与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+   SBN010 / 011 断言数改前改后 95 / 73 不变；javap 确认形参顺序为 (actual, expected, name)。
+   规程第五节 SBN-012 行的同步提交原写「待推送」，云端验收时回填为 b00f20b。
+V2 云端复编译：compileJava --rerun 0 警告；runGameTestServer 100/100（收窄后复跑仍 100/100）。
+   A3 专服冒烟按本地证据审；A4 云端自跑 grep：network\、server\、log\、util\ 为空；Javadoc 无 SB-TODO(；SB-TODO( 实数 44（新增 0）—— 通过。
+V3 diff -w 残差：
+   PlaceBlueprintMessage：payload 外壳 + handle / handleServer 拆分；blueprintId 读取改访问器且 null → ""（2 处）；建造蓝图三处 NBT → 组件逐项 set
+   （键名对照表一致，SAVE_MODE 存枚举本体）；投影分支旧内联 blueprintData 只在源 custom_data 有时复制；CHANNEL.send → sendToPlayer（3 处）。
+   判断顺序与 return 分支与 1.20.1 逐行相同（diff 无移动块）。
+   BlueprintPlacementHandler：事件换 NeoForge（6 个）；be.load → loadWithComponents（8 处）；saveWithFullMetadata 带 provider；
+   CHANNEL.send → sendToPlayer（4 处）；EVENT_BUS 换 NeoForge（2 处）—— 通过。
+V4 77 条注册（53 C2S / 24 S2C）逐条与 1.20.1 比对 0 处不一致，1.20.1 只剩 C2S_ReloadConfigMessage 未迁（P4）—— 通过。
+V5 任务书出入三处：
+   1. rotate(Rotation) / hasChunkAt(BlockPos) 1.21.1 弃用 → rotate(LevelAccessor, BlockPos, Rotation)（NeoForge 扩展，默认实现落回原版 rotate，
+      原版方块结果不变；模组方块会走它自己的旋转钩子，属于正确行为）、hasChunk(x >> 4, z >> 4)（与 hasChunkAt 等价：都不看 Y，>> 是向下取整）—— 接受。
+   2. onPlayerLogin 相位异常兜底 —— 接受，但原写法 catch (Exception ignored) 会静默吞掉一切；云端收窄为只接 UnsupportedOperationException 并记 debug
+      （894ec85；复跑日志里命中 2 次，证明实测异常就是这一种）。P4 接主类登录事件时注意别重复下发配置同步。
+   3. t05「强加载已释放」改「前后集不变」—— 接受（框架自身持有强加载）。
+V6 变异复核（K7，四处，均已还原）：
+   PlaceBlueprintMessage 次元归属判定短路 → t06 失败；
+   precheckPlacement 的 EntityPlaceEvent 判定短路 → t07 失败；
+   投影材料 consume 判定短路 → t06 失败；
+   placeImmediately 三处 loadWithComponents 删除 → t03 / t04 失败（另带红 SBN003 t05_savedDataRoundTrip）—— 通过。
+
+报告九.1 a～d 四条建议记入待用户点头；九.2 待办更新提议转用户。
