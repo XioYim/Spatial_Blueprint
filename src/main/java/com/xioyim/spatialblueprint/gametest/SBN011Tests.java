@@ -350,6 +350,63 @@ public class SBN011Tests {
         helper.succeed();
     }
 
+    // ── t08：纯 ID 材料键的物品改名（云端验收补：grass → short_grass）─────────
+
+    @GameTest(template = "empty")
+    public static void t08_materialKeyRename(GameTestHelper helper) {
+        HolderLookup.Provider p = provider(helper);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("name", "t08");
+        ListTag entries = new ListTag();
+        entries.add(countEntry("minecraft:grass", 4));
+        entries.add(countEntry("minecraft:short_grass", 1));
+        entries.add(countEntry("minecraft:stone", 5));
+        tag.put("entries", entries);
+
+        MaterialList ml = MaterialList.deserialize(tag, 3465);
+        helper.assertValueEqual(ml.blockCounts.getOrDefault("minecraft:short_grass", -1), 5, "grass renamed and merged");
+        helper.assertTrue(!ml.blockCounts.containsKey("minecraft:grass"), "old grass key gone");
+        helper.assertValueEqual(ml.blockCounts.getOrDefault("minecraft:stone", -1), 5, "stone kept");
+        // 当前版本不动
+        MaterialList cur = MaterialList.deserialize(tag, LegacyDataFixer.current());
+        helper.assertValueEqual(cur.blockCounts.getOrDefault("minecraft:grass", -1), 4, "current version untouched");
+
+        UUID pid = UUID.randomUUID();
+        CompoundTag archive = new CompoundTag();
+        ListTag pools = new ListTag();
+        CompoundTag pool = new CompoundTag();
+        pool.putString("player", pid.toString());
+        CompoundTag poolItems = new CompoundTag();
+        poolItems.putInt("minecraft:grass", 2);
+        poolItems.putInt("minecraft:stone", 7);
+        pool.put("items", poolItems);
+        pools.add(pool);
+        archive.put("pools", pools);
+        ListTag bags = new ListTag();
+        CompoundTag bag = new CompoundTag();
+        bag.putString("player", pid.toString());
+        ListTag perBp = new ListTag();
+        CompoundTag bp = new CompoundTag();
+        bp.putString("id", "bp1");
+        CompoundTag bagItems = new CompoundTag();
+        bagItems.putInt("minecraft:grass", 3);
+        bp.put("items", bagItems);
+        perBp.add(bp);
+        bag.put("blueprints", perBp);
+        bags.add(bag);
+        archive.put("bags", bags);
+        archive.put("consumedBags", new ListTag());
+        archive.put("tagRegistry", new CompoundTag());
+        archive.put("bagNames", new CompoundTag());
+
+        MaterialSpace space = MaterialSpace.load(archive, p);
+        helper.assertValueEqual(space.count(pid, "minecraft:short_grass"), 2, "pool grass renamed");
+        helper.assertValueEqual(space.count(pid, "minecraft:grass"), 0, "pool old grass gone");
+        helper.assertValueEqual(space.count(pid, "minecraft:stone"), 7, "pool stone kept");
+        helper.assertValueEqual(space.bag(pid, "bp1").getOrDefault("minecraft:short_grass", -1), 3, "bag grass renamed");
+        helper.succeed();
+    }
+
     private static CompoundTag countEntry(String block, int count) {
         CompoundTag e = new CompoundTag();
         e.putString("block", block);

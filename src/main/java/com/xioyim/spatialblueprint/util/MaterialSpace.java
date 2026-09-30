@@ -386,7 +386,7 @@ public class MaterialSpace extends SavedData {
     /**
      * D2 旧键迁移：先由 tagRegistry（旧键 → 旧 tag）算出旧键 → 新键映射，
      * 再把 pool / 次元袋里的键按映射重写（同一新键合并数量），tagRegistry 换键并换成新 components。
-     * registry 里没有对应 tag 的键（legacyTag 为 null）按规范原样保留。
+     * registry 里没有对应 tag 的键（纯 ID 键、或缺 tag 的摘要键）只做物品改名（grass → short_grass）。
      *
      * @return 未能升级条目数
      */
@@ -394,6 +394,16 @@ public class MaterialSpace extends SavedData {
         int unupgraded = 0;
         Map<String, String> keyMap = new LinkedHashMap<>();
         Map<String, CompoundTag> newRegistry = new LinkedHashMap<>();
+        java.util.Set<String> bareKeys = new java.util.LinkedHashSet<>();
+        for (Map<String, Integer> pool : pools.values()) bareKeys.addAll(pool.keySet());
+        for (Map<String, Map<String, Integer>> byBp : bags.values()) {
+            for (Map<String, Integer> bag : byBp.values()) bareKeys.addAll(bag.keySet());
+        }
+        bareKeys.removeAll(tagRegistry.keySet());
+        for (String key : bareKeys) {
+            String renamed = LegacyDataFixer.migrateMaterialKey(key, null, from).key();
+            if (!renamed.equals(key)) keyMap.put(key, renamed);
+        }
         for (Map.Entry<String, CompoundTag> e : tagRegistry.entrySet()) {
             LegacyDataFixer.MigratedKey m =
                     LegacyDataFixer.migrateMaterialKey(e.getKey(), e.getValue(), from);

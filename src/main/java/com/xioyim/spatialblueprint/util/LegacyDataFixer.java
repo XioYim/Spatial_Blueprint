@@ -110,19 +110,26 @@ public final class LegacyDataFixer {
      * 材料键迁移（D8 遗留）：1.20.1 按旧物品 tag 算摘要的键（{@code id#摘要}，keyTags 存旧 tag）
      * → 按新 components 算的 D8 键。
      *
-     * <p>键不带 '#'（无 tag 的纯 ID 键）或 legacyTag 为 null → 原样返回；
+     * <p>纯 ID 键、或带 '#' 但 legacyTag 为 null 的键：只做物品改名（如 grass → short_grass，
+     * 组 {id, Count:1b} 走 fixItemStack 取新 id），摘要后缀原样保留；
      * 否则组 1.20.1 物品（{id, Count:1b, tag:legacyTag}，C8 / K8 口径）走 fixItemStack，
-     * 取结果的 components（缺则 null），按 {@link MaterialKey#make} 算新键。
+     * 取结果的 id 与 components（缺则 null），按 {@link MaterialKey#make} 算新键。
      * 附带返回规范化后的新 components，给调用方写 keyTags / tagRegistry。</p>
      */
     public static MigratedKey migrateMaterialKey(String key, @Nullable CompoundTag legacyTag, int from) {
-        if (!needsFix(from) || !MaterialKey.hasTag(key) || legacyTag == null) {
+        if (!needsFix(from) || key.isBlank()) {
             return new MigratedKey(key, null, true);
         }
         String id = MaterialKey.idOf(key);
         CompoundTag probe = new CompoundTag();
         probe.putString("id", id);
         probe.putByte("Count", (byte) 1);
+        if (!MaterialKey.hasTag(key) || legacyTag == null) {
+            // 只改名：修复器失败 / 无 id 时原样（纯 ID 键本就不依赖 tag，不计未升级）
+            String newId = fixItemStack(probe, from).getString("id");
+            if (newId.isEmpty() || newId.equals(id)) return new MigratedKey(key, null, true);
+            return new MigratedKey(newId + key.substring(id.length()), null, true);
+        }
         probe.put("tag", legacyTag.copy());
         CompoundTag fixed = fixItemStack(probe, from);
         // 成功 = 出了 components，或旧 tag 被吃掉（转成空补丁→纯 ID 键）；
@@ -135,7 +142,9 @@ public final class LegacyDataFixer {
         }
         CompoundTag components = hasComponents ? fixed.getCompound("components").copy() : null;
         if (components != null) collapsePlainText(components);
-        return new MigratedKey(MaterialKey.make(id, components), MaterialKey.normalize(components), true);
+        String newId = fixed.getString("id");
+        if (newId.isEmpty()) newId = id;
+        return new MigratedKey(MaterialKey.make(newId, components), MaterialKey.normalize(components), true);
     }
 
     /**
