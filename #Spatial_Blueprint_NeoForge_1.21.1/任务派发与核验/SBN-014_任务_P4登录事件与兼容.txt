@@ -111,7 +111,7 @@ A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～013 �
     t05_logout           设好 SBUndoCooldown、项目列表缓存（C2S_RequestProjectListMessage 请求一次）、ServerPreviewTracker 预览 → 投递登出 → 三者都已清除。
     t06_foragersCompat   在 CONFIGDIR 写一份手写 foragersinsight-common.toml（含 ["XP Source Toggles"] 下 "Crop Harvest XP" = true 与其它几行）→
                          patchCropHarvestXpOff → 该行变 false、其余字节不变；再调一次 → 文件不变（幂等）；"= false" 的文件 → 不变；无文件 → 不抛。
-                         finally 删测试文件（K28：跑前若已存在同名文件先备份原字节、finally 写回）。
+                         finally 删测试文件（C28：跑前若已存在同名文件先备份原字节、finally 写回）。
     t07_inlineFallback   投影蓝图物品：无 BLUEPRINT_ID、custom_data.blueprintData = legacyBlueprintRoot() → getBlueprintDataServer 得到升级后的数据（short_grass、箱剑）；
                          BLUEPRINT_ID 指向不存在文件 + 内联 → 用内联；BLUEPRINT_ID 指向存在文件 + 内联 → 用文件；内联是坏数据 → null 且不抛；
                          调用前后 stack 组件逐项相等（只读）。SpatialBlueprintItem 同样的物品 → null（1.20.1 只认文件）。
