@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入）。
-更新：2026-09-30 11:45:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入）。
+更新：2026-09-30 12:30:00
 
 ========================================================
 【规矩】
@@ -35,54 +35,4 @@ A1. 旧文件读取基线
     实际：—
     结果：[~] 待用户提供旧文件或 P4 前再取
 
-【手测】无
-
---------------------------------------------------------
-十、SBN-010 捕获 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
---------------------------------------------------------
-
-登记 2026-09-30 11:45:00 · 测于 2026-09-30 11:40:00
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，警告 0 条
-    结果：[✓] 全部通过
-A2. GameTest 84 条（SBN001～009 计 74 + SBN010 10）
-    预期：84 条全过
-    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (34 tests)
-          ========= 84 GAME TESTS COMPLETE IN 2.223 s ======================
-          All 84 required tests passed :)
-    t01 76 个 payload ID 命名 + 互不重复（71 旧 + 5 新全 C2S）
-    t02 5 个消息编码往返字节逐字相等
-    t03 名字/备注四处超长拒收；CaptureMode ordinal 99 抛 ArrayIndexOutOfBoundsException（与 1.20.1 同）
-    t04 空间捕获：空白换空间蓝图，方块数正确，箱子 NBT 存在但内容按 SAFE 非 OP 语义被清；
-        捕获 NBT 读回新箱子为空；盔甲架条目经 EntityType.create 还原同类型；源区域不变；收到冷却通知
-    t05 次元捕获：选区清为空气，手里变次元蓝图，三项经访问器正确归一化；
-        次元袋石头 x3/箱子 x1 入账；KeepContents 箱内保留；文件 ownerUuid 为该玩家
-    t06 非 OP FORCE 降级 SAFE（opBypass=false、容器被清）；OP+创造 FORCE（opBypass=true、容器保留并逐格往返一致）
-    t07 领地采样：监听取消→no_break_permission、选区原样、手仍空白、无新文件；注销后同操作成功
-    t08 投影：非 FORCE 箱不带走、源不清；非 OP reward 回落 project；OP+创造+reward 得 reward 且无材料清单
-    t09 空置重储：非主人拒、foreign 世界拒（文件均不变）；主人覆盖写回原文件 placed=false、新物品三项正确
-    t10 工程现场扫描分支绑定四项正确；子工程新增条目、容器被清、relP1/relP2 相对 anchor
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做）
-    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
-    实际：Done (0.411s)；RCON stop 后 java 进程全部退出、gradle 任务 BUILD SUCCESSFUL；
-          全文 0 条 ERROR、0 条本 mod WARN；[BlueprintFileLogger] Log 目录行 + logs 目录建出（沿 SBN-008 口径）
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
-    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
-          5 个新文件 0 处 SB-TODO(；全仓桩数 46 = 46 + 0（本任务新桩 0 条，diff 无增减）
-    结果：[✓] 全部通过
-A5. K13 分配点审计（必做）
-    预期：本批每个 C2S decode 与被它们调用的服务端分配点都有上限来源
-    实际：5 个 decode 只读定长字段与带上限字符串（上限见 t03），无按客户端计数分配之处；
-          fromOrdinal 调用点 3 处（CaptureArea:143 / CaptureProjection:115 / Engineering:105），
-          越界抛 ArrayIndexOutOfBoundsException 与 1.20.1 同（t03 实测记录类型）
-    结果：[✓] 全部通过
-
-【手测】无（捕获界面在 P6）。。
+【手测】无。
