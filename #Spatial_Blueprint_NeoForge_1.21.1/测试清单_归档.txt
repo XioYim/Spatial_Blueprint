@@ -519,3 +519,48 @@ C1. 云端复核（验收时云端主会话自测，2026-09-30 12:30:00）
     结果：[✓] 全部通过
 
 【手测】无（捕获界面在 P6）。
+
+--------------------------------------------------------
+十一、SBN-011 数据升级 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 13:05:00 · 测于 2026-09-30 12:59:00
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 91 条（SBN001～010 计 84 + SBN011 7）
+    预期：91 条全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (41 tests)
+          All 91 required tests passed :)
+    t01 修复器单元：grass→short_grass、旧剑转 components 并与真实剑逐格一致、
+        current/更大原样、无 id 原样、恶意输入不抛
+    t02 手写 1.20.1 蓝图升级：草升级、箱剑锋利 III 有名、展示框物品正确、dataVersion 仍 3465
+    t03 真实 1.21 数据 serialize→deserialize 逐字相等；缺键按 3465（内容同 t02、版本记 0）
+    t04 旧键迁移合并：两旧键→同一新键数量 5（==真实剑的键）、stone 原样、新 components 可组展示栈
+    t05 旧 MaterialSpace 存档：键迁移合并、registry 更新、dirty→save 打版本→再 load 不脏
+    t06 旧 SBUndoData 存档：快照状态与箱物品升级、dirty→打版本→再 load 不脏
+    t07 真实文件往返：旧字节落盘→load 同 t02→save 写回当前版本→再 load 不走修复内容相同
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.433s)；RCON stop 后 java 进程全部消失、gradle 任务 BUILD SUCCESSFUL；
+          全文 0 条 ERROR、0 条本 mod WARN；[BlueprintFileLogger] Log 目录行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：util\ 下新改文件无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          6 个新改文件 0 处 SB-TODO(；全仓桩数 44 = 46 − 2（BlueprintData、MaterialList 两条 P4）+ 0
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 13:30:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 91/91，云端补物品改名（af1c9bd，加 t08_materialKeyRename）后 92/92；
+          A4 grep 云端自跑为空、SB-TODO( 44；变异复核 4 处：BlueprintData needsFix → t02 / t03 / t07、MaterialList 迁移分支 → t04 / t08、
+          MaterialSpace 迁移 → t05 / t08、改名分支 → t08 各自转红（SBN-011_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】无（旧存档实机升级留到有用户旧文件时，正文「旧文件读取基线」继续跟踪）。

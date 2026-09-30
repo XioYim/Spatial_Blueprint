@@ -1,0 +1,30 @@
+SBN-011 验收
+验收：2026-09-30 13:30:00（云端主会话）
+对象：task/SBN-011 @ 9893740（+ 云端验收补 af1c9bd）
+结论：PASS（带一处云端补丁）→ 合并进 neoforge-1.21.1
+
+V1 改动清单：9ab94ec..9893740 的 LegacyDataFixer（新）、BlueprintData / MaterialList / MaterialSpace / SBUndoData、SBN011Tests（新）与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+   规程第五节 SBN-011 行的同步提交原写「待推送」，云端验收时回填为 9893740。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、警告 0；runGameTestServer 91/91（执行者提交），补丁后 92/92。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR、0 本 mod WARN）；A4 云端自跑 grep：network\、server\、log\、util\ 无客户端 / gui / net.minecraftforge 引用；
+   Javadoc 里无 SB-TODO(（K10）；SB-TODO( 实数 44（46 − 2）—— 通过。
+V3 needsFix = false 路径：BlueprintData 三处升级都在 if (fix) 里；MaterialList 当前版本分支与原 deserialize 逐行相同；
+   MaterialSpace / SBUndoData 只在 fix 时迁移与 setDirty；存盘只多一个顶层 int DataVersion —— 通过（t03 逐字相等佐证）。
+V4 代码审阅：
+   · 成功判据（components 或 tag 消失）与 ok 位：合理，接受（报告六.1～2）。
+   · collapsePlainText：只压「仅含 text 字符串的单键 JSON 对象」，与 1.21 Component 对无格式纯文本的裸形写法一致；解析失败原样；
+     只影响键与 keyTags，不碰放置用 NBT —— 接受（报告六.3）。
+   · **缺口（任务书的锅，云端已补）**：任务书三.b 写「无 tag 的键原样」，漏了物品改名。1.20.1 材料清单 / 材料空间里的纯 ID 键
+     minecraft:grass 在 1.21 已改名 short_grass，原样保留会变成未知物品（按空气算）；带 '#' 的键也用旧 id 组新键。
+     补丁 af1c9bd：migrateMaterialKey 对纯 ID 键 / 缺 tag 的摘要键组 {id, Count:1b} 走修复器只取新 id（摘要后缀原样）；带 tag 的键用修复结果的 id；
+     MaterialSpace.migrateLegacyKeys 把池 / 袋里不在 tagRegistry 的键也过一遍改名。新增 t08_materialKeyRename（清单改名合并、当前版本不动、
+     材料空间池 / 袋改名；assertValueEqual 按「实际, 期望」顺序写）。
+V5 SBUndoData 实体快照 NBT 带 id（1.20.1 BlueprintPlacementHandler:1200 / 1206 产出完整实体 NBT），走 ENTITY 修复器不会误计失败 —— 通过。
+V6 变异复核（K7，四处，均已还原）：
+   BlueprintData needsFix → false → t02 / t03 / t07 失败；
+   MaterialList 当前版本分支恒真 → t04 / t08 失败；
+   MaterialSpace.load 跳过 migrateLegacyKeys → t05 / t08 失败；
+   LegacyDataFixer 改名分支恒返回原键 → t08 失败 —— 通过。
+
+报告「任务书出入」1～4 接受。报告九.1～2 两条建议记入待用户点头。
+附注：DFU 升级旧箱子 / 展示框时 mojang/DataFixerUpper 打数条 ERROR（schema 遍历内部恢复），结果正确，非本 mod 错误；实机看日志时别误判。
