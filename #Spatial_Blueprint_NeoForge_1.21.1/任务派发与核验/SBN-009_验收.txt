@@ -1,0 +1,22 @@
+SBN-009 验收
+验收：2026-09-30 10:50:00（云端主会话）
+对象：task/SBN-009 @ 3145241（内容主提交 ebd488b）
+结论：PASS → 合并进 neoforge-1.21.1
+
+V1 改动清单：6f33022..3145241 的 10 个 .java（6 消息 + 2 登记表 + BlueprintNetwork + 测试）与任务书第二节两向一致 —— 通过。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 74 进 74 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR）；A4 云端自跑 grep：network\、server\、log\、util\ 无客户端 / gui / net.minecraftforge 引用；
+   注释里无 SB-TODO(（K10）—— 通过。
+V3 8 个搬迁文件：上限常量 / 创造 / 限流 / 槽位 / WRONG_PLAYER / TTL 等判定逐文件计数与 1.20.1 全部相等；两个登记表 diff -w 零残差。
+   有意差异只有一处且注释写明：C2S_UploadProjectionTemplateMessage.decode 由 readByteArray(32 MiB) 改为 readByteArray(C2S_UploadBeginMessage.SINGLE_PACKET_LIMIT)
+   （NeoForge 自动拆包使旧上限可达，K13）。S2C_UploadReportMessage 的 checkedCount(4096) 为 1.20.1 原有 —— 通过。
+V4 71 条注册（47 C2S / 24 S2C）逐条与 1.20.1 c2s / s2c 归类比对，0 处不一致；A4 为空；A5 分配点清单 3 处全部先夹上限（核对报告第三节）—— 通过。
+V5 SB-TODO( 实数 46 = 45 + 1（S2C_UploadReportMessage 客户端体 P5）—— 通过。
+V6 变异复核（K7）：
+   C2S_UploadBeginMessage:86 的 MAX_CHUNKS 判定去掉 → t05 失败；
+   UploadStagingRegistry:92 的 WRONG_PLAYER 判定短路 → t05 失败（两处变异各自只影响 t05 里自己的子用例）；
+   C2S_UploadProjectionTemplateMessage:201 的 MAX_UPLOAD_FILE_BYTES 判定短路 → t06 失败；三处均已还原 —— 通过。
+
+报告「任务书出入」1～5 接受（1：单包超限 key 实为 upload_file_too_large；2：登记表无查询接口，用 UNKNOWN_ID 间接断言；
+3：handleAssembled 直接传 ServerPlayer，1.20.1 的嵌套 enqueueWork 只是推迟一 tick，行为等价；4：解压炸弹走 NbtAccounter 截断，毫秒级；
+5：NETWORK_HARD_CAP_BYTES 删除、原因写在 decode 注释）。
