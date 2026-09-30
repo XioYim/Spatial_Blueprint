@@ -8,8 +8,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -19,9 +20,10 @@ public class ProjectProgressData extends SavedData {
     private static final String SAVE_KEY = "sb_project_progress";
 
     /** 完成状态必须按任务集隔离：公用项目共享一份，私人项目每位玩家各一份。 */
-    private final Map<String, Set<Integer>> completedByTaskSet = new HashMap<>();
+    // 存盘写成 ListTag：用 LinkedHashMap 保证 save → load → save 逐字相同（K25，SBN-014 验收）
+    private final Map<String, Set<Integer>> completedByTaskSet = new LinkedHashMap<>();
     /** 同一玩家、同一任务集、同一条目的最后领取时间（epoch millis）。 */
-    private final Map<ClaimKey, Long> lastClaimTimes = new HashMap<>();
+    private final Map<ClaimKey, Long> lastClaimTimes = new LinkedHashMap<>();
 
     private record ClaimKey(String playerUuid, String taskSetId, int entryIndex) {}
 
@@ -37,7 +39,7 @@ public class ProjectProgressData extends SavedData {
     }
 
     public void markCompleted(String taskSetId, int entryIndex) {
-        if (completedByTaskSet.computeIfAbsent(taskSetId, ignored -> new HashSet<>()).add(entryIndex)) {
+        if (completedByTaskSet.computeIfAbsent(taskSetId, ignored -> new LinkedHashSet<>()).add(entryIndex)) {
             setDirty();
         }
     }
@@ -110,7 +112,7 @@ public class ProjectProgressData extends SavedData {
             String taskSetId = completedTag.getString("taskSetId");
             int entryIndex = completedTag.getInt("entryIndex");
             data.completedByTaskSet
-                    .computeIfAbsent(taskSetId, ignored -> new HashSet<>())
+                    .computeIfAbsent(taskSetId, ignored -> new LinkedHashSet<>())
                     .add(entryIndex);
         }
 

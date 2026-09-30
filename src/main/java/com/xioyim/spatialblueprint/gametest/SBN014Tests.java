@@ -676,4 +676,44 @@ public class SBN014Tests {
             e.discard();
         }
     }
+
+    // ── t09：SavedData 存盘顺序确定（云端验收补，K25）────────────────────────
+    //
+    // SBUndoData.pop 不删空队列、save 跳过空队列：活实例的表比读回副本大，HashMap 扩容不缩容，
+    // 遍历顺序不同 → save → load → save 的 ListTag 顺序不同（SBN003 t05「SBUndoData roundtrip」在云端因此转红）。
+
+    @GameTest(template = "empty")
+    public static void t09_savedDataSaveOrder(GameTestHelper helper) {
+        net.minecraft.core.HolderLookup.Provider p = helper.getLevel().registryAccess();
+        net.minecraft.server.level.ServerLevel level = helper.getLevel();
+        net.minecraft.core.BlockPos at = helper.absolutePos(new net.minecraft.core.BlockPos(1, 1, 1));
+
+        net.minecraft.nbt.CompoundTag empty = new net.minecraft.nbt.CompoundTag();
+        empty.putInt("DataVersion", com.xioyim.spatialblueprint.util.LegacyDataFixer.current());
+        com.xioyim.spatialblueprint.util.SBUndoData undo =
+                com.xioyim.spatialblueprint.util.SBUndoData.load(empty, p);
+        java.util.List<java.util.UUID> players = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            java.util.UUID id = java.util.UUID.randomUUID();
+            players.add(id);
+            undo.addRecord(id, com.xioyim.spatialblueprint.util.BlueprintPlacementHandler.snapshotRegion(
+                    level, at.getX(), at.getY(), at.getZ(), at.getX(), at.getY(), at.getZ()), 10);
+        }
+        for (int i = 0; i < 35; i++) {
+            undo.pop(players.get(i));
+        }
+        net.minecraft.nbt.CompoundTag u1 = undo.save(new net.minecraft.nbt.CompoundTag(), p);
+        net.minecraft.nbt.CompoundTag u2 = com.xioyim.spatialblueprint.util.SBUndoData.load(u1, p)
+                .save(new net.minecraft.nbt.CompoundTag(), p);
+        helper.assertTrue(u1.equals(u2), "SBUndoData save order stable after pops");
+
+        com.xioyim.spatialblueprint.util.SBSafeCoordData safe =
+                com.xioyim.spatialblueprint.util.SBSafeCoordData.load(new net.minecraft.nbt.CompoundTag(), p);
+        for (int i = 0; i < 40; i++) safe.setEntry("bp-" + i, i % 2 == 0, i, 64, -i);
+        net.minecraft.nbt.CompoundTag s1 = safe.save(new net.minecraft.nbt.CompoundTag(), p);
+        net.minecraft.nbt.CompoundTag s2 = com.xioyim.spatialblueprint.util.SBSafeCoordData.load(s1, p)
+                .save(new net.minecraft.nbt.CompoundTag(), p);
+        helper.assertTrue(s1.equals(s2), "SBSafeCoordData save order stable");
+        helper.succeed();
+    }
 }

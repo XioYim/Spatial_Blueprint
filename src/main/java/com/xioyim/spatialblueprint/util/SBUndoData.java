@@ -20,7 +20,8 @@ import java.util.*;
 public class SBUndoData extends SavedData {
     private static final String DATA_NAME = "sb_undo_history";
 
-    private final Map<UUID, ArrayDeque<UndoRecord>> history = new HashMap<>();
+    // 存盘写成 ListTag：用 LinkedHashMap 保证 save → load → save 逐字相同（K25，SBN-014 验收）
+    private final Map<UUID, ArrayDeque<UndoRecord>> history = new LinkedHashMap<>();
 
     public static SBUndoData get(ServerLevel anyLevel) {
         return anyLevel.getServer().overworld()
