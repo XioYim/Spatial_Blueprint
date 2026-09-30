@@ -463,10 +463,22 @@ public class SBN013Tests {
                 SBUndoCooldown.clearPlayer(creator.getUUID());
                 helper.assertValueEqual(runCommand(helper, creator, "sb undo"), 0,
                         "third undo no_history returns 0");
-                // 生存 → creative_only、什么都不变
+                // 生存 → creative_only、什么都不变。
+                // 云端验收补强：生存玩家必须真有一条可撤销记录且不在冷却，否则 no_history 也返回 0，
+                // 创造模式判定被短路时测不出来（V6 变异复核发现）。
+                com.xioyim.spatialblueprint.util.UndoRecord survivorRecord =
+                        BlueprintPlacementHandler.snapshotRegion(level,
+                                target.getX(), target.getY(), target.getZ(),
+                                target.getX(), target.getY(), target.getZ());
+                SBUndoData.get(level).addRecord(survivor.getUUID(), survivorRecord, 10);
+                level.setBlockAndUpdate(target, Blocks.STONE.defaultBlockState());
+                SBUndoCooldown.clearPlayer(survivor.getUUID());
                 helper.assertValueEqual(runCommand(helper, survivor, "sb undo"), 0,
                         "survivor undo denied");
-                helper.assertTrue(level.getBlockState(target).isAir(), "world untouched by survivor undo");
+                helper.assertTrue(SBUndoData.get(level).hasHistory(survivor.getUUID()),
+                        "survivor record kept");
+                helper.assertTrue(level.getBlockState(target).is(Blocks.STONE),
+                        "world untouched by survivor undo");
             } finally {
                 BlueprintNetwork.fakePlayerSink = (p, payload) -> {};
                 SBUndoCooldown.clearPlayer(creator.getUUID());
@@ -474,6 +486,10 @@ public class SBN013Tests {
                 while (SBUndoData.get(level).hasHistory(creator.getUUID())) {
                     SBUndoData.get(level).pop(creator.getUUID());
                 }
+                while (SBUndoData.get(level).hasHistory(survivor.getUUID())) {
+                    SBUndoData.get(level).pop(survivor.getUUID());
+                }
+                level.setBlockAndUpdate(target, Blocks.AIR.defaultBlockState());
                 for (String fid : files) BlueprintStorage.delete(fid);
             }
             helper.succeed();
@@ -682,6 +698,34 @@ public class SBN013Tests {
             ProjectStorage.deleteProject(projectId);
             if (opped) revokeOp(helper, op);
         }
+        helper.succeed();
+    }
+
+    // ── t09：MaterialSpace 存盘顺序确定（云端验收补）─────────────────────────
+    //
+    // 共享存档里玩家先多后少时，HashMap 扩容后不缩容，读回的副本容量小、遍历顺序不同，
+    // save 写出的 ListTag 顺序跟着变，save → load → save 不相等（SBN003 t05 在云端因此转红）。
+
+    @GameTest(template = "empty")
+    public static void t09_materialSpaceSaveOrder(GameTestHelper helper) {
+        net.minecraft.core.HolderLookup.Provider p = helper.getLevel().registryAccess();
+        CompoundTag empty = new CompoundTag();
+        empty.putInt("DataVersion", com.xioyim.spatialblueprint.util.LegacyDataFixer.current());
+        com.xioyim.spatialblueprint.util.MaterialSpace ms =
+                com.xioyim.spatialblueprint.util.MaterialSpace.load(empty, p);
+        List<UUID> players = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            UUID id = UUID.randomUUID();
+            players.add(id);
+            ms.deposit(id, "minecraft:stone", i + 1, null);
+            ms.bagDeposit(id, "bp-" + i, "minecraft:dirt", i + 1, null);
+        }
+        for (int i = 0; i < 35; i++) {
+            ms.clearPool(players.get(i));
+        }
+        CompoundTag n1 = ms.save(new CompoundTag(), p);
+        CompoundTag n2 = com.xioyim.spatialblueprint.util.MaterialSpace.load(n1, p).save(new CompoundTag(), p);
+        helper.assertTrue(n1.equals(n2), "MaterialSpace save order stable after shrink");
         helper.succeed();
     }
 }

@@ -43,9 +43,10 @@ public class MaterialSpace extends SavedData {
     private static final String SAVE_KEY = "sb_material_space";
 
     /** 玩家 UUID → (复合键 → 数量)。 */
-    private final Map<UUID, Map<String, Integer>> pools = new HashMap<>();
+    // 写成 ListTag 的三张表用 LinkedHashMap：HashMap 扩容不缩容，读回副本遍历顺序不同，存盘不确定（SBN-013 验收，t09）
+    private final Map<UUID, Map<String, Integer>> pools = new LinkedHashMap<>();
     /** 玩家 UUID → (蓝图 ID → (复合键 → 数量))。 */
-    private final Map<UUID, Map<String, Map<String, Integer>>> bags = new HashMap<>();
+    private final Map<UUID, Map<String, Map<String, Integer>>> bags = new LinkedHashMap<>();
     /**
      * 蓝图 ID → 名字快照。蓝图 ID 全局唯一，因此不按玩家分表。
      *
@@ -54,7 +55,7 @@ public class MaterialSpace extends SavedData {
      */
     private final Map<String, String> bagNames = new HashMap<>();
     /** 玩家 UUID → 已放置并消耗材料的次元蓝图 ID。用于材料空间继续显示已放置条目。 */
-    private final Map<UUID, Set<String>> consumedBagIds = new HashMap<>();
+    private final Map<UUID, Set<String>> consumedBagIds = new LinkedHashMap<>();
     /** 复合键 → 规范化 tag。仅带 NBT 的键有条目。 */
     private final Map<String, CompoundTag> tagRegistry = new HashMap<>();
 
@@ -179,7 +180,7 @@ public class MaterialSpace extends SavedData {
                            int amount, @Nullable CompoundTag tag) {
         if (amount <= 0) return;
         clearConsumedBagId(player, blueprintId);
-        bags.computeIfAbsent(player, k -> new HashMap<>())
+        bags.computeIfAbsent(player, k -> new LinkedHashMap<>())
             .computeIfAbsent(blueprintId, k -> new LinkedHashMap<>())
             .merge(materialKey, amount, Integer::sum);
         registerTag(materialKey, tag);
@@ -336,7 +337,7 @@ public class MaterialSpace extends SavedData {
             CompoundTag e = bagList.getCompound(i);
             UUID id = parseUuid(e.getString("player"));
             if (id == null) continue;
-            Map<String, Map<String, Integer>> byBp = new HashMap<>();
+            Map<String, Map<String, Integer>> byBp = new LinkedHashMap<>();
             ListTag perBp = e.getList("blueprints", Tag.TAG_COMPOUND);
             for (int j = 0; j < perBp.size(); j++) {
                 CompoundTag b = perBp.getCompound(j);
