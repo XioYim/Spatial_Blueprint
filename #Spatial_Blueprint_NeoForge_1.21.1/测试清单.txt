@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入）。
-更新：2026-09-30 02:40:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入）。
+更新：2026-09-30 10:50:00
 
 ========================================================
 【规矩】
@@ -36,50 +36,3 @@ A1. 旧文件读取基线
     结果：[~] 待用户提供旧文件或 P4 前再取
 
 【手测】无。
-
---------------------------------------------------------
-九、SBN-009 上传 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
---------------------------------------------------------
-
-登记 2026-09-30 10:30:00 · 测于 2026-09-30 10:17:26
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，命中 0 行
-    结果：[✓] 全部通过
-A2. GameTest 74 条（SBN001～008 的 66 + SBN009 8）
-    预期：74 进 74 出全过
-    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (24 tests)
-          ========= 74 GAME TESTS COMPLETE IN 3.059 s ======================
-          All 74 required tests passed :)
-    t01 71 个 payload ID 命名 + 互不重复（6 新 + 65 旧）
-    t02 6 个消息编码往返字节逐字相等（UploadReport 带真实扫描结果、Chunk 带真实压缩字节）
-    t03 上限：Chunk / 单包模板负载 30001 拒收、30000 通过；UploadReport 计数 4097 拒收
-    t04 单包全链路：非创造传 create 被拒；创造上传 → 报告 → 确认 → 蓝图库出现（净化路径）
-    t05 分块：越界 index / 重复块 / 30001 块 / 他人块 / 257 块 Begin / 超限 totalBytes 全部按语义拒；
-        真实两块 → 组装 → 报告
-    t06 上限：临时调小 MAX_UPLOAD_FILE_BYTES → upload_file_too_large；手写解压炸弹 → invalid_blueprint_data
-    t07 工程报告：非创造无回包；创造对已存蓝图 → 收到报告
-    t08 限流：同一玩家连续两次单包上传 → 第二次 upload_rate_limited
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做）
-    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
-    实际：Done (0.422s)；RCON stop 后正常退出；0 条 ERROR；19 条 WARN 全为既有/无害项；
-          [BlueprintFileLogger] Log directory 日志行 + logs 目录建出
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
-    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
-          network / server / log / util 下 SB-TODO( 25 处全部为桩标记；全仓桩数 46 = 45 + 新 1
-    结果：[✓] 全部通过
-A5. K13 分配点审计（必做）
-    预期：本批每个 C2S decode 与被它们调用的服务端分配点都有上限来源
-    实际：3 处按客户端值分配的调用点全部有夹（Begin→Staging.begin 的 ArrayList 由 MAX_CHUNKS=256 先夹；
-          Chunk/单包模板 readByteArray(30000)；UploadReport 计数经 checkedCount(4096)）；
-          解压经 SafeNbtIo 的 NbtAccounter（64 MiB）——明细见证据/网络.txt 第四节
-    结果：[✓] 全部通过
-
-【手测】本组无手测项（上传界面在 P6）。
