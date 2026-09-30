@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入）。
-更新：2026-09-30 17:30:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入）。
+更新：2026-09-30 19:05:00
 
 ========================================================
 【规矩】
@@ -37,47 +37,3 @@ A1. 旧文件读取基线
     结果：[~] 升级逻辑已由手写样本覆盖；待用户提供真实旧文件
 
 【手测】无。
-
---------------------------------------------------------
-十三、SBN-013 命令与 Reload —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
---------------------------------------------------------
-
-登记 2026-09-30 17:30:00 · 测于 2026-09-30 17:21:34
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON 先执行 "sb reload" 再 stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，警告 0 条
-    结果：[✓] 全部通过
-A2. GameTest 108 条（SBN001～012 计 100 + SBN013 8）
-    预期：108 条全过
-    实际：Running test batch 'defaultBatch:0' (50) + :1 (50) + :2 (8)
-          All 108 required tests passed :)（连跑两轮一致）
-    t01 注册：c2s_reload_config_message 命名合规、78 个 id 互不重复（54 C2S / 24 S2C，与 1.20.1 逐条一致）
-    t02 空消息编解码逐字相等（C15）
-    t03 配置热加载：内存改值 → OP 发 C2S reload → 回盘上值；非 OP 同操作 → 内存值保持；
-        改盘 → "/sb reload" → 读盘新值 + 派生缓存已清；finally 原字节写回 + doReload
-    t04 命令树：子节点 = {undo,config,reload,space,tpperm,project}；非 OP/OP 的 canUse 逐节点断言
-    t05 /sb undo：创造放置 → 冷却内被拦（记录在）；动画完成后清冷却 undo → 世界回放置前、记录空、
-        撤回后冷却生效（冷却先判）；再执行 no_history；生存 creative_only
-    t06 /sb tpperm：权限表 grant/revoke + syncTeleportPerm 推送 true/false + list 命令（非空、
-        非 OP 被 requires 拦）+ 离线 UUID 授权（名字参数路径受测试服 profileCache=null 限制，见报告六）
-    t07 /sb space 与 /sb config：自查与 config 真实执行（包断言）；非 OP 被 requires 拦
-    t08 /sb project：非 OP public activate 拒绝 → OP+创造 activate（claim 注册、物品激活）→
-        claim 1（工程蓝图入库）→ release（claim 移除）→ list 执行
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做）
-    预期：runServer 到 Done、RCON 执行 "sb reload" 返回成功文本、stop 正常、0 条本 mod ERROR（K16）
-    实际：Done (0.389s)；RCON "sb reload" → "[SpatialBlueprint] Config hot-reloaded successfully"；
-          RCON stop 后 java 全部退出、gradle BUILD SUCCESSFUL；全文 0 条 ERROR、
-          3 条本 mod WARN 均为 C1 既有配置 correction
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：command\、network\、server\、log\、util\ 无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 类引用；注释无 SB-TODO(
-    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；
-          全仓桩数 43 = 基线 44 − 1（主类命令注册桩）+ 本任务 0
-    结果：[✓] 全部通过
-
-【手测】无（/sb config 打开界面在 P6；本任务未部署）。

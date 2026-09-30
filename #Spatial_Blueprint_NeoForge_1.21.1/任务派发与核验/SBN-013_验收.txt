@@ -1,0 +1,28 @@
+SBN-013 验收
+验收：2026-09-30 19:05:00（云端主会话）
+对象：task/SBN-013 @ e6c79fe（+ 云端验收补 1390509）
+结论：PASS（带云端补丁：一处既有存盘顺序缺陷 + 一处测试补强）→ 合并进 neoforge-1.21.1
+
+V1 改动清单：670b1b9..e6c79fe 的 SBCommands（新）、C2S_ReloadConfigMessage（新）、BlueprintNetwork（+1 注册）、主类（只换那一行）、SBN013Tests（新）
+   与任务书第二节两向一致 —— 通过。规程第五节 SBN-013 行的同步提交原写「待推送」，云端验收时回填为 e6c79fe。
+V2 云端复编译 0 警告。**首次复跑 GameTest 107/108**：SBN003 t05_savedDataRoundTrip「MaterialSpace roundtrip」失败（执行者本地两轮 108/108）。
+   根因（不是 flake）：MaterialSpace 的 pools / bags / consumedBagIds 是 HashMap，save 按遍历顺序写 ListTag；GameTest 共享存档里 108 条测试各用随机玩家存取，
+   表先扩容后清掉部分玩家（HashMap 不缩容），load 出的副本容量小、遍历顺序不同 → save → load → save 的 ListTag 顺序不同。
+   数据不丢（load 与顺序无关），但存盘不确定；测试越多越容易触发，本任务加测试后冒出来。
+   补丁 1390509：三张表与袋内层表改 LinkedHashMap（保插入顺序，load 按列表顺序插入 → 逐字往返）；新增 t09_materialSpaceSaveOrder
+   （新建实例、存 40 玩家清 35 个、save → load → save 相等）—— HashMap 下稳定复现转红，改后连跑两轮 109/109。
+   A3 专服冒烟按本地证据审（含 RCON sb reload 成功文本）；A4 云端自跑 grep（command\、network\、server\、log\、util\）为空；Javadoc 无 SB-TODO(；SB-TODO( 43（44 − 1）—— 通过。
+V3 SBCommands 与 1.20.1 diff -w 残差只有 RegisterCommandsEvent 包名与 2 处 CHANNEL.send → sendToPlayer；命令树、requires、return 分支逐字一致。
+   C2S_ReloadConfigMessage：payload 外壳 + handle / handleServer 拆分 + doReload 改写；主类 diff 只有命令注册一行 —— 通过。
+V4 78 条注册（54 C2S / 24 S2C）与 1.20.1 逐条一致、零缺失，P3 网络清零 —— 通过。
+V5 任务书出入三处：
+   1. doReload 骨架不够（只 putAll + afterReload 恒回旧值，实测）→ clear + putAll + spec.acceptConfig + afterReload —— 接受（云端复核语义：
+      等价于 FML 正规 reload 的整份替换）。附注：未持有 ModConfig 的内部锁（包内可见），与 ConfigWatcher 同时改同一份配置的窗口极小，结果都是盘上值，接受。
+   2. GameTest 服 profileCache 为 null，名字参数端到端不可达 → 拆分覆盖 —— 接受，名字参数实机随 P6 / P7。
+   3. night-config set + save 不落盘 → 测试改盘改文本替换 —— 接受（生产 doReload 只读不写）。
+V6 变异复核（K7，四处，均已还原）：
+   handleServer 的 hasPermissions(2) 短路 → t03 失败；/sb reload 的 requires 放开 → t04 失败；tpperm 的 requires 放开 → t04 / t06 失败；
+   executeUndo 的 isCreative 短路 → **原 t05 仍绿**（生存玩家本无记录，no_history 同样返回 0，断言分不出）。
+   云端补强 t05：给生存玩家真实撤销记录并清冷却，断言执行后记录仍在、世界未还原 → 变异复跑 t05 转红 —— 通过。
+
+报告九.1 a～d 四条建议记入待用户点头（云端建议再加一条：存盘写 ListTag 的表用 LinkedHashMap / 排序，见 e16）。
