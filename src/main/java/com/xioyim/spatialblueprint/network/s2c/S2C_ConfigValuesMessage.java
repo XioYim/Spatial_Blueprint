@@ -115,6 +115,7 @@ public class S2C_ConfigValuesMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_ConfigValuesMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端配置镜像（ClientConfigMirror.onReceive(msg.getInts(), msg.getBools(), msg.getLists())）
+        com.xioyim.spatialblueprint.client.ClientConfigMirror.onReceive(
+                msg.getInts(), msg.getBools(), msg.getLists());
     }
 }

@@ -67,6 +67,6 @@ public class S2C_BlueprintMaterialsMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_BlueprintMaterialsMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端打开「查看材料清单」只读页（原 handleClient：Minecraft.setScreen(new MaterialsViewScreen(...))）
+        // SB-TODO(P6): 客户端打开「查看材料清单」只读页（原 handleClient：Minecraft.setScreen(new MaterialsViewScreen(...))）
     }
 }

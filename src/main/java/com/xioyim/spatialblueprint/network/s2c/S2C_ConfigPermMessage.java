@@ -43,6 +43,6 @@ public class S2C_ConfigPermMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_ConfigPermMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端缓存配置界面权限（ClientConfigPermCache.set(msg.allowed)）
+        com.xioyim.spatialblueprint.client.ClientConfigPermCache.set(msg.allowed);
     }
 }

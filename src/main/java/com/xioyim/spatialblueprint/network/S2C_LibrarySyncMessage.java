@@ -149,6 +149,6 @@ public class S2C_LibrarySyncMessage implements CustomPacketPayload {
     // ── Handler ───────────────────────────────────────────────────────────
 
     public static void handle(S2C_LibrarySyncMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端把服务端下发的摘要列表写入 ClientLibraryCache（ClientLibraryCache.onReceive(msg.summaries)）
+        com.xioyim.spatialblueprint.client.ClientLibraryCache.onReceive(msg.summaries);
     }
 }

@@ -3,7 +3,7 @@
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
 归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入）。
-更新：2026-09-30 20:30:00
+更新：2026-09-30 21:30:00
 
 ========================================================
 【规矩】
@@ -37,3 +37,55 @@ A1. 旧文件读取基线
     结果：[~] 升级逻辑已由手写样本覆盖；待用户提供真实旧文件
 
 【手测】无。
+
+--------------------------------------------------------
+十五、SBN-015 客户端入口与缓存 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[~]
+--------------------------------------------------------
+
+登记 2026-09-30 21:30:00 · 测于 2026-09-30 21:21:24
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 126 条（SBN001～014 计 119 + SBN015 7）
+    预期：126 条全过
+    实际：========= 126 GAME TESTS COMPLETE IN 5.361 s ======================
+          All 126 required tests passed :)（连跑两轮一致）
+    t01 分块缓存：真实序列化 + 服务端 splitIntoChunks 乱序重组逐字相等；手切 2 块乱序相等；缺块不挂（进度 50）；
+        超块数 / 越界下标丢弃；markFailed / clearFailed；clearAll 全空
+    t02 他人下载：预览条目 + register → put 挂 fullData；未登记不挂；origin=null 移除
+    t03 项目三缓存：C2S handleServer 真实产包 → 列表 / 条目 / 状态读回字段逐项相等；clear
+    t04 小缓存：身份 / 传送权限与冷却 / 捕获冷却 / 配置镜像（真实快照，按稳定 ID 读回盘值）
+    t05 ConfigAccess：无快照回退本地、pending 优先、快照优先且不写本地 spec、defaultValue；
+        越界值 applyInt 拒绝保留原值
+    t06 物品客户端读缓存：投影缓存 / 内联回退只读 / 空间蓝图 null；Project 三处缓存无 / found=false / found=true
+    t07 断线清理：12 缓存填数据 → SpatialBlueprintClient.clearAllCaches() → 全空
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做，本任务的分边门禁）
+    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR；runServer 与 runGameTestServer 两份日志
+        「invalid dist」「Attempted to load class」「NoClassDefFoundError」0 条（K16）
+    实际：Done (0.493s)；RCON stop 后 gradle BUILD SUCCESSFUL；0 ERROR、0 本 mod WARN；
+        两份日志 invalid dist / Attempted to load class / NoClassDefFoundError / ClassNotFoundException 全 0
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+        spatialblueprint.client 引用逐处列出并说明；注释无 SB-TODO( 示例
+    实际：0 命中；对 client 包引用 21 处（18 执行 + 3 注释）逐条列明（见报告三 / 门禁.txt）；
+        全仓桩数 24 = 基线 41 − 22（清桩）+ 5（新桩：入口 2 + 材料空间开屏 P6 + 预览渲染接线 P5 ×2），P5 5 / P6 19
+    结果：[✓] 全部通过
+
+【手测】需要用户进游戏（本任务验收的一部分；做完回一句结果，写回本组）：
+H1. runClient 单人持久性（前置：本机开发环境 `.\gradlew.bat runClient`）
+    操作：进单人新存档 → 创造模式拿空白 / 空间 / 投影蓝图各一个，鼠标悬停看提示 → 退出到标题，再进另一个存档
+    预期：全程不崩、日志 0 条本 mod ERROR；tooltip 正常显示
+    实际：—
+    结果：[ ] 未测
+H2. runClient 连本机专服（前置：`.\gradlew.bat runServer` 起服；runClient 多人连接 127.0.0.1）
+    操作：登录 → 走动 / 拿蓝图悬停 → 断开连接 → 重连一次
+    预期：登录成功不断开；客户端与服务端日志均无 invalid dist / Attempted to load class / 本 mod ERROR；重连正常
+    实际：—
+    结果：[ ] 未测

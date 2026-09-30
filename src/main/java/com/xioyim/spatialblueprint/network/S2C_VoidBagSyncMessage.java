@@ -104,6 +104,6 @@ public class S2C_VoidBagSyncMessage implements CustomPacketPayload {
     // ── Handler ───────────────────────────────────────────────────────────
 
     public static void handle(S2C_VoidBagSyncMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端打开次元袋空间查看界面（原 openScreen：Minecraft.getInstance().setScreen(new gui.VoidBagSpaceScreen(msg.getTargetName(), msg.getEntries()))）
+        // SB-TODO(P6): 客户端打开次元袋空间查看界面（原 openScreen：Minecraft.getInstance().setScreen(new gui.VoidBagSpaceScreen(msg.getTargetName(), msg.getEntries()))）
     }
 }

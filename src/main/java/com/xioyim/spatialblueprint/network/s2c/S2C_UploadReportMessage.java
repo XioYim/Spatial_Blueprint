@@ -315,7 +315,7 @@ public class S2C_UploadReportMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_UploadReportMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端上传报告界面（原 handleClient：loading 态换真实报告 / 常规路径
+        // SB-TODO(P6): 客户端上传报告界面（原 handleClient：loading 态换真实报告 / 常规路径
         // 以当前上传页为 parent 打开 UploadReportScreen）
     }
 }

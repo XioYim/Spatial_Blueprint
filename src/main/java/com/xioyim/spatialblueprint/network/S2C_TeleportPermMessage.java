@@ -49,6 +49,6 @@ public class S2C_TeleportPermMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_TeleportPermMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端传送权限缓存（原 handleClient：ClientTeleportPermCache.set(msg.isAllowed())）
+        com.xioyim.spatialblueprint.client.ClientTeleportPermCache.set(msg.isAllowed());
     }
 }

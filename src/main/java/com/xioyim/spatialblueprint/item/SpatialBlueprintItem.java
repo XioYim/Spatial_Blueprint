@@ -100,11 +100,13 @@ public class SpatialBlueprintItem extends Item {
     /**
      * 客户端读法：只认客户端蓝图缓存（由 S2C 数据包填充）。
      *
-     * <p>客户端在多人游戏里没有蓝图文件，因此永远不读本地文件。</p>
+     * <p>客户端在多人游戏里没有蓝图文件，因此永远不读本地文件。
+     * 空间蓝图只认缓存、没有内联回退（与 1.20.1 一致）。</p>
      */
     public static BlueprintData getBlueprintDataClient(ItemStack stack) {
-        // SB-TODO(P5): ClientBlueprintCache 读取（S2C_BlueprintDataMessage 填充）
-        return null;
+        String id = blueprintIdOrNull(stack);
+        if (id == null) return null;
+        return com.xioyim.spatialblueprint.client.ClientBlueprintCache.get(id);
     }
 
     private static String blueprintIdOrNull(ItemStack stack) {

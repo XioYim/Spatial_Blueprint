@@ -14,7 +14,7 @@ import net.minecraft.world.entity.player.Player;
  *   <li>{@link #serverError(Player)} — 服务端，错误音效（pling 低音）</li>
  * </ul>
  *
- * <p>客户端两个（client / clientError）迁 P5 的 client 包（见文件末尾桩）。</p>
+ * <p>客户端两个（client / clientError）在 {@link com.xioyim.spatialblueprint.client.ClientNotifySound}。</p>
  */
 public class NotifySound {
 
@@ -47,8 +47,6 @@ public class NotifySound {
                 VOLUME, PITCH_ERROR,
                 sp.getRandom().nextLong()));
     }
-
-    // SB-TODO(P5): 客户端提示音（client / clientError）迁 client 包
 
     private NotifySound() {}
 }

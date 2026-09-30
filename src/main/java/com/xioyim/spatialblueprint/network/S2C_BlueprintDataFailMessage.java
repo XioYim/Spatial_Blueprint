@@ -45,6 +45,6 @@ public class S2C_BlueprintDataFailMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_BlueprintDataFailMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端标记下载失败（ClientBlueprintCache.markFailed）
+        com.xioyim.spatialblueprint.client.ClientBlueprintCache.markFailed(msg.blueprintId, msg.reason);
     }
 }

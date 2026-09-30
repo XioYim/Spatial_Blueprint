@@ -93,6 +93,6 @@ public class S2C_OperationResult implements CustomPacketPayload {
     }
 
     public static void handle(S2C_OperationResult msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端横幅 / 聊天提示（成功绿色、失败 ErrorToastScreen，含 detail 精细着色与界面关闭）
+        // SB-TODO(P6): 客户端横幅 / 聊天提示（成功绿色、失败 ErrorToastScreen，含 detail 精细着色与界面关闭）
     }
 }
