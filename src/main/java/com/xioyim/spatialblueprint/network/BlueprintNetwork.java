@@ -266,6 +266,10 @@ public class BlueprintNetwork {
                 C2S_CreateEngineeringBlueprintMessage::handle);
         r.playToServer(C2S_CreateSubProjectMessage.TYPE, C2S_CreateSubProjectMessage.STREAM_CODEC,
                 C2S_CreateSubProjectMessage::handle);
+
+        // ── SBN-012（P4）：放置 1 条（C2S）────────────────────────────────────
+        r.playToServer(PlaceBlueprintMessage.TYPE, PlaceBlueprintMessage.STREAM_CODEC,
+                PlaceBlueprintMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────

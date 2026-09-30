@@ -1,0 +1,139 @@
+SBN-012 报告
+执行：本地辅助 AI · 2026-09-30 15:40:00 · 分支 task/SBN-012（切自 origin/task/SBN-012 @ bac25ef）
+提交：待推送（本报告 + 证据 + 交接件随下一提交）
+备份：D:\Mods\项目备份\Spatial_Blueprint_NeoForge_1.21.1_20260930_134014（SHA 前 8 位 4D2C7A1A，SBN-012 执行前）
+
+一、完成情况：三.1～三.5 逐条
+三.1 BlueprintNetwork：register 追加 place_blueprint_message 一条 playToServer（BlueprintNetwork.java:271，共 3 行含注释）；其余零改动。
+三.2 BlueprintPlacementHandler（新，util/BlueprintPlacementHandler.java，1318 行）：
+  a. @EventBusSubscriber(modid = SpatialBlueprintMod.MODID)（:46，游戏总线）；onServerTick(ServerTickEvent.Post)（:549，删 phase 判断）；
+     PlayerEvent / LevelEvent.Unload / ServerStoppingEvent / BreakSpeed 同名 neoforge 包原样（:635/:663/:655/:640 附近）。
+  b. 领地两类事件：BlockSnapshot.create(dim, level, pos)（:1002）+ BlockEvent.EntityPlaceEvent(snapshot, placedAgainst, entity)（:1003），
+     NeoForge.EVENT_BUS.post（:1005/:1019），取消判定 isCanceled() 不变；BreakEvent 同 SBN-010 口径。
+  c. 方块实体：be.load(nbt) → be.loadWithComponents(nbt, provider) 8 处（:434/:455/:529/:713/:743/:839/:1266/:1281，含 restoreUndo 两处）；
+     be.saveWithFullMetadata() → saveWithFullMetadata(level.registryAccess())（:1182，snapshotRegion）。
+  d. MobEffects.GLOWING（1.21 是 Holder）：new MobEffectInstance(Holder, 120, 0, false, false) 构造直接可用，原样（:968 附近未改）。
+  e. 发包 4 组 CHANNEL.send → BlueprintNetwork.sendToPlayer：sendPlacementFailure 两条（:341/:342）、onPlayerLogin（:629）、sendPlacementProgress（:868）。
+  f. EntityType.create(CompoundTag, Level)、setChunkForced、playSound、applyGlow 等签名不变原样；见六.1 的两处实测出入。
+  g. pendingPlacements / pendingGlowTasks 仍 static 表，只服务端主线程读写，原样。
+三.3 PlaceBlueprintMessage（新，network/PlaceBlueprintMessage.java，657 行）：
+  a. payload：TYPE（:44）/ STREAM_CODEC（:48）/ type()（:51）；handle(IPayloadContext) 拆 public static handleServer（:104/:109）。
+     encode / decode 逐字未动：writeUtf(rotation.name(),32) / readUtf(32)、未知 rotation 回退 NONE、FluidDisplayMode.fromByte。
+  b. 物品数据访问器：blueprintId 两处（AbstractBlueprintItem.getBlueprintId，:162/:313，null 补 ""）；creatorName（has(CREATOR_NAME) +
+     VoidDimensionalBlueprintItem.getCreatorName，:372/:457）。
+  c. 建造蓝图组装 4 处 buildNbt → 组件逐项 set（次元两处 :354-372 / :438-457；投影两处 :398-415 / :471-488）；
+     投影分支的 blueprintData 复制改为「源有 custom_data 且含 blueprintData → 复制到建造蓝图 custom_data」（:405-411 / :478-484）。
+  d. sendResult / sendPlacementCancelled / markPlacedAndSync 走 sendToPlayer（:617/:624/:644）；markPlacedAndSync 里 sendBlueprintTo 原样（:652）。
+  e. runCompletionCommand：createCommandSourceStack().withPermission(2).withSuppressedOutput() + performPrefixedCommand 原样（:579 起，:603/:604）。
+  f. 判断顺序 15 类步骤逐条未挪（29 个关键语句的行号对照见证据 顺序.txt，全部 1.20.1→1.21.1 一一对应）。
+三.4 双端同步：见七。
+三.5 SBN010Tests：30 处 assertValueEqual 全部对换为（实际, 期望, 名字）（+38/−38 行）；SBN011Tests：25 处对换 + 7 处本已合规不动（+33/−32 行）；
+  依据 javap GameTestHelper 形参名 actual, expected；SBN011Tests.legacyBlueprintRoot 改包内可见（SBN011Tests.java:127，文档注明供 t04 复用）。
+  断言内容与条数零变更：两文件覆盖的 92 条既有测试全部通过。
+
+二、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据），按文件分组；下列为全部 diff -w 残差，之外零改动
+BlueprintPlacementHandler.java：
+  @Mod.EventBusSubscriber → @EventBusSubscriber(modid = SpatialBlueprintMod.MODID) · :46 · 5.2 表 + BuildBlueprintItem 同写法
+  MinecraftForge.EVENT_BUS.post → NeoForge.EVENT_BUS.post · :1005/:1019 · C23
+  net.minecraftforge.common.util.BlockSnapshot → net.neoforged.neoforge.common.util.BlockSnapshot · :20 导入/:1002 · J45
+  net.minecraftforge.event.level.BlockEvent → net.neoforged.neoforge.event.level.BlockEvent · :21 导入/:1003/:1020 · C23
+  TickEvent.ServerTickEvent+phase → ServerTickEvent.Post · :549 · 5.2 表
+  net.minecraftforge.event.server.ServerStoppingEvent → net.neoforged.neoforge.event.server.ServerStoppingEvent · 导入/:608
+  net.minecraftforge.event.entity.player.PlayerEvent → net.neoforged.neoforge.event.entity.player.PlayerEvent · 导入/:624/:631/:640
+  net.minecraftforge.event.level.LevelEvent.Unload → net.neoforged.neoforge.event.level.LevelEvent.Unload · 导入/:649
+  net.minecraftforge.eventbus.api.SubscribeEvent → net.neoforged.bus.api.SubscribeEvent · 导入
+  net.minecraftforge.fml.common.Mod → net.neoforged.fml.common.EventBusSubscriber · 导入
+  CHANNEL.send(PacketDistributor.PLAYER…) → BlueprintNetwork.sendToPlayer · :341/:342/:629/:868 · C14
+  be.load(nbt) → be.loadWithComponents(nbt, provider) · 8 处 · J45/C5
+  be.saveWithFullMetadata() → saveWithFullMetadata(level.registryAccess()) · :1182 · C23/J45
+  （口径外两处，见六.1）state.rotate(Rotation) → state.rotate(LevelAccessor, BlockPos, Rotation) · :1024 定义 + 7 调用点（:427/:448/:522/:664/:692/:729/:825）
+  （口径外两处，见六.1）level.hasChunkAt(BlockPos) → level.hasChunk(cx, cz) · :477/:772/:1087（:556 isLoaded 为 1.20.1 原写法，不动）
+  （口径外一处，见六.2）onPlayerLogin 加 try/catch · :628-633
+PlaceBlueprintMessage.java：
+  implements CustomPacketPayload + TYPE/STREAM_CODEC/type() · :41-53 · C14
+  handle(msg, Supplier<NetworkEvent.Context>)（enqueueWork / setPacketHandled）→ handle(msg, IPayloadContext) + handleServer(msg, ServerPlayer) · :103-110 · C14
+  stack.hasTag()/getTag().getString("blueprintId") → AbstractBlueprintItem.getBlueprintId（null 补 ""）· :162/:313 · C12 + SBN-010 同口径
+  stack.getTag().contains("creatorName") / getString → stack.has(CREATOR_NAME) / VoidDimensionalBlueprintItem.getCreatorName · :372/:457 · C12
+  buildNbt.putString("blueprintName"…) 等 12 键 ×2（次元） → SpatialBlueprintComponents.BLUEPRINT_NAME/SAVE_MODE/COMPLETION_TIME/SOURCE_TYPE/
+    BLUEPRINT_ID/CAPTURE_MIN/CAPTURE_MAX/TP_X/TP_Y/TP_Z/TP_DIMENSION/WORLD_UUID/WORLD_NAME/CREATOR_NAME set · :354-372/:438-457 · 功能联动手册第二节
+  buildNbt.putString("blueprintName"…) 等 4 键 ×2（投影） → 组件 set + BLUEPRINT_ID 有条件复制 · :398-415/:471-488 · 同上
+  src.getCompound("blueprintData") 直搬 → 「源 custom_data 含 blueprintData 才复制到建造蓝图 custom_data」· :405-411/:478-484 · 三维决定（LegacyItemMigration 注释）
+  NbtUtils.writeBlockPos → 组件 BlockPos（Task 报：1.21 writeBlockPos 写 int 数组）· :361-362/:446-447 · C12/K8
+  CHANNEL.send(PacketDistributor.PLAYER…) → BlueprintNetwork.sendToPlayer · :617/:624/:644 · C14
+  net.minecraftforge.network.NetworkEvent / PacketDistributor → net.neoforged.neoforge.network.handling.IPayloadContext · 导入 · C14
+
+三、网络实测
+payload：place_blueprint_message（PlaceBlueprintMessage.TYPE.id().getPath()），方向 playToServer（BlueprintNetwork.java:271）。
+77 条互不重复、方向与 1.20.1 逐条一致（53 C2S / 24 S2C，证据 注册.txt；t01 断言命名空间与总数）。
+decode 上限清单（K13 自查，全部定长、无按计数分配）：readBlockPos()；readUtf(32)（rotation）；readInt()×3（偏移）；readBoolean()；readByte()（fluidMode）。
+  fromOrdinal 调用点：本消息无（rotation 用 valueOf + 回退 NONE）；fluidMode 用 fromByte 回退 SHOW_ALL。无「按客户端计数分配」点。
+PlaceBlueprintMessage 判断顺序清单：29 个关键语句的 1.20.1 → 1.21.1 行号对照全部一一对应、无一挪动（证据 顺序.txt，交叉浅核查了
+  冷却→物品识别→次元归属→数据→已放置→存档归属→工程边界→距离→夹取→子工程坐标→坐标校验→生存碰撞→意图→预检→材料→快照→日志→放置→播报）。
+调用计数与 1.20.1 相等：sendResult 14=14、sendPlacementCancelled 2=2、markPlacedAndSync 2=2、recordSubProjectCompletion 2=2；
+  BlueprintPlacementHandler：isEntityPlaceEventAllowed 调用 1=1、isEntityBreakEventAllowed 2=2、sendPlacementFailure 4=4、EVENT_BUS.post 2=2。
+  return; 计数 24=24（含工具方法）。
+
+四、测试覆盖
+A1 compileJava --rerun：BUILD SUCCESSFUL、0 警告（证据 编译.txt）。
+A2 runGameTestServer：100/100（@GameTest 注解实数 100 = SBN001～011 计 92 + SBN012 8；defaultBatch:0 50 + :1 50）。
+  t01 注册 / t02 编解码与越界 / t03 新格式往返 / t04 旧格式往返 / t05 动画放置 / t06 放置消息六分支 / t07 领地预检 / t08 已放置与外档（详见测试清单组十二与证据 GameTest.txt）。
+A3 专服冒烟：Done (0.454s)、RCON stop 后 java 全退 + gradle BUILD SUCCESSFUL、0 ERROR、2 条本 mod WARN 均为 C1 既有 correction（证据 服务端.txt，K16 三条齐）。
+A4 grep 门禁：network\、server\、log\、util\ 0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge 类引用）；
+  gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*（非类引用）；两个新文件注释无 SB-TODO(（K10）。
+三.5 改动计数：SBN010Tests 30 处对换（+38/−38）；SBN011Tests 25 处对换（+33/−32，另 7 处本已合规）；
+  以「逐个 assertValueEqual 调用前两参数文本交换」脚本核对，无第三类改动（脚本 diff 输出 other=0）。
+
+五、迁移桩清单
+新增逐条：无（两个新文件 0 处 SB-TODO(，注释里也没有，K10 全角口径）。
+总数：44（= 基线 44 + 本任务 0）。
+
+六、任务书出入（3 处，均照实测做）
+1. 三.2.f 写「EntityType.create / setChunkForced / BlockState.rotate(Rotation) / playSound 在 1.21 签名不变（J45），原样」——
+   实测 BlockState.rotate(Rotation) 与 LevelReader.hasChunkAt(BlockPos) 在 1.21.1 已标 @Deprecated：javac 打「注: …使用或覆盖了已过时的 API」，
+   破 0 警告基线（先用临时 -Xlint:deprecation 定位，复原 build.gradle）。按「照实测做并写进报告」：
+   rotate 换 BlockState.rotate(LevelAccessor, BlockPos, Rotation)（applyTransform 带位置版，:1023-1024，7 调用点；旋转结果语义与 1.20.1 的
+   rotate(Rotation) 一致，需位置参数供未来方向性方块用）；hasChunkAt(BlockPos) 换 hasChunk(cx, cz)（:477/:772/:1087）。
+2. 任务书未提 onPlayerLogin 的相位异常：GameTest 的 mock 玩家（SBN007Tests.mockPlayerInLevel 用 placeNewPlayer 直调，仍在配置相位）触发
+   PlayerLoggedInEvent 时，sendToPlayer 被 NeoForge 相位检查拒绝并抛 UnsupportedOperationException，炸掉 firePlayerLoggedIn 调用链，
+   级联污染 SBN007 t06/t08（首轮 GameTest 实测）。onPlayerLogin 加 try/catch 兜底（:628-633）——真玩家登录时已是 play 相位，不受影响；
+   1.20.1 的 CHANNEL.send 不抛，这是 1.21 网络实现差异。
+3. TASK 五的 t05「本次新强加载的区块已释放」在测试服框架下不可为：框架自身强制加载测试区块（t05 放置的 newlyForcedChunks 实测为 0，
+   强制集非空但全部是框架基线）。口径改为「放置前后强制集不变（无泄漏）」；强加载释放逻辑本身与 1.20.1 逐字一致、由 SBN-010 基线覆盖。
+   （另：测试结构网格步长 ~6-9 格，放置目标改用「源区正上方 virgin 空域」；t04 short_grass 需垫泥土防邻居更新弹出；SAFE stripped 容器 NBT
+   比对去掉 Items 键——均为测试自身适配，非口径变更。）
+
+七、双端同步自查（放置期间客户端看到什么；物品替换同步；进度包；已放置标记与蓝图库推送）
+1. 放置只在服务端改世界：逐格 setBlock / RenderBlock 动画都是服务端行为，客户端看到的方块变化来自原版方块同步（Block.UPDATE_CLIENTS）。
+2. 物品替换：主手换成建造蓝图 / 清空 / 换回，全部立即 ItemSyncUtil.syncHand（:374/:394/:417/:434/:442/:459 附近，1.20.1 原样）；
+   创造分支不动物品。
+3. 进度包：S2C_PlacementProgressMessage 每 tick 节奏发送（:868 sendToPlayer），进度 1.0 由 forcePlaceAllBlocks 末尾发（:858）；
+   客户端处理仍是 P5 桩（S2C_PlacementProgressMessage.java:40 的 SB-TODO），本任务不涉及。
+4. 已放置标记与蓝图库：markPlacedAndSync 先 BlueprintStorage.setPlaced（:639），再推 S2C_LibrarySyncMessage 过滤列表（:644），
+   再 sendBlueprintTo 刷新客户端数据缓存（:652）——三件套与 1.20.1 逐条一致。
+5. 失败分支：sendResult(false) 附带 sendPlacementCancelled（progress=-1，:624），客户端停动画；t07 断言了 -1 包。
+
+八、教训同步
+基线 B = git show 9893740:通用经验/Mod开发与迁移_通用铁律经验教训.md；A = 本机原件；C = 仓库副本。
+结果：C 与 B 逐字相同（云端本任务未动副本）；A 比 B 多 11 段（均为其它项目所加：Win 门禁 / PowerShell 逗号与编码 / Remove-Item /
+  stdin-BOM / Bash 超时 / sed 反斜杠 7 条、迁移坑 9～10、5.4 联动移植套路、5.5 主会话节奏）→ 全部合并进 C，合并后 A 与 C 逐字一致
+  （sha256 ccf5f8d8004334685620584dd92200a503dd95066205ce610bbaae7e3340e544）。无冲突条目；规程第五节表已追加一行（同步提交「待推送」，由云端回填）。
+
+九、建议记入
+1. T/K 候选（供云端问用户后决定）：
+   a. K 候选 · 1.21.1 的 BlockState.rotate(Rotation) 与 LevelReader.hasChunkAt(BlockPos) 均已弃用（破 0 警告基线）：
+      旋转用 rotate(LevelAccessor, BlockPos, Rotation)，区块判断用 hasChunk(cx, cz)。搬 1.20.1 代码见 rotate/hasChunkAt 先看弃用标记。
+      （日志 SBN-012 执行记录）
+   b. K 候选 · GameTest mock 玩家（placeNewPlayer 直调）触发 PlayerLoggedInEvent 时连接仍在配置相位，NeoForge 相位检查会拒绝 play 包并抛出：
+      登录时发包要 try/catch 兜底（1.20.1 的 SimpleChannel 不抛）。SBN007 / SBN012 的 mock 玩家都会踩。
+      （日志 SBN-012 执行记录）
+   c. C 候选 · GameTest 结构网格步长 ~6-9 格、框架强制加载测试区块：放置类测试目标要用「源区正上方 virgin 空域」（同柱必加载、无邻居干扰），
+      异步动画测试的 starter/checker 排到 150+/300+ tick 避开批次开头 sink 快照窗口；「强加载已释放」断言口径是前后集不变。
+      （日志 SBN-012 执行记录）
+   d. C 候选 · 蓝图→建造蓝图的数据搬运口径（P4 定）：次元 12 组件 + 投影 4 组件 + custom_data 的 blueprintData 旧内联数据只搬源有才搬；
+      restore 保持 1.20.1 语义（void_dimensional 12 组件、project 整份组件去两个）。（日志 SBN-012 执行记录）
+2. 待办提议（供云端问用户）：待办事项「P4 只剩 Reload（C2S_ReloadConfigMessage）+ SBCommands + 旧物品内联 blueprintData 转存」的更新。
+3. 1.20.1 待跟检查（两线要对齐）：本任务新发现 1 处——1.20.1 的 SimpleChannel 无相位检查、onPlayerLogin 不抛异常，行为差异属实现差异，
+   两边对外行为一致，无需 1.20.1 跟；未发现新的两线行为差异。
+
+十、需要用户做的事
+无（放置界面在 P6，实机放置随 P6 一起测；本任务未部署、未 bump mod_version——协议新增 1 条 payload 的版本变更随 P4 部署一起做）。

@@ -1,0 +1,58 @@
+SBN-012 判断顺序证据：PlaceBlueprintMessage 关键步骤 1.20.1 行号 → 1.21.1 行号（同一顺序，无挪动）。
+（行号为「该语句首次出现」的行；1.20.1 = origin/forge-1.20.1）
+
+步骤                                             1.20.1   1.21.1
+冷却 checkAndUpdateCooldown                          91      112
+物品识别 DimensionalBlueprintItem                     105      126
+物品识别 SpatialBlueprintItem                         107      128
+物品识别 ProjectionBlueprintItem                      109      130
+物品识别 EngineeringBlueprintItem                     111      132
+奖励蓝图识别 isReward                                   133      154
+次元归属 not_owner                                    143      165
+数据 getBlueprintDataServer                         150      172
+已放置 data.placed                                   163      185
+存档归属 isForeign                                    173      195
+工程边界 checkProjectBounds                           183      205
+距离 validatePlacementDistance                      194      216
+偏移夹取 clampOffset                                  202      224
+子工程实际位 getBoundStartPos                           220      242
+坐标校验 validateBlockPos                             225      247
+生存实体阻挡 entityBlocking                             247      269
+生存方块碰撞 placement_blocked_extra_blocks             251      273
+意图日志 BlueprintLogger.intent                       279      301
+动画时长 getAnimDuration                              288      310
+blueprintIdForBag                                 291      313
+领地预检 precheckPlacement                            295      318
+材料 bagConsume                                     314      337
+材料 space.consume                                  362      383
+快照 snapshotRegion                                 466      497
+磁盘日志 BlueprintFileLogger                          494      525
+执行放置 startPlacement                               506      537
+大型播报 broadcast                                    516      547
+成功日志 BlueprintLogger.success                      522      553
+sendResult true                                   527      558
+
+调用计数对照：
+  sendResult 调用数                           old=14 new=14
+  sendPlacementCancelled 调用数               old=2 new=2
+  markPlacedAndSync 调用数                    old=2 new=2
+  recordSubProjectCompletion 调用数           old=2 new=2
+
+PlaceBlueprintMessage return 分支数（含主流程 return;）：
+  old=24 new=24（1.20.1 return; 计数含工具方法；见下）
+
+BlueprintPlacementHandler 事件判定调用处数：
+  isEntityPlaceEventAllowed 调用             old=1 new=1
+  isEntityBreakEventAllowed 调用             old=2 new=2
+  sendPlacementFailure 调用                  old=4 new=4
+  NeoForge/MinecraftForge 事件投递             old=2 new=2
+
+PlaceBlueprintMessage decode 上限清单（1.21.1）：
+    88: BlockPos pos = buf.readBlockPos();
+    89: String rotStr = buf.readUtf(32);
+    90: int x = buf.readInt(), y = buf.readInt(), z = buf.readInt();
+    91: boolean clearFirst = buf.readBoolean();
+    93: com.xioyim.spatialblueprint.util.FluidDisplayMode.fromByte(buf.readByte());
+
+decode 无按计数分配（K13 自查）：readBlockPos / readUtf(32) / readInt×3 / readBoolean / readByte，全部定长，无 new ArrayList(n) 类分配。
+L1 校验：rotation 字符串上限 32（writeUtf/readUtf 对称）；fluidMode 单字节 fromByte 回退 SHOW_ALL；未知 rotation 名回退 NONE。
