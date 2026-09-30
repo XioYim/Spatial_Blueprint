@@ -1,0 +1,34 @@
+SBN-009 改动清单（A：与任务书第二节允许清单两向比对）
+
+命令：git diff --name-status 3be0d97...HEAD（3be0d97 = 任务分支拉出点 / merge-base；
+本文件生成时用等效的 git diff --cached --name-status 3be0d97，提交后可用前者复核）。
+
+实际改动（19 项）：
+M  #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_任务_P3c上传.txt   （云端派发，分支首个提交）
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_报告.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_证据/编译.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_证据/GameTest.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_证据/改动清单.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_证据/服务端.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-009_证据/网络.txt
+M  #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md
+M  #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt
+A  src/main/java/com/xioyim/spatialblueprint/gametest/SBN009Tests.java
+M  src/main/java/com/xioyim/spatialblueprint/network/BlueprintNetwork.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_ConfirmUploadMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_RequestEngineeringReportMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_UploadBeginMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_UploadChunkMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_UploadProjectionTemplateMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/s2c/S2C_UploadReportMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/server/PendingUploadRegistry.java
+A  src/main/java/com/xioyim/spatialblueprint/server/UploadStagingRegistry.java
+
+两向比对：
+- 允许清单 → 实际：6 个消息全部在（5 个在 network\ 根下、S2C_UploadReportMessage 在 network\s2c\）；
+  PendingUploadRegistry / UploadStagingRegistry 在 server\ 下；BlueprintNetwork 只加注册；
+  SBN009Tests 新建；交接件 = 报告 / 证据 / 开发日志执行记录 / 测试清单第九组 / 规程表 /
+  通用经验副本。通用经验副本本轮三方比对零差异，无改动（不算缺失）。
+- 实际 → 允许清单：无清单外文件；无主类改动；无 SBN-010 的消息；无 C2S_ReloadConfigMessage。
+- SBN-009_证据/改动清单.txt 本身也属于证据目录（本文件）。

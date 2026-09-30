@@ -238,6 +238,21 @@ public class BlueprintNetwork {
                 C2S_RewardMaterialsMessage::handle);
         r.playToServer(C2S_RequestIllegalBlocksMessage.TYPE, C2S_RequestIllegalBlocksMessage.STREAM_CODEC,
                 C2S_RequestIllegalBlocksMessage::handle);
+
+        // ── SBN-009（P3c-2）：上传 6 条（5 C2S + 1 S2C）──────────────────────
+        r.playToServer(C2S_UploadBeginMessage.TYPE, C2S_UploadBeginMessage.STREAM_CODEC,
+                C2S_UploadBeginMessage::handle);
+        r.playToServer(C2S_UploadChunkMessage.TYPE, C2S_UploadChunkMessage.STREAM_CODEC,
+                C2S_UploadChunkMessage::handle);
+        r.playToServer(C2S_UploadProjectionTemplateMessage.TYPE, C2S_UploadProjectionTemplateMessage.STREAM_CODEC,
+                C2S_UploadProjectionTemplateMessage::handle);
+        r.playToServer(C2S_ConfirmUploadMessage.TYPE, C2S_ConfirmUploadMessage.STREAM_CODEC,
+                C2S_ConfirmUploadMessage::handle);
+        r.playToServer(C2S_RequestEngineeringReportMessage.TYPE, C2S_RequestEngineeringReportMessage.STREAM_CODEC,
+                C2S_RequestEngineeringReportMessage::handle);
+        r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage.TYPE,
+                com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage.STREAM_CODEC,
+                com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────
