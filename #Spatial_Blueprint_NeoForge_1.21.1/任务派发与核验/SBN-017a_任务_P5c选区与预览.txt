@@ -1,0 +1,175 @@
+SBN-017a · P5c-1 选区与预览（不含幽灵方块 VBO）：BlueprintSelectionRenderer 除 VBO 外全部 + 五个预览 / 守卫类 + 客户端命令 + 开发用命令
+派发：2026-10-01 00:20:00（云端主会话）
+分支：task/SBN-017a（从 neoforge-1.21.1 @ a80eae3 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-017a 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2；本机取 git 输出按 K15。
+本任务要读：注意事项_目录.md 的 T1、K1、K2、K3、K7、K10、K16、K20、K29、K30、K32、K33、C2、C12、C30、C31；迁移计划书「P5 细化」；
+SBN-016_任务_P5b渲染底座.txt 三、五（顶点 API、调试驱动、手测写法）与 SBN-016_报告.txt（实测结论）；本地接管手册.md（若已存在）。
+**本任务是渲染任务，手测是验收的一部分**：你有显示环境就自己先走一遍并写下所见；没有就写「未能目视」，由用户复测（用户已在本机验证过 SBN-015 / 016 的手测，AFTER_PARTICLES 的相机平移约定已确认与 1.20.1 一致）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P5 第三段的前半。1.20.1 的 client\BlueprintSelectionRenderer（2520 行）把两类东西揉在一个类里：
+  · 普通渲染（约 1500 行）：选区框、对齐模式、放置加载动画、工程 / 项目 / 子项目预览、胶水框、领地区块框、实体标签、预览广播、距离自动取消 —— 走 SBN-016 已验证的 outliner；
+  · GPU 幽灵方块预览（约 700 行）：把蓝图方块烤成顶点缓冲画半透明幽灵方块（异步构建、分帧上传、着色器绘制、流体贴图）—— 1.21 里 BufferBuilder / VertexBuffer 全变了，留给 SBN-017b。
+本任务搬前者，后者用「接口不变、方法为空」的占位顶住，让整个类照常编译运行，只是暂时没有幽灵方块本体。
+
+要搬的文件（1.20.1 client\ 与 command\）：
+  BlueprintSelectionRenderer(2520，去掉 VBO 实现，见三.2)、ClientProjectPreview(139)、ClientSubProjectPreview(148)、ClientEngineeringPreview(64)、
+  PlacementPreValidator(151)、ForceBlueprintGuard(146，界面弹窗打 P6 桩)、command\SBClientCommands(117，下载界面打 P6 桩)
+新增（1.21.1 独有）：开发用客户端命令 SBDevCommands（三.5），让没有界面的阶段也能拿到蓝图物品并手测预览。
+
+要清的桩：ClientProjectStatusCache 两条「预览渲染接线」P5 桩、s2c/S2C_PlacementProgressMessage 的 P5 桩（放置进度 → 渲染器）。清完后全仓 P5 桩只应剩 VBO 占位（明写 017b）。
+
+明确不在本任务：幽灵方块 VBO（017b）、一切 gui\ 界面（P6：PlacementScreen / EngineeringBlueprintScreen / OtherPlayerDownloadScreen / ErrorToastScreen 等，调用点打 SB-TODO(P6)）、物品右键打开放置界面（P6）。
+因此本阶段手持蓝图 **只能看不能右键放置**；AlignMode 默认 OFF 时渲染器直接不画，手测要用开发命令切到 START（三.5）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  client/BlueprintSelectionRenderer.java           ← 1.20.1 同路径；VBO 部分为占位（三.2）
+  新  client/ClientProjectPreview.java、client/ClientSubProjectPreview.java、client/ClientEngineeringPreview.java、client/PlacementPreValidator.java、client/ForceBlueprintGuard.java
+  新  command/SBClientCommands.java                     ← 1.20.1 同路径（客户端命令，放 command 包但只在客户端入口链里注册；K29）
+  新  client/SBDevCommands.java                         ← 开发命令（三.5）
+  改  client/SpatialBlueprintClient.java                ← 注册监听 / 命令；clearAllCaches 增加新缓存
+  改  client/ClientProjectStatusCache.java              ← 只接两条 P5 桩
+  改  network/s2c/S2C_PlacementProgressMessage.java     ← 只改客户端体（桩 → 调用）
+  改  client/outliner/OutlinerDebug.java                ← 去掉与渲染器重复的驱动（三.6）
+  新  gametest/SBN017aTests.java
+
+交接件（规程允许范围）：SBN-017a_报告.txt、SBN-017a_证据\、开发日志.md 文末「## SBN-017a 执行记录」、
+测试清单.txt 追加「十七、SBN-017a 选区与预览」（含【手测】H 项）、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（含 gui、服务端、物品类 —— SpatialBlueprintItem 里右键客户端分支是 P6 桩，不碰）。
+若某调用引用了尚未迁移的类：按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则：几何、颜色、距离阈值、判断顺序、日志文本一律不改，只换 API；每个文件 diff -w 残差逐条进报告。
+
+1. 事件与注册（K29 / K30：类留在客户端入口链里）
+   a. BlueprintSelectionRenderer 的三个 @SubscribeEvent（onRenderLevel / onClientTick / onLevelUnload）改为由 SpatialBlueprintClient 用 NeoForge.EVENT_BUS.addListener 显式注册
+      （RenderLevelStageEvent、ClientTickEvent.Post、LevelEvent.Unload，J50）；类里去掉 @OnlyIn / @Mod.EventBusSubscriber。
+   b. ClientProjectPreview 的 tick 监听同样由入口注册；ClientProjectPreview / ClientEngineeringPreview 各自带的 LoggingOut 清理照 SBN-015 口径并入 clearAllCaches（含 ClientSubProjectPreview.clear、渲染器里该清的静态状态，逐类对照 1.20.1 带 LoggingOut 监听的类）。
+   c. SBClientCommands：RegisterClientCommandsEvent（J50）由入口注册；命令树与翻译键逐字原样。
+   d. 公共包（主类、block、item、network 等）里 0 处新增对本包的引用，除了 S2C_PlacementProgressMessage 客户端体与 ClientProjectStatusCache（客户端类）里的调用（K29）。
+2. BlueprintSelectionRenderer 的 VBO 占位（为 017b 留缝）
+   保留（原样搬）：AlignMode 与对齐偏移函数、放置加载动画（含 OpenTopAABBOutline 内部类）、包围盒缓存、Void / 工程预览设置 API、非法块扫描缓存、渲染事件与客户端 tick、预览广播、
+   胶水框 / 领地区块框 / 项目预览 / 空白选区 / 次元选区 / 工程预览 / 项目与子项目预览、实体与容器标签、getPreviewTarget、渲染列表（RenderEntry / needRebuild 一整段）—— 这些是 CPU 逻辑与 outliner / 线框 / 文字，本任务必须真能画。
+   占位（017b 实现）：PreviewVboSlot（方法集不变：markDirty / startBuildIfDirty / uploadOneChunk / draw / isBuilding / hasPending / uploadedCount / totalChunks / dispose，全部无操作，dispose 返回 0）、
+   OtherPreviewRender 的 VBO 相关成员、buildChunks / uploadBuffer / drawVBO / emitTexturedCube / ensureWhiteSprite / 流体贴图 UV 缓存 / SELF_BUILDER 与 OTHER_BUILDER 线程池 / UPLOAD_CHUNK_SIZE。
+   每一处占位写 SB-TODO(P5): 017b VBO（说明原来做什么，1.20.1 行号范围）；不要删掉方法签名，也不要重排类结构，017b 直接原位替换。
+   GPU 相关 import（VertexBuffer / BufferBuilder.RenderedBuffer 等）随占位一并不引入，以编译过为准。
+3. 1.21 API 改写（云端已 javap，第四节 J50）
+   a. Minecraft.getPartialTick() 已不存在 → mc.getTimer().getGameTimeDeltaPartialTick(false)（渲染事件内优先用 event.getPartialTick()）。
+   b. 物品数据：stack.hasTag()/getTag().getString("blueprintId") → AbstractBlueprintItem.getBlueprintId（null 补 ""，C12）；其余物品字段一律走已有访问器（getRotation / getXOffset / isLocked 等）。
+   c. BlockState.rotate(Rotation) 已弃用（K20）→ rotate(LevelAccessor, BlockPos, Rotation)（渲染列表里有 player.level() 与 rp 可用）；hasChunkAt(BlockPos) 同 K20。
+   d. Font.drawInBatch(Component, float, float, int, boolean, Matrix4f, MultiBufferSource, Font.DisplayMode, int, int) 在 1.21.1 仍在（J50）；LevelRenderer.renderLineBox 各重载仍在；RenderType.lines() 仍在。
+   e. 网络：BlueprintNetwork.CHANNEL.sendToServer → BlueprintNetwork.sendToServer（sendPreviewUpdate / sendPreviewClear 等）。
+   f. 顶点提交（LevelRenderer.renderLineBox 之外自己写的）按 K32；本文件里 Outline 系已在 016 搬完，不重复。
+   g. mc.screen instanceof PlacementScreen / EngineeringBlueprintScreen（关界面的分支）→ SB-TODO(P6) 桩（说明原语义：距离自动取消 / 工程预览停用时关掉界面）。
+   h. ForceBlueprintGuard 里 ErrorToastScreen.showExclusive → SB-TODO(P6)；NotifySound.clientError() 走 SBN-015 的 ClientNotifySound；BlueprintNetwork.CHANNEL → sendToServer。
+   i. SBClientCommands 的 /sbp download：OtherPlayerDownloadScreen 两个分支（单人直接下载 / 多人开选择界面）→ 各打 SB-TODO(P6)，命令本身照常注册，无预览时的提示文本原样。
+4. 放置进度与预览缓存接线
+   a. S2C_PlacementProgressMessage 客户端体：progress < 0 → BlueprintSelectionRenderer.stopPlacementAnimation()，否则 setPlacementServerProgress(progress)（1.20.1 handleClient 原样）。
+   b. ClientProjectStatusCache 两处：onStatus → ClientProjectPreview.onStatus / ClientSubProjectPreview.onStatus，clear → ClientSubProjectPreview.clear()（1.20.1 原样）。
+5. 开发用客户端命令 client/SBDevCommands（云端补：没有界面就拿不到蓝图，手测预览必需）
+   a. 仅当环境变量 SB_DEBUG_OUTLINER 非空时，由 SpatialBlueprintClient 通过 RegisterClientCommandsEvent 注册；未设置时命令不存在，对正常构建零影响（与 016 的 OutlinerDebug 同一开关，类头注释写明）。
+   b. /sbdev capture <名字> [safe|sanitize|force]：向服务端发一条 CaptureAreaMessage（与界面「创建」用的是同一条消息，构造参数 clearAfterCapture=false、durationSeconds=0、FluidCaptureFilter.ALL，
+      模式默认 safe；名字用 StringArgumentType.greedyString 或 word 均可）。服务端要求：手持已设好两个选点的空白蓝图（BlankBlueprintItem.getPoint1/2）。
+   c. /sbdev align <off|start|center|end>：把主手蓝图物品的 ALIGN_MODE 组件写成对应值（SpatialBlueprintItem.setAlignModeStr，只改客户端本地的物品副本，用于让预览渲染器生效；不发包）。
+      AlignMode 的枚举值以 1.20.1 BlueprintSelectionRenderer.AlignMode 为准，命令的四个词与枚举一一对应，写成可自动补全。
+   d. 你要在报告与测试清单里写清「从零到看见预览」的完整命令序列（含拿空白蓝图并设好选点的 /give 组件写法 —— 组件名与值格式照 SpatialBlueprintComponents 的实际注册 ID 与 Codec，自己实测能用再写）。
+6. OutlinerDebug 去重：本任务后 outliner 由 BlueprintSelectionRenderer 的 tick / 渲染驱动；OutlinerDebug 去掉 Outliner.tickOutlines() 与 onRenderLevel（避免每帧画两遍），
+   四个测试对象的每 tick 刷新保留（环境变量开启时仍可复现 H4）；SpatialBlueprintClient 里对应注册同步调整。
+
+========================================================
+四、取证（云端 2026-10-01 已 javap neoforge-21.1.252-merged）
+========================================================
+
+  J50 Minecraft#getTimer() → DeltaTracker（#getGameTimeDeltaPartialTick(boolean)）、#renderBuffers()、#getBlockRenderer()、字段 font；
+      Font#drawInBatch(Component, float, float, int, boolean, Matrix4f, MultiBufferSource, Font.DisplayMode, int, int)；
+      LevelRenderer#renderLineBox(PoseStack, VertexConsumer, double×6, float×4) 与 float×7 重载 / (PoseStack, VertexConsumer, AABB, float×4)；
+      net.neoforged.neoforge.client.event.RegisterClientCommandsEvent#getDispatcher()；net.neoforged.neoforge.event.level.LevelEvent$Unload；
+      net.neoforged.neoforge.client.event.ClientTickEvent$Post；RenderLevelStageEvent#getStage / #getPoseStack / #getCamera / #getPartialTick（DeltaTracker）/ #getModelViewMatrix / #getProjectionMatrix；
+      BlockPos 等原版类型不变。
+  云端没有 javap 的（照实测）：SpatialBlueprintComponents 里 point1 / point2 / align_mode 的注册 ID 与 Codec、翻译键在 lang 文件是否齐全（缺则打日志说明、不新增文案）。
+  其余沿用 J31～J49。
+
+========================================================
+五、测试
+========================================================
+
+GameTest 服是专用服务端（K29 / K30 / K33）：只测纯逻辑、不触发客户端类加载（不要 Class.forName 客户端类）。
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1、K20）。
+A2  runGameTestServer：全部通过（C2）。既有 129 条照旧全过。
+    t01_preValidator      PlacementPreValidator（1.20.1 是纯逻辑）：按源码里的 EXTRA_BLOCKS 等判定各造正反例（真实 BlueprintData 与 ServerLevel），断言与 1.20.1 语义一致。
+    t02_engSubPreview     ClientEngineeringPreview / ClientSubProjectPreview 的纯逻辑（设置 / 读回 / clear / 按状态包更新）；引用客户端类的 ClientProjectPreview 不进 GameTest（报告注明）。
+    t03_clearAll          clearAllCaches 覆盖新增缓存：先填数据 → 调用 → 全空；清单与 1.20.1 带 LoggingOut 监听的类逐个对上。
+    （渲染 / 命令 / 事件类含客户端引用，专服不可测，如实记录，靠 A3 分边门禁与手测。）
+    测试 finally 清所有客户端缓存。
+A3  专服冒烟（必做，分边门禁）：runServer 到 Done、stop 正常、0 条本 mod ERROR；runServer 与 runGameTestServer 两份日志 invalid dist / Attempted to load class / NoClassDefFoundError 0 条（K29 / K33）。
+A4  grep 门禁（必做）：公共包（主类、block\、command\ 中除 SBClientCommands、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+    对 client 包的新增引用逐处列出并说明「只在客户端执行」；注释里无 SB-TODO( 示例字样（K10）。
+    注意：command\SBClientCommands 与 client 包类一样含 net.minecraft.client 引用，只能由客户端入口链注册（K29），报告列出注册路径。
+
+【手测】（写进测试清单十七，前置 → 操作 → 预期；辅助 AI 有显示环境自己先做一遍写实际所见，没有写「未能目视」；用户复测写回）
+前置：PowerShell 设 $env:SB_DEBUG_OUTLINER = "1" 后 .\gradlew.bat runClient；进新建单人创造世界，找平地。
+H1. 开发命令与开关：设了环境变量时 /sbdev 存在且可补全；不设环境变量启动时 /sbdev 不存在（"未知命令"）。
+H2. 空白蓝图选区框：用你实测能用的 /give 组件写法拿一个设好两个选点的空白蓝图，手持 → 出现选区框（Create 风格线框 / 半透明面）；把一个默认禁捕方块（如刷怪笼）放进选区 → 该格被标为非法（红色）。
+H3. 捕获：手持 H2 的空白蓝图执行 /sbdev capture demo → 手里变成空间蓝图（悬停有名字 / 尺寸提示）；先在选区里搭一个带箱子、告示牌、盔甲架的小结构再捕获，之后进 H4 能看到它们的标签。
+H4. 预览外框与标签：/sbdev align start 后手持空间蓝图，准星指向地面 → 出现追随准星的整体包围框（chase 动画平滑）；走近 8 格内箱子 / 告示牌显示白色线框 + 文字标签，盔甲架显示黄色线框 + 实体名；
+    走远超过取消距离 → 预览自动取消（对齐模式回 OFF、框消失）。（此阶段没有幽灵方块本体 —— 那是 017b，本项不应看到任何半透明方块。）
+H5. 退出与重进：Esc 退到标题再进另一个存档，渲染器状态被清、无残留框、日志 0 条本 mod ERROR。
+（其他玩家预览、项目 / 子项目 / 工程预览、放置加载动画依赖界面或第二个客户端，本阶段只做编译 + 代码逐条对照，手测在 P6 之后补；报告写清哪些没测。）
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致；OutlinerDebug 只改驱动部分。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑两轮）；A3、A4 通过；云端自跑专服冒烟。
+V3  搬迁文件与 1.20.1 diff -w 残差只在口径内（API 改名、去 @OnlyIn / Forge 注解、注册方式、VBO 占位、界面桩）；判断顺序、阈值、几何零改动；VBO 之外的方法一个不缺（方法签名清单对照）。
+V4  SB-TODO( 实数逐条列出：P5 只剩 VBO 占位（明写 017b）；P6 新增只有界面调用点；无其它新桩。
+V5  断线清单与 1.20.1 带 LoggingOut 监听的类逐个对上。
+V6  变异复核（云端验收时做）：PlacementPreValidator 的一处判定、clearAllCaches 漏一个新缓存、S2C_PlacementProgressMessage 的 progress < 0 分支、ClientProjectStatusCache 的接线，
+    各改坏一次 → t01 / t03 / （t02 若覆盖）/ 无测试处如实记录。
+V7  手测：H1～H5 有辅助 AI 的目视记录或「未能目视」；用户复测后写回，不阻塞合并，但留在测试清单正文跟踪。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-017a 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.6 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按文件分组）
+三、分边实测：新增对 client 包 / SBClientCommands 的引用清单与注册路径；A3 两份日志分边门禁计数；BlueprintSelectionRenderer 方法签名对照表（原有 / 占位 / 界面桩）
+四、测试覆盖：A1～A4；t01～t03；@GameTest 实数；H1～H5 所见（或「未能目视」）；「从零到看见预览」完整命令序列
+五、迁移桩清单（清掉的 + 新增逐条 + P5 / P6 分项总数；给 017b 的占位清单）
+六、任务书出入
+七、双端同步自查（预览广播只发给服务端、别人视角的缓存；放置进度包；断线清理；单人 / 多人两种情形）
+八、教训同步
+九、建议记入
+十、需要用户做的事（H1～H5 复测）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-017a』；H1～H5 需要你 runClient 复测」。
