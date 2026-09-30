@@ -1,0 +1,29 @@
+SBN-014 改动清单（V1，两向比对）
+时间：2026-09-30 20:03:05 · 基准 task/SBN-014 @ 338e646（分支未提交改动；origin/neoforge-1.21.1 @ 430ec4a）
+
+工作区改动（git status --short，按字节直出）：
+   M src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java
+   M src/main/java/com/xioyim/spatialblueprint/item/AbstractBlueprintItem.java
+  ?? "#Spatial_Blueprint_NeoForge_1.21.1/\344\273\273\345\212\241\346\264\276\345\217\221\344\270\216\346\240\270\351\252\214/SBN-014_\350\257\201\346\215\256/"
+  ?? src/main/java/com/xioyim/spatialblueprint/gametest/SBN014Tests.java
+  ?? src/main/java/com/xioyim/spatialblueprint/util/ForagersInsightCompat.java
+
+已跟踪文件相对基线的 name-status：
+  M	src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java
+  M	src/main/java/com/xioyim/spatialblueprint/item/AbstractBlueprintItem.java
+
+允许清单（任务书第二节）→ 实际：
+  改 SpatialBlueprintMod.java              → 有（两条 SB-TODO(P4) 去掉；三条事件注册 + 七条方法；构造里调 ForagersInsightCompat）
+  新 util/ForagersInsightCompat.java       → 有（1.20.1 同路径；仅 FMLPaths 包名 net.minecraftforge → net.neoforged，
+                                              其余逐字，diff -w 残差 1 行）
+  改 item/AbstractBlueprintItem.java       → 有（getBlueprintDataServer 判断顺序照 1.20.1；新 readInlineData；
+                                              该处 SB-TODO(P4) 去掉；Javadoc/节标题更新；+CompoundTag import）
+  新 gametest/SBN014Tests.java             → 有（t01～t08 共 8 条）
+  交接件：SBN-014_报告.txt / SBN-014_证据\ / 开发日志.md 文末追节 / 测试清单.txt「十四」节 /
+    云端协作规程.md 第五节表追加一行 / 通用经验副本（第五节三方同步） → 全部属于规程允许范围
+
+反向（实际 → 允许）：无允许清单外文件。
+  diff -w 残差说明：主类与 1.20.1 的差异集中在「既有移植口径」（import/modern 构造/registerConfig 位置/注册总线）
+  与本任务口径（三处 sendToPlayer 封装、K21 逐步兜底、登出客户端分支换 P5 桩注释）；
+  四步顺序、判断条件、日志文本、翻译键逐字未改（详见报告三）。
+  run\ 取证后整目录删除；无其它工具类 / 物品类 / 客户端改动。

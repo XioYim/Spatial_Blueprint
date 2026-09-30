@@ -1,0 +1,115 @@
+SBN-014 报告
+执行：本地辅助 AI · 2026-09-30 20:10:00 · 分支 task/SBN-014（origin 同名，切自 origin/task/SBN-014 @ 338e646；工作区开工时干净）
+提交：待推送（本报告 + 证据 + 交接件随本次提交）
+备份：D:\Mods\项目备份\Spatial_Blueprint_NeoForge_1.21.1_20260930_193943（SHA-256 前 8 位 8DDCFCC3，SBN-014 执行前）
+
+一、完成情况：三.1～三.3 逐条
+三.1 主类事件（SpatialBlueprintMod.java）：
+  a. 注册：SBCommands 之后三条 addListener（:53 onPlayerLogout / :54 onPlayerLogin / :55 onChangeGameMode，1.20.1 同顺序）；
+     两条 SB-TODO(P4)（登录、Foragers）去掉；ServerStopping 既有 lambda 不动（:58-60）。
+     ForagersInsightCompat 调用在 BlueprintConfig 之后、GeneratedSubstitutionsConfig 之前（:42，1.20.1 同位置）。
+  b. onPlayerLogin 四步顺序原样（:75）：sendLoginStep(teleport permission) :77 → sendLoginStep(world identity) :79 →
+     notifyLostDimensionalBlueprints :80 → sendLoginStep(config permission) :81。每个发包点各自兜 UnsupportedOperationException
+     （只接这一种、记 debug 后继续下一步）的私有助手 sendLoginStep :90-97；禁止 catch (Exception)、禁止整段一个 try。
+     拆点：SBCommands.syncTeleportPerm 整个调用兜（:77-78）；syncWorldIdentity 内部发包 :113-118；notifyLost 内部发包单独兜
+     :142-145，其后 orphanBagsDetected :146 必执行；syncConfigPerm 内部发包 :103-106。
+  c. CHANNEL.send → BlueprintNetwork.sendToPlayer（:104 / :115 / :143 / :155 + SBCommands 调用点）；世界名
+     sp.server.getWorldData().getLevelName() 原样（:117，J47）。
+  d. onChangeGameMode（:153）：判定原样（hasPermissions(2) || getNewGameMode()==GameType.CREATIVE ||
+     TeleportPermissions.get(...).has(uuid)），1.20.1 注释原样保留（:155-156）。
+  e. onPlayerLogout（:165）：服务端三步原样（:166 clearPlayer / :167 forget / :169 ServerPreviewTracker.clear）；
+     else 分支整段换成一条 SB-TODO(P5) 桩注释（:172-176：三个缓存名 + 不许用运行时 dist 判断代替类加载隔离的要点），不引用任何客户端类。
+三.2 ForagersInsightCompat（新 util/ForagersInsightCompat.java，与 1.20.1 同路径）：正则 :29-30、patchCropHarvestXpOff :32、
+  幂等分支 :43 / :49-50、日志文本 :54-55 全部原样；唯一改写 = FMLPaths 包名（:35）。diff -w 残差 1 行（见二）。
+三.3 AbstractBlueprintItem.getBlueprintDataServer（item/AbstractBlueprintItem.java:66-73）：id 非空 → BlueprintStorage.load(id)，
+  非 null 直接返回（:67-70）；否则 readInlineData(stack)（:80-93）：CUSTOM_DATA → copyTag → 有 blueprintData 才
+  deserialize（:81-87），异常按 1.20.1 原文 WARN 后返回 null（:89-92）。只读：不改 stack、不写文件、不发包（t07 组件前后逐字相等断言）。
+  该处 SB-TODO(P4) 去掉；Javadoc 与节标题更新为新语义（:51-65，写明 1.20.1 同语义与 D1 的关系）；新增 CompoundTag import（:7）。
+  客户端读法（getBlueprintDataClient :99-103）保持 P5 桩；SpatialBlueprintItem.getBlueprintDataServer 仍只认文件（未动）。
+
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按文件分组；下列为全部 diff -w 残差，之外零改动）
+SpatialBlueprintMod.java：
+  net.minecraftforge.event.entity.player.PlayerEvent → net.neoforged.neoforge.event.entity.player.PlayerEvent · :19 导入、
+    :75 / :153 / :165 · J47
+  CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), …) → BlueprintNetwork.sendToPlayer(sp, …) · :104 / :115 / :143 / :155 · C14
+  四步各自包 sendLoginStep 逐步兜底（1.20.1 无此层）· :77-81 / :90-97 / :142-145 · 任务书三.1.b + K21
+  登录 Javadoc 从「推传送结论」改为「四步推送 + K21 说明」· :68-74 · 任务书三.1.b
+  登出 else 分支（1.20.1 DistExecutor 清三缓存）→ SB-TODO(P5) 桩注释 · :172-176 · 任务书三.1.e（客户端类加载隔离要点保留）
+  其余 diff 残差为既有移植口径（import / ModContainer 构造 / registerConfig 位置 / NeoForge 总线注册），非本任务改动。
+util/ForagersInsightCompat.java：
+  net.minecraftforge.fml.loading.FMLPaths → net.neoforged.fml.loading.FMLPaths · :35 · J47（V3：唯一残差）
+item/AbstractBlueprintItem.java：
+  getTag 直读 → 组件访问器（既有组件化口径）· :32 / :36 / :43 / :48 · C12
+  getBlueprintDataServer「无 id 直接 null（P4 桩）」→ 1.20.1 语义：id 判空 → 文件 → 内联回退 · :66-73 · 任务书三.3
+  readInlineData(CompoundTag 根 tag) → readInlineData(ItemStack)：CUSTOM_DATA.copyTag() 取内联子标签 · :80-93 · 任务书三.3 / C12
+  WARN 文本「Failed to deserialize inline blueprintData: {}」原样 · :89-91 · V3
+
+三、事件实测（t01～t05）
+监听注册位置：构造器 SBCommands::register（:51-52）之后 :53 onPlayerLogout、:54 onPlayerLogin、:55 onChangeGameMode。
+登录四步与每个 K21 兜底点（配置相位 mock 玩家 SB14Mock 上四步全部实名命中，debug 逐行见证据 GameTest.txt）：
+  1 teleport permission —— 兜 :77-78（SBCommands.syncTeleportPerm）
+  2 world identity —— 兜 :79（syncWorldIdentity :113）
+  3 orphan 提示发包 —— 兜 :142-145；其后 orphanBagsDetected 文件日志照写（:146）
+  4 config permission —— 兜 :81（syncConfigPerm :103）
+登录时全部 S2C 包清单（FakePlayer sink 实测）：主类 3 条 —— S2C_TeleportPermMessage（:104）、S2C_WorldIdentityMessage（:115）、
+  S2C_ConfigPermMessage（:106）；放置引擎 BlueprintPlacementHandler.onPlayerLogin 1 条 S2C_ConfigSyncMessage
+  （BlueprintPlacementHandler.java:626-636）；有孤儿袋时另加 S2C_OperationResult（:142-145）。主类不发 ConfigSync，t01 两轮均断言恰好一次。
+  实测顺序：主类三包相邻、ConfigSync 紧随（t01 只断言三包的相对顺序，不押跨监听器顺序，实际顺序见 GameTest.txt）。
+世界身份断言：uuid = WorldIdentity.get(level).uuid()、名字 = server.getWorldData().getLevelName()（t01）。
+切模式：SURVIVAL→CREATIVE（投递时实际模式仍是生存）→ 放行，证明判定用的是 event.getNewGameMode()（t04）。
+登出三清：冷却（isOnCooldown 转 false）、项目列表缓存（立即再请求不再被丢）、预览条目（watcher 收到 origin=null 的清除广播）（t05）。
+
+四、测试覆盖
+A1 compileJava --rerun：BUILD SUCCESSFUL、0 警告（证据 编译.txt）。
+A2 runGameTestServer：117/117（@GameTest 注解实数 117 = SBN001～013 既有 109 + SBN014Tests 新增 8：
+  t01_login / t02_orphanNotice / t03_mockLogin / t04_gameModeChange / t05_logout / t06_foragersCompat /
+  t07_inlineFallback / t08_inlinePlace）；连跑两轮一致（19:56:52 / 19:58:04）。各用例要点见测试清单组十四与证据 GameTest.txt。
+A3 专服冒烟（必做）：Done (0.394s)、RCON stop 后 java 全部退出 + gradle BUILD SUCCESSFUL、全文 0 ERROR、0 本 mod WARN、
+  stdout 无任何 ForagersInsight 相关行（FI 未装 → 静默跳过）（证据 服务端.txt，K16 三条齐）。
+A4 grep 门禁（必做）：主类 + command/ network/ server/ log/ util/ item/ 对 net.minecraft.client / 本 mod client /
+  net.minecraftforge 类引用 0 命中；.gui. 12 条命中均为既有翻译键字符串 spatial_blueprint.gui.*（证据 门禁.txt）；
+  注释里的 SB-TODO 示例只有 1 处且用全角括号（BlueprintNetwork.java:35，K10），全仓 SB-TODO( 实数 41。
+t07 坏内联数据实测走 catch：WARN「Failed to deserialize inline blueprintData: Index 99 out of bounds for length 3」（见 GameTest.txt）。
+
+五、迁移桩清单
+去掉 3 条：主类「SB-TODO(P4) 登录登出事件」（原 :49）、主类「SB-TODO(P4) ForagersInsightCompat（作物收获经验补丁）」（原 :51）、
+  AbstractBlueprintItem「SB-TODO(P4) 旧物品内联 blueprintData 转存为蓝图文件」（原 item/AbstractBlueprintItem.java:63）。
+新增 1 条：主类登出客户端分支「SB-TODO(P5) 客户端缓存清理」· SpatialBlueprintMod.java:172。
+总数：41 = 43 − 3 + 1（与任务书 V4 预期 41 吻合）。
+剩余 P4 桩：0 条（全仓 SB-TODO 分类：P5 31 条 + P6 10 条；逐条口径见 门禁.txt；P4 阶段清零）。
+
+六、任务书出入（照实测做 / 如实报告，共 4 处）
+1. t02 的「袋 total = 0 → 不收到」：MaterialSpace 无公开 API 能造出「存在但 total=0」的袋（bagDeposit 对 amount<=0 直接 return，
+   bagDepositAll 空清单直接 return）。实测改从私有 bags 字段反射注入空内层表（finally 移除），读法语义与生产一致（bagIds 含该 id、bagTotal=0）。
+2. t03 的可观测证据：任务书说「以 orphanBagsDetected 的文件日志或 debug 计数为证」——本机 GameTest 服按 DEBUG 级别输出，
+   两个证据都拿到了（四步各 1 行 "sync skipped ..." + ORPHAN_BAGS_DETECTED 行政日志 1 条），照实测全部写进证据。
+3. V4 的桩数基数：任务书写 43，项目记忆环境现状写的 46 是旧值；以源码实数 43 为准，结果 41 与预期吻合（无实质出入）。
+4. 任务书五的「伪造包 / 手写旧配置文件是唯一允许手写处」：t02 的反射注入与 t07 的坏数据 NBT 属测试构造（前者无 API 可用、
+   后者即「旧数据」范畴），照实报告；不涉及伪造网络包、未手写其它配置。
+
+七、双端同步自查
+- 登录四包各自同步什么：TeleportPerm = 能否用蓝图传送的结论（服务端算，客户端按钮）；WorldIdentity = 本档 uuid + 存档名
+  （客户端右键就地判断工程 / 次元蓝图归属）；ConfigPerm = 配置页 OP 结论；ConfigSync = 放置引擎体积配置（SBN-012 已有，主类不重复下发）。
+  四包均为服务端权威结论、客户端只作显示缓存；逻辑端判定（非物理 dist），单机集成服务器与专服同一条路径。
+- 登出清理：服务端三清（撤回冷却 / 项目列表缓存 / 预览条目）保证重登与换档不残留；客户端三个缓存（ClientMaterialSpaceCache /
+  ClientTeleportPermCache / ClientConfigPermCache）的清理按 1.20.1 设计仍属 P5，本任务以桩注释保留「类加载隔离」要求（:172-176），
+  未引入任何客户端类引用（A4 0 命中佐证）。
+- 内联回退只在服务端读法（getBlueprintDataServer）；客户端读法（getBlueprintDataClient，P5 桩）不受影响，界面 / 放置预览仍等 P5 的 S2C 缓存。
+- ForagersInsightCompat 只改 CONFIGDIR 下的 toml 文本，无网络同步内容；未装 FI 静默跳过（A3 实证）。
+- 协议版本未动：无 wire format 改动、无增删 payload，按 D4 不需要 bump；本任务未部署。
+
+八、教训同步（规程第五节三方）
+A（本机原件）sha256 = CCF5F8D8004334685620584DD92200A503DD95066205CE610BBAAE7E3340E544；
+C（仓库副本）同哈希，逐字一致；B（上次同步提交 b00f20b 的副本）此前已与 A/C 一致 —— 本轮 A→C 0 条、C→A 0 条、无冲突，无需合并。
+规程第五节表已追加 SBN-014 一行（同步提交待回填）。
+
+九、建议记入（供云端验收时问用户；均一句话要点 + 指向开发日志「SBN-014 执行记录」）
+- K：内联蓝图数据的「坏数据」实测入口是 saveMode=99（CaptureMode.fromOrdinal 裸 values() 抛越界），落进 readInlineData 的 catch
+  （WARN 原文）返回 null —— 该 catch 不是死代码。
+- K：GameTest 的 fakePlayerSink 只接 FakePlayer；真 mock 玩家（配置相位）发包必抛 UnsupportedOperationException，验 K21 逐步兜底
+  要用「四步 debug + orphanBagsDetected 文件日志」双证据（一个大 try 会把文件日志也吞掉）。
+- K：MaterialSpace 没有公开 API 造「total=0 的空袋」，测试只能反射注入 bags。
+- C：登录管线的完整 S2C 包清单与兜底点（主类 3 包 + 放置引擎 ConfigSync 1 包，各点 file:line 见本报告三）。
+
+十、需要用户做的事
+本任务无（未部署；登录后界面表现随 P5 / P6）。推送后去云端说「验收 SBN-014」。

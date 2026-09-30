@@ -1,0 +1,22 @@
+SBN-014 A4 grep 门禁证据
+时间：2026-09-30 20:02:30
+范围：主类 SpatialBlueprintMod.java + command\ network\ server\ log\ util\ item\ 全部 .java
+
+1) 客户端 / 旧 Forge 引用检查（模式 net\.minecraft\.client | net\.minecraftforge | com\.xioyim\.spatialblueprint\.client）：
+   命中数：0。
+
+2) 本 mod .gui. 出现处（12 行，全部是翻译键字符串 "spatial_blueprint.gui...."，不是类 / 包引用）：
+   network\C2S_ClaimSubProjectMessage.java:70
+   network\C2S_CreateEngineeringBlueprintMessage.java:374
+   network\C2S_DeleteSubProjectMessage.java:110
+   network\C2S_EngineeringTeleportMessage.java:65 / 82 / 90
+   network\C2S_SafeCoordMessage.java:81 / 82
+   network\C2S_UploadProjectionTemplateMessage.java:273
+   network\C2S_VoidResetMessage.java:75
+   network\C2S_VoidTeleportMessage.java:77 / 85
+   （无 net.minecraft.client.gui 类引用；无客户端类加载风险）
+
+3) SB-TODO 桩数（grep -rn "SB-TODO(" src 的实数）：41
+   与 V4 预期一致：43（任务书起点实数）− 3（主类两条 P4 + AbstractBlueprintItem 一条 P4）+ 1（登出客户端分支 P5）= 41。
+   逐条清单见报告第五节。注释中的「示例」字样只有 1 处，且用的是全角括号 SB-TODO（P5）
+   （network\BlueprintNetwork.java:35 类注释），不污染桩数（K10）。
