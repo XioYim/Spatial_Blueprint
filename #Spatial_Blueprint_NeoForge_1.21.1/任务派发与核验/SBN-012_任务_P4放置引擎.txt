@@ -45,7 +45,8 @@ network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-010_任
   新  network/PlaceBlueprintMessage.java                                         ← 1.20.1 同路径（network\ 根下）
   改  network/BlueprintNetwork.java                                              ← 只加 1 条注册
   新  gametest/SBN012Tests.java
-  改  gametest/SBN010Tests.java、gametest/SBN011Tests.java                       ← 只改 assertValueEqual 参数顺序（见三.5），断言内容不动
+  改  gametest/SBN010Tests.java、gametest/SBN011Tests.java                       ← 只改 assertValueEqual 参数顺序（见三.5），断言内容不动；
+      另允许把 SBN011Tests 的样本构造方法（legacyBlueprintRoot 等）由 private 改为包内可见，供 t04 复用
 
 交接件（规程允许范围）：SBN-012_报告.txt、SBN-012_证据\、开发日志.md 文末「## SBN-012 执行记录」、
 测试清单.txt 追加「十二、SBN-012 放置引擎」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
