@@ -1,0 +1,314 @@
+﻿SBN-002 真实 NBT 样本（证据）
+采集：2026-09-29 16:42～16:44（GameTest 服务器内，临时 s99 用例；采集后已从 SBN002Tests.java 删除）
+来源：全部由真实对象序列化得到
+  - 方块实体：BlockEntity.saveWithFullMetadata(helper.getLevel().registryAccess())
+  - 物品：ItemStack.save(provider)
+  - 实体：Entity.save(new CompoundTag())
+格式：NbtUtils.structureToSnbt 输出的 SNBT 文本。
+说明：方块实体条目里的 data / palette 是 1.21 方块的存盘字段，与本任务无关，原样保留。
+样本与测试对应：
+  shulker-before / shulker-after         s02 潜影盒方块实体（装着石头），经 stripDangerousBlockNbt 前后
+  lectern-before / lectern-after         s04 讲台 + 真实成书（含 run_command 点击事件），经 stripDangerousBlockNbt 前后
+  frame-item-before / frame-item-after   s06 展示框内附魔钻石剑（Item 子标签），经 sanitizeItemFrameContentInPlace 前后
+  spawner-before / spawner-after         s07 真实 SpawnerBlockEntity（僵尸），经 stripDangerousBlockNbt 前后
+  trial-before / trial-after             s07 真实 TrialSpawnerBlockEntity（僵尸），经 stripDangerousBlockNbt 前后
+  beehive                                 s08 真实蜂箱（一只蜜蜂）；stripItemContents 后 bees 不变（测试断言）
+  loot-before / loot-after-items / loot-after-danger   s10 真实箱子 setLootTable 后，经 stripItemContents / stripDangerousBlockNbt 后（均保留）
+  stand-empty / stand-armed              s09 真实空盔甲架 / 手持剑的盔甲架（ArmorItems/HandItems 原形）
+
+### shulker-before
+ {
+    data: [],
+    palette: [],
+    Items: [
+        {
+            Slot: 0b,
+            count: 5,
+            id: "minecraft:stone"
+        }
+    ],
+    id: "minecraft:shulker_box",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### shulker-after
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:shulker_box",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### lectern-before
+ {
+    data: [],
+    palette: [],
+    Book: {
+        components: {
+            "minecraft:written_book_content": {
+                author: "A",
+                pages: [
+                    {
+                        raw: '{"clickEvent":{"action":"run_command","value":"/say hi"},"text":"boom"}'
+                    }
+                ],
+                title: {
+                    raw: "T"
+                }
+            }
+        },
+        count: 1,
+        id: "minecraft:written_book"
+    },
+    id: "minecraft:lectern",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### lectern-after
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:lectern",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### frame-item-before
+ {components:{"minecraft:enchantments":{levels:{"minecraft:sharpness":3}}},count:1,id:"minecraft:diamond_sword"}
+### frame-item-after
+ {count:1,id:"minecraft:diamond_sword"}
+### spawner-before
+ {
+    data: [],
+    palette: [],
+    Delay: 20s,
+    MaxNearbyEntities: 6s,
+    MaxSpawnDelay: 800s,
+    MinSpawnDelay: 200s,
+    RequiredPlayerRange: 16s,
+    SpawnCount: 4s,
+    SpawnData: {
+        entity: {
+            id: "minecraft:zombie"
+        }
+    },
+    SpawnPotentials: [],
+    SpawnRange: 4s,
+    id: "minecraft:mob_spawner",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### spawner-after
+ {
+    data: [],
+    palette: [],
+    Delay: 20s,
+    MaxNearbyEntities: 6s,
+    MaxSpawnDelay: 800s,
+    MinSpawnDelay: 200s,
+    RequiredPlayerRange: 16s,
+    SpawnCount: 4s,
+    SpawnRange: 4s,
+    id: "minecraft:mob_spawner",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### trial-before
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:trial_spawner",
+    spawn_data: {
+        entity: {
+            id: "minecraft:zombie"
+        }
+    },
+    x: 0,
+    y: 0,
+    z: 0
+}
+### trial-after
+ {
+    data: [],
+    palette: [],
+    id: "minecraft:trial_spawner",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### beehive
+ {
+    data: [],
+    palette: [],
+    bees: [
+        {
+            entity_data: {
+                AbsorptionAmount: 0.0f,
+                Age: 0,
+                AngerTime: 0,
+                ForcedAge: 0,
+                HasNectar: 0b,
+                HasStung: 0b,
+                Health: 10.0f,
+                InLove: 0,
+                Invulnerable: 0b,
+                PersistenceRequired: 0b,
+                attributes: [],
+                id: "minecraft:bee"
+            },
+            min_ticks_in_hive: 600,
+            ticks_in_hive: 0
+        }
+    ],
+    id: "minecraft:beehive",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### loot-before
+ {
+    data: [],
+    palette: [],
+    LootTable: "minecraft:chests/simple_dungeon",
+    LootTableSeed: 123L,
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### loot-after-items
+ {
+    data: [],
+    palette: [],
+    LootTable: "minecraft:chests/simple_dungeon",
+    LootTableSeed: 123L,
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### loot-after-danger
+ {
+    data: [],
+    palette: [],
+    LootTable: "minecraft:chests/simple_dungeon",
+    LootTableSeed: 123L,
+    id: "minecraft:chest",
+    x: 0,
+    y: 0,
+    z: 0
+}
+### stand-empty
+ {
+    data: [],
+    palette: [],
+    AbsorptionAmount: 0.0f,
+    Air: 300s,
+    ArmorItems: [
+        {},
+        {},
+        {},
+        {}
+    ],
+    Brain: {
+        memories: {}
+    },
+    DeathTime: 0s,
+    DisabledSlots: 0,
+    FallDistance: 0.0f,
+    FallFlying: 0b,
+    Fire: -1s,
+    HandItems: [
+        {},
+        {}
+    ],
+    Health: 20.0f,
+    HurtByTimestamp: 0,
+    HurtTime: 0s,
+    Invisible: 0b,
+    Invulnerable: 0b,
+    Motion: [
+        0.0d,
+        0.0d,
+        0.0d
+    ],
+    NoBasePlate: 0b,
+    OnGround: 0b,
+    PortalCooldown: 0,
+    Pos: [
+        0.0d,
+        0.0d,
+        0.0d
+    ],
+    Pose: {},
+    Rotation: [
+        3.0492706f,
+        0.0f
+    ],
+    ShowArms: 0b,
+    Small: 0b,
+    UUID: [I; 1983965397, -1323351892, -1732716169, 906203623],
+    attributes: [],
+    id: "minecraft:armor_stand"
+}
+### stand-armed
+ {
+    data: [],
+    palette: [],
+    AbsorptionAmount: 0.0f,
+    Air: 300s,
+    ArmorItems: [
+        {},
+        {},
+        {},
+        {}
+    ],
+    Brain: {
+        memories: {}
+    },
+    DeathTime: 0s,
+    DisabledSlots: 0,
+    FallDistance: 0.0f,
+    FallFlying: 0b,
+    Fire: -1s,
+    HandItems: [
+        {
+            count: 1,
+            id: "minecraft:diamond_sword"
+        },
+        {}
+    ],
+    Health: 20.0f,
+    HurtByTimestamp: 0,
+    HurtTime: 0s,
+    Invisible: 0b,
+    Invulnerable: 0b,
+    Motion: [
+        0.0d,
+        0.0d,
+        0.0d
+    ],
+    NoBasePlate: 0b,
+    OnGround: 0b,
+    PortalCooldown: 0,
+    Pos: [
+        0.0d,
+        0.0d,
+        0.0d
+    ],
+    Pose: {},
+    Rotation: [
+        4.93695f,
+        0.0f
+    ],
+    ShowArms: 0b,
+    Small: 0b,
+    UUID: [I; -1549273248, 437798631, -1819312321, -1563482000],
+    attributes: [],
+    id: "minecraft:armor_stand"
+}

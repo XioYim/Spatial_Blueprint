@@ -1,0 +1,40 @@
+SBN-011 样本（手写 1.20.1 格式原文 + 升级后结果，K5 prettyPrint 形）
+样本写法照 SBN-004 t04 与 K8；升级结果为本任务实测断言的值（t01～t07 全过）。
+
+── 样本一：方块状态 ──
+原文：
+{ "Name": "minecraft:grass" }
+升级后（fixBlockState，3465 → 当前）：
+{ "Name": "minecraft:short_grass" }
+
+── 样本二：旧附魔剑物品（legacyA）──
+原文：
+{ "id": "minecraft:diamond_sword", "Count": 1b, "tag": { "Enchantments": [{ "id": "minecraft:sharpness", "lvl": 3s }], "display": { "Name": '{"text":"Test Blade"}' } } }
+升级后（fixItemStack，实测 prettyPrint 原文）：
+{ "components": { "minecraft:custom_name" : '"Test Blade"', "minecraft:enchantments": { "levels": { "minecraft:sharpness": 3 } } }, "count" : 1, "id" : "minecraft:diamond_sword" }
+读取验证：ItemStack.parse 成功，与 1.21 真实 API 造的同款剑 isSameItemSameComponents 一致（t01）。
+
+── 样本三：同剑另一种旧 tag 写法（legacyB，D8 忽略项）──
+原文 = 样本二 + "RepairCost": 5
+升级后：与样本二同一新键（RepairCost / minecraft:repair_cost 在规范化时忽略）。
+
+── 样本四：旧箱子方块实体（含样本二的剑，Slot 0）──
+原文：
+{ "id": "minecraft:chest", "x": 1, "y": 0, "z": 0, "Items": [{ "Slot": 0b, "id": "minecraft:diamond_sword", "Count": 1b, "tag": { "Enchantments": [{ "id": "minecraft:sharpness", "lvl": 3s }], "display": { "Name": '{"text":"Test Blade"}' } } }] }
+升级后（fixBlockEntity）：容器内剑按样本二升级；读进真实箱子第 0 格为锋利 III 有名钻石剑（t02）。
+
+── 样本五：旧展示框实体（含样本二的剑）──
+原文：
+{ "id": "minecraft:item_frame", "TileX": 0, "TileY": 0, "TileZ": 0, "Facing": 1b, "Item": { "id": "minecraft:diamond_sword", "Count": 1b, "tag": { "Enchantments": [{ "id": "minecraft:sharpness", "lvl": 3s }], "display": { "Name": '{"text":"Test Blade"}' } } } }
+升级后（fixEntity）：EntityType.create 还原出展示框，框内物品与真实剑逐格一致（t02）。
+
+── 样本六：旧材料键迁移 ──
+原文 keyTags：minecraft:diamond_sword#legacyA → 样本二 tag（数量 2）、minecraft:diamond_sword#legacyB → 样本三 tag（数量 3）、minecraft:stone（数量 5）。
+升级后：同一新键（== MaterialKey.of(真实锋利 III 命名钻石剑, provider)，t04 断言逐字相等）数量 5；
+minecraft:stone 数量 5 原样；keyTags 换成新 components（可组展示栈，与真实剑一致）。
+
+── 形状取证（调试运行实测，非断言）──
+修复器输出的 components 里 custom_name 为展开形 '{"text":"Test Blade"}'，
+而 1.21 真实存盘为裸形 '"Test Blade"'（enchantments 两边逐字相同）。
+语义相同但摘要不同 → 迁移时把纯文本 JSON 压成裸形（LegacyDataFixer.collapsePlainText，
+custom_name / lore），否则新旧同物异键。见报告六.1。

@@ -1,19 +1,22 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
+import com.xioyim.spatialblueprint.item.SpatialBlueprintComponents;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItems;
 import com.xioyim.spatialblueprint.item.VoidDimensionalBlueprintItem;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialSpace;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * 空置次元蓝图 → [重置并删除] 确认。
@@ -25,7 +28,19 @@ import java.util.function.Supplier;
  * <p>删除后即使玩家还留着别的空置次元蓝图，也无法再回收那片结构 —— 这是不可逆操作，
  * 客户端有二次确认。</p>
  */
-public class C2S_VoidResetMessage {
+public class C2S_VoidResetMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_VoidResetMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_void_reset_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_VoidResetMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_VoidResetMessage::encode, C2S_VoidResetMessage::decode);
+
+    @Override
+    public CustomPacketPayload.Type<C2S_VoidResetMessage> type() {
+        return TYPE;
+    }
 
     public static void encode(C2S_VoidResetMessage msg, FriendlyByteBuf buf) {}
 
@@ -33,63 +48,59 @@ public class C2S_VoidResetMessage {
         return new C2S_VoidResetMessage();
     }
 
-    public static void handle(C2S_VoidResetMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_VoidResetMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            InteractionHand hand = null;
-            if (player.getMainHandItem().getItem() instanceof VoidDimensionalBlueprintItem) {
-                hand = InteractionHand.MAIN_HAND;
-            } else if (player.getOffhandItem().getItem() instanceof VoidDimensionalBlueprintItem) {
-                hand = InteractionHand.OFF_HAND;
-            }
-            if (hand == null) return;
+    public static void handleServer(C2S_VoidResetMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-            ItemStack stack = player.getItemInHand(hand);
+        InteractionHand hand = null;
+        if (player.getMainHandItem().getItem() instanceof VoidDimensionalBlueprintItem) {
+            hand = InteractionHand.MAIN_HAND;
+        } else if (player.getOffhandItem().getItem() instanceof VoidDimensionalBlueprintItem) {
+            hand = InteractionHand.OFF_HAND;
+        }
+        if (hand == null) return;
 
-            // 存档归属：蓝图目录是所有单人存档共用的，别的存档的空置次元蓝图不得在本档删除它的文件。
-            // 与 C2S_VoidRecaptureMessage 同口径。这里只拒不销毁（销毁由 C2S_DiscardForeignBlueprintMessage 负责），
-            // 所以不能用带「已销毁」字样的 error.foreign_world.discarded。
-            if (!com.xioyim.spatialblueprint.util.WorldIdentity.belongsToCurrentWorld(
-                    VoidDimensionalBlueprintItem.getWorldUuid(stack))) {
-                sendFail(player, "spatial_blueprint.gui.library.foreign_world");
+        ItemStack stack = player.getItemInHand(hand);
+
+        // 存档归属：蓝图目录是所有单人存档共用的，别的存档的空置次元蓝图不得在本档删除它的文件。
+        // 与 C2S_VoidRecaptureMessage 同口径。这里只拒不销毁（销毁由 C2S_DiscardForeignBlueprintMessage 负责），
+        // 所以不能用带「已销毁」字样的 error.foreign_world.discarded。
+        if (!com.xioyim.spatialblueprint.util.WorldIdentity.belongsToCurrentWorld(
+                VoidDimensionalBlueprintItem.getWorldUuid(stack))) {
+            sendFail(player, "spatial_blueprint.gui.library.foreign_world");
+            return;
+        }
+
+        // 文件已不在：查不到主人，只把物品换成空白蓝图，不动任何次元袋
+        // （孤儿袋由 C2S_DiscardOrphanBagMessage 让主人自己丢弃）。
+        // 必须排在归属校验前面，理由同 C2S_VoidRecaptureMessage。
+        String bpId = stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_ID.get(), "");
+        if (!bpId.isEmpty() && BlueprintStorage.findFile(bpId) != null) {
+            // 归属校验（服务端兜底，右键入口已拦过一道）：只有主人能删自己的蓝图文件与次元袋。
+            // 这是不可逆操作，客户端二次确认挡不住改包。
+            if (!player.getUUID().toString().equals(BlueprintStorage.ownerUuidOf(bpId))) {
+                sendFail(player, "spatial_blueprint.message.void_blueprint.not_owner");
                 return;
             }
+            BlueprintStorage.delete(bpId);
+            MaterialSpace.get(player.serverLevel()).removeBagEverywhere(bpId);
+        }
 
-            // 文件已不在：查不到主人，只把物品换成空白蓝图，不动任何次元袋
-            // （孤儿袋由 C2S_DiscardOrphanBagMessage 让主人自己丢弃）。
-            // 必须排在归属校验前面，理由同 C2S_VoidRecaptureMessage。
-            String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
-            if (!bpId.isEmpty() && BlueprintStorage.findFile(bpId) != null) {
-                // 归属校验（服务端兜底，右键入口已拦过一道）：只有主人能删自己的蓝图文件与次元袋。
-                // 这是不可逆操作，客户端二次确认挡不住改包。
-                if (!player.getUUID().toString().equals(BlueprintStorage.ownerUuidOf(bpId))) {
-                    sendFail(player, "spatial_blueprint.message.void_blueprint.not_owner");
-                    return;
-                }
-                BlueprintStorage.delete(bpId);
-                MaterialSpace.get(player.serverLevel()).removeBagEverywhere(bpId);
-            }
+        player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
+        com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(player, hand);
 
-            player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
-            com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(player, hand);
-
-            // 列表里那条记录随之消失，推一次最新列表（H2：过滤后再推）
-            List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_LibrarySyncMessage(updated));
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_OperationResult(true, ""));
-        });
-        ctx.get().setPacketHandled(true);
+        // 列表里那条记录随之消失，推一次最新列表（H2：过滤后再推）
+        List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
+        BlueprintNetwork.sendToPlayer(player, new S2C_LibrarySyncMessage(updated));
+        BlueprintNetwork.sendToPlayer(player, new S2C_OperationResult(true, ""));
     }
 
     private static void sendFail(ServerPlayer player, String key) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
-                new S2C_OperationResult(false, key));
+        BlueprintNetwork.sendToPlayer(player, new S2C_OperationResult(false, key));
     }
 }

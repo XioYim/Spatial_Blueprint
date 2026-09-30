@@ -10,8 +10,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -21,7 +19,6 @@ import java.util.HashMap;
  * Stores blueprint blocks at relative coords; returns full-bright so the VBO
  * does not depend on the placement origin and never needs light-driven rebuilds.
  */
-@OnlyIn(Dist.CLIENT)
 public class BlueprintFakeWorld implements BlockAndTintGetter {
     private final HashMap<Long, BlockState> blocks;
     private final net.minecraft.world.level.Level realWorld;

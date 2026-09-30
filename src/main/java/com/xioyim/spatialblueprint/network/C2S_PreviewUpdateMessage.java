@@ -1,11 +1,13 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * C2S: client reports its current blueprint preview position to the server.
@@ -13,7 +15,14 @@ import java.util.function.Supplier;
  *
  * <p>origin == null means "clear my preview" (screen closed / cancel).</p>
  */
-public class C2S_PreviewUpdateMessage {
+public class C2S_PreviewUpdateMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_PreviewUpdateMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_preview_update_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_PreviewUpdateMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_PreviewUpdateMessage::encode, C2S_PreviewUpdateMessage::decode);
 
     /** null = clear */
     final BlockPos origin;
@@ -35,6 +44,11 @@ public class C2S_PreviewUpdateMessage {
         this.sizeZ       = sizeZ;
         this.blueprintId = blueprintId != null ? blueprintId : "";
         this.category    = category != null ? category : "";
+    }
+
+    @Override
+    public CustomPacketPayload.Type<C2S_PreviewUpdateMessage> type() {
+        return TYPE;
     }
 
     public static void encode(C2S_PreviewUpdateMessage msg, FriendlyByteBuf buf) {
@@ -61,13 +75,15 @@ public class C2S_PreviewUpdateMessage {
         return new C2S_PreviewUpdateMessage(origin, rotation, sizeX, sizeY, sizeZ, blueprintId, category);
     }
 
-    public static void handle(C2S_PreviewUpdateMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
-            com.xioyim.spatialblueprint.server.ServerPreviewTracker.update(
-                    player, msg.origin, msg.rotation, msg.sizeX, msg.sizeY, msg.sizeZ, msg.blueprintId, msg.category);
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(C2S_PreviewUpdateMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
+
+    public static void handleServer(C2S_PreviewUpdateMessage msg, ServerPlayer player) {
+        if (player == null) return;
+        com.xioyim.spatialblueprint.server.ServerPreviewTracker.update(
+                player, msg.origin, msg.rotation, msg.sizeX, msg.sizeY, msg.sizeZ, msg.blueprintId, msg.category);
     }
 }

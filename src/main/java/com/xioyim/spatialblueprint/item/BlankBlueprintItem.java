@@ -1,8 +1,6 @@
 package com.xioyim.spatialblueprint.item;
 
-import com.xioyim.spatialblueprint.gui.PointSelectionScreen;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -11,11 +9,15 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
+
 public class BlankBlueprintItem extends Item {
     public BlankBlueprintItem(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public void verifyComponentsAfterLoad(ItemStack stack) {
+        LegacyItemMigration.migrate(stack);
     }
 
     @Override
@@ -41,79 +43,47 @@ public class BlankBlueprintItem extends Item {
         return InteractionResult.SUCCESS;
     }
 
-    @OnlyIn(Dist.CLIENT)
     private static void openSelectionScreen(Player player, ItemStack stack) {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        // 右键即重查一次非法/危险方块（即使选区未变，世界可能已变）
-        com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer.invalidateIllegalScanCache();
-        com.xioyim.spatialblueprint.gui.PointSelectionScreen.invalidateDangerousScanCache();
-        com.xioyim.spatialblueprint.gui.PointSelectionScreen screen =
-                new com.xioyim.spatialblueprint.gui.PointSelectionScreen(player);
-        // 右键检查：选区已设且覆盖的区块存在未加载/已卸载 → 打开界面并立即弹出 ErrorToast 横幅
-        BlockPos p1 = getPoint1(stack);
-        BlockPos p2 = getPoint2(stack);
-        if (p1 != null && p2 != null
-                && com.xioyim.spatialblueprint.gui.PointSelectionScreen.hasUnloadedChunksIn(mc.level, p1, p2)) {
-            screen.setErrorToast(net.minecraft.network.chat.Component.translatable(
-                    "spatial_blueprint.gui.point_selection.error.unloaded_chunks"));
-            com.xioyim.spatialblueprint.util.NotifySound.clientError();
-        }
-        mc.setScreen(screen);
+        // SB-TODO(P6): 客户端打开点选界面（BlueprintSelectionRenderer 非法扫描缓存失效、未加载区块横幅、PointSelectionScreen）
     }
 
     // --- Point selection ---
 
     public static boolean hasPoint1(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("point1");
+        return stack.has(SpatialBlueprintComponents.POINT1.get());
     }
 
     public static boolean hasPoint2(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("point2");
+        return stack.has(SpatialBlueprintComponents.POINT2.get());
     }
 
     public static BlockPos getPoint1(ItemStack stack) {
-        if (!hasPoint1(stack)) return null;
-        CompoundTag tag = stack.getTag().getCompound("point1");
-        return new BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"));
+        return stack.get(SpatialBlueprintComponents.POINT1.get());
     }
 
     public static BlockPos getPoint2(ItemStack stack) {
-        if (!hasPoint2(stack)) return null;
-        CompoundTag tag = stack.getTag().getCompound("point2");
-        return new BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"));
+        return stack.get(SpatialBlueprintComponents.POINT2.get());
     }
 
     public static void setPoint1(ItemStack stack, BlockPos pos) {
-        CompoundTag pointTag = new CompoundTag();
-        pointTag.putInt("x", pos.getX());
-        pointTag.putInt("y", pos.getY());
-        pointTag.putInt("z", pos.getZ());
-        stack.getOrCreateTag().put("point1", pointTag);
+        // immutable()：调用方可能传 MutableBlockPos，存进组件后被改就是静默串值
+        stack.set(SpatialBlueprintComponents.POINT1.get(), pos.immutable());
     }
 
     public static void setPoint2(ItemStack stack, BlockPos pos) {
-        CompoundTag pointTag = new CompoundTag();
-        pointTag.putInt("x", pos.getX());
-        pointTag.putInt("y", pos.getY());
-        pointTag.putInt("z", pos.getZ());
-        stack.getOrCreateTag().put("point2", pointTag);
+        stack.set(SpatialBlueprintComponents.POINT2.get(), pos.immutable());
     }
 
     public static void clearPoints(ItemStack stack) {
-        if (stack.hasTag()) {
-            stack.getTag().remove("point1");
-            stack.getTag().remove("point2");
-        }
+        stack.remove(SpatialBlueprintComponents.POINT1.get());
+        stack.remove(SpatialBlueprintComponents.POINT2.get());
     }
 
     public static String getBlueprintName(ItemStack stack) {
-        if (stack.hasTag() && stack.getTag().contains("blueprintName")) {
-            return stack.getTag().getString("blueprintName");
-        }
-        return "";
+        return stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), "");
     }
 
     public static void setBlueprintName(ItemStack stack, String name) {
-        stack.getOrCreateTag().putString("blueprintName", name);
+        stack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), name);
     }
 }

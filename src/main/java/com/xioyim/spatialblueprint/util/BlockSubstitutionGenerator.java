@@ -8,7 +8,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.registries.GameData;
+import net.neoforged.neoforge.registries.GameData;
 
 import java.util.ArrayList;
 import java.util.HashMap;

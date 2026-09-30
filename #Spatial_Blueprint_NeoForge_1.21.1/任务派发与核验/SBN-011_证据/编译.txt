@@ -1,0 +1,6 @@
+SBN-011 编译证据（A1，必做）
+命令：$env:JAVA_HOME = "C:\Program Files\Zulu\zulu-21"; .\gradlew.bat compileJava --rerun
+时间：2026-09-30 12:53:00（最终复编；中间一次因 NbtIo.readCompressed(Path) 在 1.21 需 NbtAccounter 参数而失败，
+测试改走 SafeNbtIo.readCompressed(Path) 后通过）
+输出尾部：> Task :compileJava / BUILD SUCCESSFUL in 10s
+警告计数：0（全文无“警告 / 注 / warning”行，基线 K1 满足）

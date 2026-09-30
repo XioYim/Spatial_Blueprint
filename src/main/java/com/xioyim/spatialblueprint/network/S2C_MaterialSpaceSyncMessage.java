@@ -1,23 +1,22 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.util.MaterialKey;
 import com.xioyim.spatialblueprint.util.MaterialList;
 import com.xioyim.spatialblueprint.util.MaterialSpace;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * S2C：服务端推送玩家材料空间（普通池）的内容。
@@ -30,7 +29,14 @@ import java.util.function.Supplier;
  *       次元袋不在推送范围内。</li>
  * </ul>
  */
-public class S2C_MaterialSpaceSyncMessage {
+public class S2C_MaterialSpaceSyncMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_MaterialSpaceSyncMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_material_space_sync_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_MaterialSpaceSyncMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_MaterialSpaceSyncMessage::encode, S2C_MaterialSpaceSyncMessage::decode);
 
     private final Map<String, Integer>     counts;
     private final Map<String, CompoundTag> tags;
@@ -53,6 +59,11 @@ public class S2C_MaterialSpaceSyncMessage {
         this.targetUuid = targetUuid == null ? "" : targetUuid;
         this.total      = total;
         this.capacity   = capacity;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_MaterialSpaceSyncMessage> type() {
+        return TYPE;
     }
 
     public Map<String, Integer>     getCounts()     { return counts; }
@@ -94,7 +105,7 @@ public class S2C_MaterialSpaceSyncMessage {
                 if (t != null) tags.put(key, t);
             }
         }
-        BlueprintNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 new S2C_MaterialSpaceSyncMessage(counts, tags, false, "", id.toString(),
                         space.poolTotal(id), com.xioyim.spatialblueprint.BlueprintConfig.materialSpaceMaxCount()));
     }
@@ -108,7 +119,7 @@ public class S2C_MaterialSpaceSyncMessage {
             CompoundTag t = space.tagFor(key);
             if (t != null) tags.put(key, t);
         }
-        BlueprintNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> viewer),
+        BlueprintNetwork.sendToPlayer(viewer,
                 new S2C_MaterialSpaceSyncMessage(counts, tags, true, targetName, target.toString(),
                         space.poolTotal(target), com.xioyim.spatialblueprint.BlueprintConfig.materialSpaceMaxCount()));
     }
@@ -158,13 +169,8 @@ public class S2C_MaterialSpaceSyncMessage {
 
     // ── Handler ───────────────────────────────────────────────────────────
 
-    public static void handle(S2C_MaterialSpaceSyncMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientMaterialSpaceCache.onReceive(msg);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_MaterialSpaceSyncMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache.onReceive(msg);
     }
 
     /** 便于调试：键的可读形式（带 NBT 的键会保留摘要后缀）。 */

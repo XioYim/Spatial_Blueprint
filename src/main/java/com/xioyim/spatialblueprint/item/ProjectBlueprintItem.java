@@ -1,11 +1,8 @@
 package com.xioyim.spatialblueprint.item;
 
-import com.xioyim.spatialblueprint.gui.ProjectBlueprintScreen;
-import com.xioyim.spatialblueprint.gui.ProjectRangeScreen;
 import com.xioyim.spatialblueprint.util.ProjectData;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
-import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -22,13 +19,13 @@ import java.util.UUID;
 /**
  * 项目蓝图：纯显示 / 总览道具，不放置任何方块。
  *
- * <p>NBT：
+ * <p>组件：
  * <ul>
- *   <li>{@code projectId} — 项目 UUID 字符串，空表示未绑定（草稿空白状态）</li>
- *   <li>{@code taskSetId} — 激活后的任务集 UUID 字符串</li>
- *   <li>{@code projectStage} — 项目阶段名（服务端在取得 / 保存范围 / 推状态时同步；
+ *   <li>{@code project_id} — 项目 UUID 字符串，空表示未绑定（草稿空白状态）</li>
+ *   <li>{@code task_set_id} — 激活后的任务集 UUID 字符串</li>
+ *   <li>{@code project_stage} — 项目阶段名（服务端在取得 / 保存范围 / 推状态时同步；
  *       副手直开门槛用它判「布局中 / 规划中」）</li>
- *   <li>{@code projectDim} — 项目所在维度（创建时固定；同步时机与 stage 相同）。规划手柄只能在这个
+ *   <li>{@code project_dim} — 项目所在维度（创建时固定；同步时机与 stage 相同）。规划手柄只能在这个
  *       维度打开，编辑态白框也只在这个维度画；空 = 旧物品还没同步过，改看状态缓存（e37）</li>
  * </ul>
  * </p>
@@ -41,6 +38,11 @@ public class ProjectBlueprintItem extends Item {
 
     public ProjectBlueprintItem(Properties properties) {
         super(properties.stacksTo(1));
+    }
+
+    @Override
+    public void verifyComponentsAfterLoad(ItemStack stack) {
+        LegacyItemMigration.migrate(stack);
     }
 
     @Override
@@ -100,7 +102,6 @@ public class ProjectBlueprintItem extends Item {
      * 项目是否已被删除：这枚蓝图的 projectId 与状态缓存对得上、且服务端回 found=false。
      * 缓存里是别的项目 / 还没收到过状态时返回 false（无从判断，交给界面打开后补判）。
      */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static boolean isProjectMissing(ItemStack stack) {
         String pid = getProjectId(stack);
         if (pid == null) return false;
@@ -110,19 +111,15 @@ public class ProjectBlueprintItem extends Item {
     }
 
     /** 项目已被删除的拦截横幅（右键没有宿主界面，走独立横幅）。 */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void notifyProjectMissing() {
-        com.xioyim.spatialblueprint.util.NotifySound.clientError();
-        com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(Component.translatable(
-                "spatial_blueprint.message.project.missing_blocked"));
+        // SB-TODO(P6): 客户端横幅（NotifySound + ErrorToastScreen）
     }
 
     /**
-     * 这枚蓝图的项目维度（客户端视角）：物品 NBT 的 {@code projectDim} 优先；旧物品还没同步过时
+     * 这枚蓝图的项目维度（客户端视角）：物品组件的 {@code project_dim} 优先；旧物品还没同步过时
      * 拿状态缓存兜底（同一项目、found、带维度）；两处都没有返回 null（无从判断，交给界面的迟到守卫）。
      */
     @Nullable
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     public static String knownProjectDimension(ItemStack stack) {
         String dim = getDimension(stack);
         if (!dim.isEmpty()) return dim;
@@ -138,7 +135,6 @@ public class ProjectBlueprintItem extends Item {
      * 玩家不在这枚蓝图的项目维度：右键拦截与编辑态白框（{@code renderProjectBlueprint}）共用这一判定。
      * 维度未知（旧物品 + 没缓存）按「不拦」处理 —— 界面打开后状态一到，迟到守卫会补拦。
      */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     public static boolean isOutsideProjectDimension(ItemStack stack, Level level) {
         if (level == null) return false;
         String dim = knownProjectDimension(stack);
@@ -146,10 +142,8 @@ public class ProjectBlueprintItem extends Item {
     }
 
     /** 不在项目维度的拦截横幅（右键没有宿主界面，走独立横幅）；文案带项目所在维度的名字。 */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void notifyWrongDimension(ItemStack stack) {
-        com.xioyim.spatialblueprint.util.NotifySound.clientError();
-        com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(wrongDimensionMessage(knownProjectDimension(stack)));
+        // SB-TODO(P6): 客户端横幅（NotifySound + ErrorToastScreen + wrongDimensionMessage）
     }
 
     /**
@@ -162,7 +156,7 @@ public class ProjectBlueprintItem extends Item {
                 ProjectData.dimensionName(id));
     }
 
-    /** 副手直开门槛：项目处于布局中 / 规划中（stage 由服务端随状态写进 NBT；旧数据没有就不生效）。 */
+    /** 副手直开门槛：项目处于布局中 / 规划中（stage 由服务端随状态写进组件；旧数据没有就不生效）。 */
     private static boolean isRangeEditableStage(ItemStack stack) {
         String stage = getStage(stack);
         return ProjectData.Stage.LAYOUT.name().equals(stage)
@@ -174,7 +168,6 @@ public class ProjectBlueprintItem extends Item {
      * 「准备中」推进到「布局中」，所以「没划定主范围」= 准备中；
      * 旧物品没同步过 stage（空串）时拿状态包兜底：本项目有有效作者盒（已划定范围）才放行。
      */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static boolean canEnterQuickPlan(ItemStack stack) {
         if (isRangeEditableStage(stack)) return true;
         String pid = getProjectId(stack);
@@ -186,21 +179,16 @@ public class ProjectBlueprintItem extends Item {
     }
 
     /** 未划定项目范围的拦截横幅（世界中右键没有宿主界面，走独立横幅）。 */
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void notifyQuickPlanNoRange() {
-        com.xioyim.spatialblueprint.util.NotifySound.clientError();
-        com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(Component.translatable(
-                "spatial_blueprint.message.project.range.quick_no_range"));
+        // SB-TODO(P6): 客户端横幅（NotifySound + ErrorToastScreen）
     }
 
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void openProjectScreen(Player player, ItemStack stack) {
-        Minecraft.getInstance().setScreen(new ProjectBlueprintScreen(player, stack));
+        // SB-TODO(P6): 客户端打开项目界面（ProjectBlueprintScreen）
     }
 
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void openRangeScreenDirect(Player player, ItemStack stack) {
-        Minecraft.getInstance().setScreen(new ProjectRangeScreen(player, getProjectName(stack)));
+        // SB-TODO(P6): 客户端直开范围界面（ProjectRangeScreen）
     }
 
     // ── 主手 / 副手取物（副手直开流程：服务端各校验统一用它）──────────────────
@@ -229,7 +217,7 @@ public class ProjectBlueprintItem extends Item {
     // ── Tooltip ───────────────────────────────────────────────────────────────
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level,
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltip, TooltipFlag flag) {
         String id = getProjectId(stack);
         if (id == null) {
@@ -245,55 +233,48 @@ public class ProjectBlueprintItem extends Item {
                 .withStyle(isActivated(stack) ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
-    // ── NBT 访问器 ────────────────────────────────────────────────────────────
+    // ── 组件访问器 ────────────────────────────────────────────────────────────
 
     @Nullable
     public static String getProjectId(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        if (tag == null || !tag.contains("projectId")) return null;
-        String id = tag.getString("projectId");
+        String id = stack.getOrDefault(SpatialBlueprintComponents.PROJECT_ID.get(), "");
         return id.isEmpty() ? null : id;
     }
 
     public static void setProjectId(ItemStack stack, UUID projectId) {
-        stack.getOrCreateTag().putString("projectId", projectId.toString());
+        stack.set(SpatialBlueprintComponents.PROJECT_ID.get(), projectId.toString());
     }
 
     /** 任务集 ID —— 激活时生成。为空表示这枚蓝图<b>尚未激活</b>。 */
     @Nullable
     public static String getTaskSetId(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        if (tag == null || !tag.contains("taskSetId")) return null;
-        String id = tag.getString("taskSetId");
+        String id = stack.getOrDefault(SpatialBlueprintComponents.TASK_SET_ID.get(), "");
         return id.isEmpty() ? null : id;
     }
 
     public static void setTaskSetId(ItemStack stack, UUID taskSetId) {
-        stack.getOrCreateTag().putString("taskSetId", taskSetId.toString());
+        stack.set(SpatialBlueprintComponents.TASK_SET_ID.get(), taskSetId.toString());
     }
 
-    /** 已激活 = 有 taskSetId。 */
+    /** 已激活 = 有 task_set_id。 */
     public static boolean isActivated(ItemStack stack) {
         return getTaskSetId(stack) != null;
     }
 
     // ── 「设定范围」编辑中的临时两点（保存 / 取消后清掉；不是项目的正式范围）──────
-    // 与空白蓝图的选区点同一套做法：存物品 NBT、经服务端写、渲染器直接从主手物品读。
-
-    private static final String TAG_RANGE_P1 = "rangeP1";
-    private static final String TAG_RANGE_P2 = "rangeP2";
+    // 与空白蓝图的选区点同一套做法：存物品组件、经服务端写、渲染器直接从主手物品读。
 
     @Nullable
-    public static net.minecraft.core.BlockPos getRangePoint(ItemStack stack, int index) {
-        CompoundTag tag = stack.getTag();
-        String key = index == 1 ? TAG_RANGE_P1 : TAG_RANGE_P2;
-        if (tag == null || !tag.contains(key)) return null;
-        return net.minecraft.nbt.NbtUtils.readBlockPos(tag.getCompound(key));
+    public static BlockPos getRangePoint(ItemStack stack, int index) {
+        return stack.get(index == 1
+                ? SpatialBlueprintComponents.RANGE_P1.get()
+                : SpatialBlueprintComponents.RANGE_P2.get());
     }
 
-    public static void setRangePoint(ItemStack stack, int index, net.minecraft.core.BlockPos pos) {
-        stack.getOrCreateTag().put(index == 1 ? TAG_RANGE_P1 : TAG_RANGE_P2,
-                net.minecraft.nbt.NbtUtils.writeBlockPos(pos));
+    public static void setRangePoint(ItemStack stack, int index, BlockPos pos) {
+        stack.set(index == 1
+                ? SpatialBlueprintComponents.RANGE_P1.get()
+                : SpatialBlueprintComponents.RANGE_P2.get(), pos.immutable());
     }
 
     public static boolean hasRangePoints(ItemStack stack) {
@@ -301,19 +282,16 @@ public class ProjectBlueprintItem extends Item {
     }
 
     public static void clearRangePoints(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        if (tag == null) return;
-        tag.remove(TAG_RANGE_P1);
-        tag.remove(TAG_RANGE_P2);
+        stack.remove(SpatialBlueprintComponents.RANGE_P1.get());
+        stack.remove(SpatialBlueprintComponents.RANGE_P2.get());
     }
 
     /** 道具名称：有项目名时显示项目名，否则显示默认名。 */
     @Override
     public Component getName(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        if (tag != null && tag.contains("projectName")) {
-            String pname = tag.getString("projectName");
-            if (!pname.isEmpty()) return Component.translatable(getDescriptionId())
+        String pname = stack.getOrDefault(SpatialBlueprintComponents.PROJECT_NAME.get(), "");
+        if (!pname.isEmpty()) {
+            return Component.translatable(getDescriptionId())
                     .append(" - ")
                     .append(pname);
         }
@@ -321,34 +299,31 @@ public class ProjectBlueprintItem extends Item {
     }
 
     public static void setProjectName(ItemStack stack, String name) {
-        stack.getOrCreateTag().putString("projectName", name);
+        stack.set(SpatialBlueprintComponents.PROJECT_NAME.get(), name);
     }
 
-    /** 物品 NBT 里的项目名（拿物品时还没收到服务端状态，界面标题的兜底用它）。 */
+    /** 物品里的项目名（拿物品时还没收到服务端状态，界面标题的兜底用它）。 */
     public static String getProjectName(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        return tag == null ? "" : tag.getString("projectName");
+        return stack.getOrDefault(SpatialBlueprintComponents.PROJECT_NAME.get(), "");
     }
 
     /** 项目阶段名（{@link ProjectData.Stage} 的名字）；空串 = 还没同步过（旧数据）。 */
     public static String getStage(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        return tag == null ? "" : tag.getString("projectStage");
+        return stack.getOrDefault(SpatialBlueprintComponents.PROJECT_STAGE.get(), "");
     }
 
     /** 服务端写阶段：取得物品 / 保存范围 / 推状态时同步，副手直开门槛与界面判断用。 */
     public static void setStage(ItemStack stack, String stage) {
-        stack.getOrCreateTag().putString("projectStage", stage == null ? "" : stage);
+        stack.set(SpatialBlueprintComponents.PROJECT_STAGE.get(), stage == null ? "" : stage);
     }
 
     /** 项目所在维度（ResourceLocation 字符串）；空串 = 旧物品还没同步过。 */
     public static String getDimension(ItemStack stack) {
-        CompoundTag tag = stack.getTag();
-        return tag == null ? "" : tag.getString("projectDim");
+        return stack.getOrDefault(SpatialBlueprintComponents.PROJECT_DIM.get(), "");
     }
 
     /** 服务端写维度：与 {@link #setStage} 同一批同步点（取得物品 / 保存范围 / 推状态）。 */
     public static void setDimension(ItemStack stack, String dimension) {
-        stack.getOrCreateTag().putString("projectDim", dimension == null ? "" : dimension);
+        stack.set(SpatialBlueprintComponents.PROJECT_DIM.get(), dimension == null ? "" : dimension);
     }
 }

@@ -1,0 +1,40 @@
+SBN-008 改动清单（A：与任务书第二节允许清单两向比对）
+
+命令：git diff --name-status 2847bcb...HEAD（2847bcb = 任务分支拉出点 / merge-base；
+本文件生成时用等效的 git diff --cached --name-status 2847bcb，提交后可用前者复核）。
+
+实际改动（24 项）：
+M  #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_任务_P3c项目写操作与杂项.txt   （云端派发，分支首个提交）
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_报告.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_证据/编译.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_证据/GameTest.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_证据/改动清单.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_证据/服务端.txt
+A  #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-008_证据/网络.txt
+M  #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md
+M  #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt
+A  src/main/java/com/xioyim/spatialblueprint/gametest/SBN008Tests.java
+M  src/main/java/com/xioyim/spatialblueprint/network/BlueprintNetwork.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_ApplyBlueprintMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_ClaimSubProjectMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_CreateProjectMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_DeleteProjectMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_DeleteSubProjectMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_RequestIllegalBlocksMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_RewardMaterialsMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_SaveMaterialListMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_SaveProjectRangeMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_SubmitProjectChangesMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_SubmitProjectOrderMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/network/C2S_TakeProjectMessage.java
+A  src/main/java/com/xioyim/spatialblueprint/server/SubProjectClaimHandler.java
+A  src/main/java/com/xioyim/spatialblueprint/util/NotifySound.java
+
+两向比对：
+- 允许清单 → 实际：12 个消息全部在（network\ 根下）；server/SubProjectClaimHandler.java、
+  util/NotifySound.java 在；BlueprintNetwork 只加注册；SBN008Tests 新建；交接件 = 报告 / 证据 /
+  开发日志执行记录 / 测试清单第八组 / 规程表 / 通用经验副本。
+  通用经验副本本轮三方比对零差异，无改动（不算缺失）。
+- 实际 → 允许清单：无清单外文件；无主类改动；无 SBN-009 / 010 的消息；无 C2S_ReloadConfigMessage。
+- SBN-008_证据/改动清单.txt 本身也属于证据目录（本文件）。

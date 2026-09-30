@@ -1,0 +1,8 @@
+SBN-010 编译证据（A1，必做）
+命令：$env:JAVA_HOME = "C:\Program Files\Zulu\zulu-21"; .\gradlew.bat compileJava --rerun
+时间：2026-09-30 11:00:00（测试文件修正后复编；首次搬迁编译暴露 hasTag/getTag 残留 4 处，修后通过）
+输出尾部：
+  > Task :compileJava
+  BUILD SUCCESSFUL in 8s
+  2 actionable tasks: 1 executed, 1 up-to-date
+警告计数：0（输出全文无“警告 / 注 / warning”行，基线 K1 满足）

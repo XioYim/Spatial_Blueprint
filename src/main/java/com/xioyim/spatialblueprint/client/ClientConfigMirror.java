@@ -1,11 +1,5 @@
 package com.xioyim.spatialblueprint.client;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,8 +22,6 @@ import java.util.Map;
  * <p>没收到快照之前（单机刚进世界、或服务端不带本 mod）读取会退回本地配置值，
  * 界面不会因为一次网络延迟就显示成一堆 0。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientConfigMirror {
 
     private ClientConfigMirror() {}
@@ -74,8 +66,7 @@ public final class ClientConfigMirror {
     }
 
     /** 断开连接时清空 —— 免得把 A 服的配置带到 B 服的界面里。 */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    public static void clear() {
         serverInts.clear();
         serverBools.clear();
         serverLists.clear();

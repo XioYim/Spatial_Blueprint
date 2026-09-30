@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.util;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -81,7 +82,7 @@ public class ProjectClaimRegistry extends SavedData {
     public static ProjectClaimRegistry get(ServerLevel level) {
         return level.getServer().overworld()
                 .getDataStorage()
-                .computeIfAbsent(ProjectClaimRegistry::load, ProjectClaimRegistry::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(ProjectClaimRegistry::new, ProjectClaimRegistry::load, null), SAVE_KEY);
     }
 
     public List<Claim> all() {
@@ -221,14 +222,14 @@ public class ProjectClaimRegistry extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         ListTag list = new ListTag();
         for (Claim claim : claims) list.add(claim.serialize());
         tag.put("claims", list);
         return tag;
     }
 
-    private static ProjectClaimRegistry load(CompoundTag tag) {
+    private static ProjectClaimRegistry load(CompoundTag tag, HolderLookup.Provider provider) {
         ProjectClaimRegistry registry = new ProjectClaimRegistry();
         ListTag list = tag.getList("claims", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {

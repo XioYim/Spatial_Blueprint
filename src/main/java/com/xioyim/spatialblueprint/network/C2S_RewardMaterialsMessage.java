@@ -7,12 +7,13 @@ import com.xioyim.spatialblueprint.util.BlueprintSanitizer;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialList;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * C2S：奖励蓝图材料面板的两个专属操作（仅创造模式 OP）。
@@ -26,7 +27,14 @@ import java.util.function.Supplier;
  * <p>两个动作都不经 ⎙（{@code C2S_SaveMaterialListMessage}）—— 生成必须用服务端配置算，
  * 清空为对称也走服务端；写盘后 {@code sendBlueprintTo} 回推，客户端面板以服务端结果为准。</p>
  */
-public class C2S_RewardMaterialsMessage {
+public class C2S_RewardMaterialsMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RewardMaterialsMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_reward_materials_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RewardMaterialsMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RewardMaterialsMessage::encode, C2S_RewardMaterialsMessage::decode);
 
     public static final int MODE_GENERATE = 0;
     public static final int MODE_CLEAR    = 1;
@@ -39,6 +47,11 @@ public class C2S_RewardMaterialsMessage {
         this.mode        = mode;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_RewardMaterialsMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_RewardMaterialsMessage msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.blueprintId, 64);
         buf.writeVarInt(msg.mode);
@@ -48,69 +61,69 @@ public class C2S_RewardMaterialsMessage {
         return new C2S_RewardMaterialsMessage(buf.readUtf(64), buf.readVarInt());
     }
 
-    public static void handle(C2S_RewardMaterialsMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null || msg.blueprintId.isEmpty()) return;
+    public static void handle(C2S_RewardMaterialsMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            if (!player.hasPermissions(2) || !player.isCreative()) {
-                sendResult(player, "spatial_blueprint.message.reward_materials.need_op");
-                return;
-            }
+    public static void handleServer(C2S_RewardMaterialsMessage msg, ServerPlayer player) {
+        if (player == null || msg.blueprintId.isEmpty()) return;
 
-            BlueprintData data = BlueprintStorage.load(msg.blueprintId);
-            if (data == null) {
-                sendResult(player, "spatial_blueprint.error.no_blueprint_data");
-                return;
-            }
-            if (!"reward".equals(data.category)) {
-                sendResult(player, "spatial_blueprint.message.reward_materials.not_reward");
-                return;
-            }
+        if (!player.hasPermissions(2) || !player.isCreative()) {
+            sendResult(player, "spatial_blueprint.message.reward_materials.need_op");
+            return;
+        }
 
-            int removed = 0;
-            if (msg.mode == MODE_GENERATE) {
-                MaterialList ml = MaterialList.fromBlueprintData(data);
-                removed = BlueprintSanitizer.removeIllegalMaterialsInPlace(ml);
-                data.materialList = ml;
-            } else if (msg.mode == MODE_CLEAR) {
-                data.materialList = new MaterialList();
-                data.materialList.blueprintName = data.name != null ? data.name : "";
-            } else {
-                return;
-            }
+        BlueprintData data = BlueprintStorage.load(msg.blueprintId);
+        if (data == null) {
+            sendResult(player, "spatial_blueprint.error.no_blueprint_data");
+            return;
+        }
+        if (!"reward".equals(data.category)) {
+            sendResult(player, "spatial_blueprint.message.reward_materials.not_reward");
+            return;
+        }
 
-            try {
-                BlueprintStorage.save(UUID.fromString(msg.blueprintId), data);
-            } catch (IllegalArgumentException ignored) {
-                // 与 C2S_SaveMaterialListMessage 同款：坏 id 静默丢弃（写盘失败由 save 内部记日志）
-            }
+        int removed = 0;
+        if (msg.mode == MODE_GENERATE) {
+            MaterialList ml = MaterialList.fromBlueprintData(data);
+            removed = BlueprintSanitizer.removeIllegalMaterialsInPlace(ml);
+            data.materialList = ml;
+        } else if (msg.mode == MODE_CLEAR) {
+            data.materialList = new MaterialList();
+            data.materialList.blueprintName = data.name != null ? data.name : "";
+        } else {
+            return;
+        }
 
-            // 回推最新数据，让客户端面板以服务端结果为准（T10：只能走 sendBlueprintTo）
-            BlueprintNetwork.sendBlueprintTo(player, msg.blueprintId, data);
+        try {
+            BlueprintStorage.save(UUID.fromString(msg.blueprintId), data);
+        } catch (IllegalArgumentException ignored) {
+            // 与 C2S_SaveMaterialListMessage 同款：坏 id 静默丢弃（写盘失败由 save 内部记日志）
+        }
 
-            // 成功不走 S2C_OperationResult（它的成功分支会关 PlacementScreen），走聊天栏
-            if (msg.mode == MODE_GENERATE) {
-                player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                        "spatial_blueprint.message.reward_materials.generated",
-                        data.materialList.blockCounts.size(), removed), false);
-            } else {
-                player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                        "spatial_blueprint.message.reward_materials.cleared"), false);
-            }
+        // 回推最新数据，让客户端面板以服务端结果为准（T10：只能走 sendBlueprintTo）
+        BlueprintNetwork.sendBlueprintTo(player, msg.blueprintId, data);
 
-            SpatialBlueprintMod.LOGGER.info("[Reward] {} {} id={} entries={} removed={}",
-                    player.getScoreboardName(),
-                    msg.mode == MODE_GENERATE ? "generate" : "clear",
-                    msg.blueprintId, data.materialList.blockCounts.size(), removed);
-        });
-        ctx.get().setPacketHandled(true);
+        // 成功不走 S2C_OperationResult（它的成功分支会关 PlacementScreen），走聊天栏
+        if (msg.mode == MODE_GENERATE) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                    "spatial_blueprint.message.reward_materials.generated",
+                    data.materialList.blockCounts.size(), removed), false);
+        } else {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                    "spatial_blueprint.message.reward_materials.cleared"), false);
+        }
+
+        SpatialBlueprintMod.LOGGER.info("[Reward] {} {} id={} entries={} removed={}",
+                player.getScoreboardName(),
+                msg.mode == MODE_GENERATE ? "generate" : "clear",
+                msg.blueprintId, data.materialList.blockCounts.size(), removed);
     }
 
     /** 失败横幅：主键无参（T9），成功不走这条。 */
     private static void sendResult(ServerPlayer player, String messageKey) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
-                new S2C_OperationResult(false, messageKey));
+        BlueprintNetwork.sendToPlayer(player, new S2C_OperationResult(false, messageKey));
     }
 }

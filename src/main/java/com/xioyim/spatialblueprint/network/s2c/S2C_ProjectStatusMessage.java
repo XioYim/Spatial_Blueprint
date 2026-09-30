@@ -1,18 +1,25 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.client.ClientProjectStatusCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /** S2C：项目蓝图界面所需的项目元信息与每个子工程的实时领取状态。 */
-public class S2C_ProjectStatusMessage {
+public class S2C_ProjectStatusMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_ProjectStatusMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_project_status_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_ProjectStatusMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_ProjectStatusMessage::encode, S2C_ProjectStatusMessage::decode);
 
     /**
      * 一条子工程的实时状态。
@@ -136,13 +143,18 @@ public class S2C_ProjectStatusMessage {
         this.dimension = dimension == null ? "" : dimension;
     }
 
+    /** 2.7.24：带上 projectId —— 客户端据此判断「手上这枚蓝图的 项目已被删除」并弹横幅拦截。 */
     public static S2C_ProjectStatusMessage notFound() {
         return new S2C_ProjectStatusMessage(false, "", "", "", false, List.of());
     }
 
-    /** 2.7.24：带上 projectId —— 客户端据此判断「手上这枚蓝图的 项目已被删除」并弹横幅拦截。 */
     public static S2C_ProjectStatusMessage notFound(String projectId) {
         return new S2C_ProjectStatusMessage(false, projectId, "", "", false, List.of());
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_ProjectStatusMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_ProjectStatusMessage msg, FriendlyByteBuf buf) {
@@ -237,13 +249,7 @@ public class S2C_ProjectStatusMessage {
                 orderEditable, dimension);
     }
 
-    public static void handle(S2C_ProjectStatusMessage msg,
-                              Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientProjectStatusCache.onReceive(msg);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_ProjectStatusMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientProjectStatusCache.onReceive(msg);
     }
 }

@@ -3,7 +3,6 @@ package com.xioyim.spatialblueprint.util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.block.Rotation;
 
@@ -184,8 +183,8 @@ public class ProjectData {
             tag.putString("label", label);
             tag.putString("note", note);
             tag.putString("noteLong", noteLong);
-            tag.put("relP1", NbtUtils.writeBlockPos(relP1));
-            tag.put("relP2", NbtUtils.writeBlockPos(relP2));
+            tag.put("relP1", NbtCompat.writeBlockPos(relP1));
+            tag.put("relP2", NbtCompat.writeBlockPos(relP2));
             tag.putInt("color", color);
             tag.putInt("requiresEntry", requiresEntry);
             tag.putInt("blockCount", blockCount);
@@ -203,8 +202,8 @@ public class ProjectData {
             e.label    = tag.getString("label");
             e.note     = tag.getString("note");
             e.noteLong = tag.getString("noteLong");
-            e.relP1    = NbtUtils.readBlockPos(tag.getCompound("relP1"));
-            e.relP2    = NbtUtils.readBlockPos(tag.getCompound("relP2"));
+            e.relP1    = java.util.Objects.requireNonNullElse(NbtCompat.readBlockPos(tag, "relP1"), BlockPos.ZERO);
+            e.relP2    = java.util.Objects.requireNonNullElse(NbtCompat.readBlockPos(tag, "relP2"), BlockPos.ZERO);
             e.color    = tag.getInt("color");
             e.requiresEntry = tag.getInt("requiresEntry");
             e.blockCount = tag.contains("blockCount") ? tag.getInt("blockCount") : -1;
@@ -255,9 +254,9 @@ public class ProjectData {
         tag.putString("ownerName", ownerName);
         tag.putLong("createdAt", createdAt);
         tag.putString("dimension", dimension == null || dimension.isEmpty() ? DEFAULT_DIMENSION : dimension);
-        tag.put("origin", NbtUtils.writeBlockPos(origin));
-        tag.put("size", NbtUtils.writeBlockPos(size));
-        tag.put("anchor", NbtUtils.writeBlockPos(anchor));
+        tag.put("origin", NbtCompat.writeBlockPos(origin));
+        tag.put("size", NbtCompat.writeBlockPos(size));
+        tag.put("anchor", NbtCompat.writeBlockPos(anchor));
         tag.putString("rotation", rotation.name());
         tag.putString("onSubProjectComplete", onSubProjectComplete);
 
@@ -282,11 +281,11 @@ public class ProjectData {
         // 旧文件没有 dimension：此前的项目都建在主世界，按主世界补
         String dim  = tag.getString("dimension");
         d.dimension = dim.isEmpty() ? DEFAULT_DIMENSION : dim;
-        d.origin    = NbtUtils.readBlockPos(tag.getCompound("origin"));
-        d.size      = NbtUtils.readBlockPos(tag.getCompound("size"));
+        d.origin    = java.util.Objects.requireNonNullElse(NbtCompat.readBlockPos(tag, "origin"), BlockPos.ZERO);
+        d.size      = java.util.Objects.requireNonNullElse(NbtCompat.readBlockPos(tag, "size"), BlockPos.ZERO);
         // 旧文件没有 anchor：从没扩建过，旧 rel 本来就相对 origin，等价
         d.anchor    = tag.contains("anchor")
-                ? NbtUtils.readBlockPos(tag.getCompound("anchor"))
+                ? java.util.Objects.requireNonNullElse(NbtCompat.readBlockPos(tag, "anchor"), d.origin)
                 : d.origin;
         d.rotation  = parseRotation(tag.getString("rotation"));
         d.onSubProjectComplete = tag.getString("onSubProjectComplete");

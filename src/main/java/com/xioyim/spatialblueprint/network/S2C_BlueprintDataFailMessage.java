@@ -1,18 +1,24 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.client.ClientBlueprintCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
- * S2C: Notifies the client that a blueprint data request failed (file not found, access denied, etc.).
+ * S2C: Notifies the client that a blueprint data request failed (rate-limited, not found, load error).
  * The client uses this to transition out of the "downloading" state and show an error with retry.
  */
-public class S2C_BlueprintDataFailMessage {
+public class S2C_BlueprintDataFailMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_BlueprintDataFailMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_blueprint_data_fail_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_BlueprintDataFailMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_BlueprintDataFailMessage::encode, S2C_BlueprintDataFailMessage::decode);
 
     private final String blueprintId;
     private final String reason;
@@ -20,6 +26,11 @@ public class S2C_BlueprintDataFailMessage {
     public S2C_BlueprintDataFailMessage(String blueprintId, String reason) {
         this.blueprintId = blueprintId;
         this.reason      = reason;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_BlueprintDataFailMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_BlueprintDataFailMessage msg, FriendlyByteBuf buf) {
@@ -33,12 +44,7 @@ public class S2C_BlueprintDataFailMessage {
         return new S2C_BlueprintDataFailMessage(id, reason);
     }
 
-    public static void handle(S2C_BlueprintDataFailMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientBlueprintCache.markFailed(msg.blueprintId, msg.reason);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_BlueprintDataFailMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientBlueprintCache.markFailed(msg.blueprintId, msg.reason);
     }
 }

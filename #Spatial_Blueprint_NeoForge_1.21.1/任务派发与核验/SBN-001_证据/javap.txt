@@ -1,0 +1,44 @@
+SBN-001 javap 取证（J1～J9）
+merged.jar：build/moddev/artifacts/neoforge-21.1.252-merged.jar
+FML 类：C:/Users/Yim/.gradle/caches/modules-2/files-2.1/net.neoforged.fancymodloader/loader/4.0.44/…/loader-4.0.44.jar
+原始输出：C:/Users/Yim/AppData/Local/Temp/opencode/sbn001-javap.txt（merged）与 sbn001-javap2.txt（FML）
+每条一行：类#成员 签名 [是否 @Deprecated]
+
+J1 ModConfigSpec$Builder#define(String, T) 存在，无 @Deprecated；
+   defineList / defineListAllowEmpty 各重载存在，其中无 Supplier 的重载带 @Deprecated。
+   结论：1.20.1 的 define("key", List.of(...)) / define("key", new ArrayList<>(...)) 原样保留，
+   字段类型保持 ConfigValue<List<String>>。另用 Forge 1.20.1-47.1.3 源码核对：
+   define(List, T) 的 validator（defaultValue.getClass().isAssignableFrom）两边逐字一致，
+   启动时列表项 correction WARN 行为与 1.20.1 相同（见报告任务书出入第 3 条）。
+J2 ModConfigSpec#getSpec() → UnmodifiableConfig；ValueSpec#test(Object) → boolean；
+   ConfigValue#getPath() → List(String)、getDefault()、set(T)、save() 全在，均无 @Deprecated。
+   结论：ConfigRegistry.accepts 的 SPEC.getSpec().get(path) + instanceof ValueSpec + test 语义不变，
+   「必须是 getSpec() 不是 getValues()」的坑依旧成立；defaultInt 用 getDefault() 不变。
+J3 net.neoforged.fml.event.config.ModConfigEvent 非 abstract（plain class extends Event implements IModBusEvent）；
+   ModConfigEvent$Loading / ModConfigEvent$Reloading 存在。
+   结论：任务书“若为 abstract 则拆 Loading/Reloading”的假设不成立，按 javap 改：
+   主类照 1.20.1 注册 ModConfigEvent 基类监听，不拆。GameTest 服务器启动验证不抛异常。
+J4 ModContainer#registerConfig(ModConfig$Type, IConfigSpec, String) 存在。
+   结论：主类构造器用传进来的 ModContainer 注册两份 COMMON 配置，带文件名。
+J5 NbtAccounter(long, int) 构造器存在；NbtAccounter.create(long) 存在；
+   NbtIo#read(DataInput, NbtAccounter) 存在。结论：SafeNbtIo 改用 create(long)（深度取原版默认）。
+J6 NbtUtils#writeBlockPos(BlockPos) → Tag（即 IntArrayTag）；
+   NbtUtils#readBlockPos(CompoundTag, String) → Optional(BlockPos)；
+   NbtUtils#readBlockState(HolderGetter(Block), CompoundTag) 存在。
+   结论：任务书假设成立，走新增 NbtCompat（写 {X,Y,Z} 复合标签，读兼容两种）。
+J7 net.neoforged.neoforge.registries.GameData#getBlockItemMap() 存在（static Map(Block, Item)）；
+   Item#BY_BLOCK 为 public static final Map(Block, Item)。
+   结论：BlockSubstitutionGenerator 原样保留 GameData.getBlockItemMap()，BY_BLOCK 未用（备用）。
+J8 SharedConstants#getCurrentVersion() → WorldVersion（接口）；
+   WorldVersion#getDataVersion() → world.level.storage.DataVersion；
+   DataVersion#getVersion() → int；另有 MAIN_SERIES 常量。
+   结论：BlueprintData 写 SharedConstants.getCurrentVersion().getDataVersion().getVersion()。
+   （注意 DataVersion 不在 net.minecraft 根包，任务书写法只差包名，链式调用成立。）
+J9 Registry#asLookup() → HolderLookup$RegistryLookup 存在（DefaultedRegistry 继承）。
+   结论：readPaletteEntry 的 BuiltInRegistries.BLOCK.asLookup() 保留。
+
+补充（非 J 清单但编译/运行已验证）：
+S1 javax.annotation.Nullable 在本线编译可用（HD 1.21.1 线 13 处同样用法已编译通过），故 verbatim 保留。
+S2 ServerPlayer#getStringUUID / getName 为继承方法（Entity），BlueprintLogger 零改动编译通过。
+S3 isDependentUncached 引用的方块类（BushBlock、PinkPetalsBlock、CeilingHangingSignBlock 等）在 1.21.1
+   全部仍在，无改名、无需替换，编译通过即证。

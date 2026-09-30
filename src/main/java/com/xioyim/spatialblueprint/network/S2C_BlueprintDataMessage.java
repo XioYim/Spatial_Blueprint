@@ -1,28 +1,29 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.client.ClientBlueprintCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.SafeNbtIo;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
- * S2C: Delivers full {@link BlueprintData} to the requesting client.
+ * S2C: Delivers full {@link BlueprintData} to the requesting client (single-packet path).
  *
- * <p>The client stores the data in {@link ClientBlueprintCache}, which is checked by
- * {@link com.xioyim.spatialblueprint.item.SpatialBlueprintItem#getBlueprintData} and
- * {@link com.xioyim.spatialblueprint.client.BlueprintSelectionRenderer} for rendering.</p>
- *
- * <p>Minecraft's built-in ZLIB compression (applied to all packets larger than
- * {@code network-compression-threshold}) makes the wire size of a large blueprint
- * significantly smaller than the raw NBT size.</p>
+ * <p>The client stores the data in its blueprint cache, which is checked by
+ * {@code SpatialBlueprintItem.getBlueprintDataClient} and the renderer.</p>
  */
-public class S2C_BlueprintDataMessage {
+public class S2C_BlueprintDataMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_BlueprintDataMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_blueprint_data_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_BlueprintDataMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_BlueprintDataMessage::encode, S2C_BlueprintDataMessage::decode);
 
     /**
      * Maximum accepted compressed payload size (1 MiB), matching Minecraft's custom-payload
@@ -45,6 +46,11 @@ public class S2C_BlueprintDataMessage {
     private S2C_BlueprintDataMessage(String blueprintId, CompoundTag serializedData) {
         this.blueprintId    = blueprintId;
         this.serializedData = serializedData;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_BlueprintDataMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_BlueprintDataMessage msg, FriendlyByteBuf buf) {
@@ -79,16 +85,11 @@ public class S2C_BlueprintDataMessage {
         }
     }
 
-    public static void handle(S2C_BlueprintDataMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static void handleClient(S2C_BlueprintDataMessage msg) {
+    public static void handle(S2C_BlueprintDataMessage msg, IPayloadContext ctx) {
         try {
-            BlueprintData data = BlueprintData.deserialize(msg.serializedData);
-            ClientBlueprintCache.put(msg.blueprintId, data);
+            com.xioyim.spatialblueprint.util.BlueprintData data =
+                    com.xioyim.spatialblueprint.util.BlueprintData.deserialize(msg.serializedData);
+            com.xioyim.spatialblueprint.client.ClientBlueprintCache.put(msg.blueprintId, data);
         } catch (Exception ignored) {
             // Malformed data — leave cache empty; player can retry by re-clicking download
         }

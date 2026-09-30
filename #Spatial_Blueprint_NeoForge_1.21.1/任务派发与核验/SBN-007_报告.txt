@@ -1,0 +1,113 @@
+SBN-007 报告
+执行：2026-09-29 23:38:21 ～ 2026-09-30 00:25:00
+提交：c4ce490（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-29 23:38 | Spatial_Blueprint_NeoForge_1.21.1_20260929_233821 | 933207CD | SBN-007 执行前 |
+
+一、完成情况（对照任务书三.1～三.2）：
+1. BlueprintNetwork 追加 21 条注册（12 C2S playToServer + 9 S2C playToClient，方向与 1.20.1
+   BlueprintNetwork.register 的 c2s / s2c 归类逐条一致）· BlueprintNetwork.java:159-214；其余零改动。
+2. 21 个消息按 SBN-005 / 006 口径逐行改写（TYPE 命名 = 类名小写 snake_case、ofMember、
+   C2S 拆 handle/handleServer、S2C 客户端体打桩）；字段 / 校验 / 上限常量 / 翻译键 / 日志文本 /
+   判断顺序与原版逐字一致（diff -w 残差只在 import、类声明、handle 拆分、发包与打桩处）。
+3. 各簇要点核对：
+   a. 物品数据：C2S_DestroyForceBlueprintMessage 的 bpId 改物品类访问器（缺组件照原逻辑补 ""）·
+      C2S_DestroyForceBlueprintMessage.java:64-65；C2S_VoidResetMessage 的同类读法改
+      SpatialBlueprintComponents.BLUEPRINT_ID 组件 · C2S_VoidResetMessage.java:82。
+   b. 传送：canTeleport → tryAcquireTeleport → 维度比对 → player.teleportTo 顺序原样 ·
+      C2S_VoidTeleportMessage.java:65-114、C2S_EngineeringTeleportMessage.java:70-119；
+      落地保护三种效果原样。
+   c. 次元袋：查别人需 OP（C2S_RequestVoidBagsMessage.java:77）、存档归属 + 主人判定
+      （C2S_VoidResetMessage.java:73/86）、belongsToCurrentWorld（C2S_DiscardForeignBlueprintMessage.java:87）、
+      OP 直接 return（C2S_DestroyForceBlueprintMessage.java:58）、SafeCoord OP 判定
+      （C2S_SafeCoordMessage.java:69）全部原样；两个 BlueprintFileLogger 调用原样
+      （C2S_DiscardOrphanBagMessage.java:53、C2S_DestroyForceBlueprintMessage.java:74）。
+   d. 项目只读：writeEnum / readEnum 原样（S2C_ProjectListMessage.java:57-58/69）；STATION 需 OP、
+      PRIVATE 可见性（ownerUuid、无主回退 ownerName）原样（C2S_RequestProjectListMessage.java:75/127、
+      C2S_RequestProjectEntriesMessage.java:76-84）。
+   e. 预览：ServerPreviewTracker 原样搬（1 增 2 删残差，只有发包改 sendToPlayer ·
+      ServerPreviewTracker.java:110）；C2S_PreviewUpdateMessage.update 与广播范围原样。
+4. 其余：S2C 客户端体 9 个打桩 P5（清单见五）；未动主类（登录登出 / 传送权限 / 存档身份下发仍 P4 桩）、
+   C2S_ReloadConfigMessage（仍 P4）、SBN-008 的 24 个消息。
+
+二、改了写法的调用（1.20.1 → 1.21.1 · file:line · 依据，按簇）：
+【通用（22 个文件）】NetworkEvent/Supplier → IPayloadContext；enqueueWork / setPacketHandled /
+  getSender → instanceof + handleServer；类声明加 CustomPacketPayload + TYPE + STREAM_CODEC（ofMember）·
+  各文件 · C14；CHANNEL.send(PacketDistributor.PLAYER…) → BlueprintNetwork.sendToPlayer ·
+  C2S_VoidResetMessage.java:99-104、C2S_VoidTeleportMessage.java:74/118、
+  C2S_EngineeringTeleportMessage.java:79/120、C2S_SafeCoordMessage.java:70、
+  C2S_RequestProjectListMessage.java:96、C2S_RequestProjectEntriesMessage.java:71-92、
+  C2S_RequestProjectStatusMessage.java:243、ServerPreviewTracker.java:110 · J33。
+【物品状态】stack.getTag().getString("blueprintId") → 物品类访问器（null 补 ""）·
+  C2S_DestroyForceBlueprintMessage.java:64-65、C2S_VoidResetMessage.java:82 · C12。
+【传送】无个别 API 改动（MobEffects.DAMAGE_RESISTANCE / teleportTo / dimension().location() 在 1.21
+  仍在，javap J39）· C2S_VoidTeleportMessage.java、C2S_EngineeringTeleportMessage.java。
+【S2C】handle 体引用客户端类的一律整体打桩 SB-TODO(P5) · 见五。
+
+三、网络实测（详见证据/网络.txt）：
+1. 21 个 payload 的 ID 与方向清单：12 C2S + 9 S2C，与 1.20.1 c2s / s2c 归类逐条一致
+   （注册行号见证据第一节）。
+2. 本批 decode 上限：3 个 checkedCount（4096，超限抛 DecoderException）·
+   S2C_ProjectListMessage.java:75、S2C_ProjectEntriesMessage.java:76、S2C_ProjectStatusMessage.java:225；
+   字符串 readUtf 上限逐文件清单见证据第二节（1.21 按编码字节数判，超过 cap×3 抛）。
+3. 本批权限判定清单：见证据第三节（file:line 逐条）。
+
+四、测试覆盖：
+A1 编译 0 警告（首跑 2 条 makeMockServerPlayerInLevel removal 警告，改用自建在场玩家后 0）；
+A2 GameTest 56/56（@GameTest 实数 56 = SBN001～006 的 48 + SBN007 8；批次 50 + 6）；
+A3 专服冒烟：Done (0.646s) → RCON stop 正常退出、0 ERROR、19 WARN 全既有、BlueprintFileLogger
+  logs 目录建出；A4 grep 门禁 0 命中（network / server / log 无客户端与 net.minecraftforge 引用），
+  SB-TODO( 21 处全为桩标记。
+t01～t08 全部通过（逐条见证据/GameTest.txt）。
+
+五、迁移桩清单：新 9（全部 P5）+ 存量 35 = grep -rn "SB-TODO(" src 实数 44。新增逐条：
+network/S2C_TeleportPermMessage.java:52 P5（ClientTeleportPermCache）
+network/S2C_WorldIdentityMessage.java:54 P5（ClientWorldIdentity）
+network/S2C_PreviewBroadcastMessage.java:87 P5（ClientOtherPreviewCache）
+network/s2c/S2C_PlacementProgressMessage.java:40 P5（BlueprintSelectionRenderer 进度）
+network/s2c/S2C_CaptureCooldownMessage.java:56 P5（ClientCaptureCooldown；notifySuccess 保留）
+network/s2c/S2C_OpCaptureConfirmMessage.java:61 P5（OpCaptureConfirmScreen）
+network/s2c/S2C_ProjectListMessage.java:89 P5（ClientProjectListCache）
+network/s2c/S2C_ProjectEntriesMessage.java:85 P5（ClientProjectEntriesCache）
+network/s2c/S2C_ProjectStatusMessage.java:253 P5（ClientProjectStatusCache）
+存量 35 = SBN-006 的 35（本任务未拆桩）。
+
+六、任务书出入：
+1. 任务书 t06 说用假玩家（FakePlayerFactory）验证「允许的 → 坐标到目标」。实测：FakePlayer 的
+   FakePlayerNetHandler.teleport 是空实现，player.teleportTo 对假玩家不移动（坐标不变是必然，不是逻辑）。
+   处理：实际移动断言改用「在场 mock 玩家」；假玩家仍用于无权限拒绝 / 冷却拒绝 / 不移动三处回包断言。
+2. 任务书未提：GameTestHelper.makeMockServerPlayerInLevel() 已被标记待删（removal 警告破 0 警告基线），
+   且其匿名子类把 isCreative() 硬编码为 true；测试照它的构造改用公开 API 自建在场玩家
+   （new ServerPlayer + new Connection(SERVERBOUND) + EmbeddedChannel + PlayerList.placeNewPlayer）。
+3. 任务书 t08 说「B 移到范围外再发」。实测：ServerPreviewTracker 对同一玩家有 2 tick 广播速率限制
+   （ServerPreviewTracker.java:70-76），同一 tick 内同一玩家二次发送会被静默丢弃，测不出范围语义。
+   处理：第二次广播改由另一名来源玩家发出（B 仍在范围内收不到），并加正对照「范围内的 A 收到」。
+4. 任务书未提：FakePlayerFactory 生成的假玩家不在 level.players()（ServerPreviewTracker 的广播遍历
+   列表），t08 需手动 level.players().add(...) 并在 finally 删。
+5. 任务书三.2.a 描述 C2S_DestroyForceBlueprintMessage 原文为 stack.getTag().getString("blueprintId")，
+   实际原文是 stack.hasTag() ? … : ""；已照原语义实现（访问器缺组件补 ""）。
+6. 无其它出入。
+
+七、双端同步自查：
+- 传送：服务端 player.teleportTo 成功后由原版位置包（ClientboundPlayerPositionPacket）同步客户端，
+  1.21 同 1.20.1；落地保护效果走原版效果同步。FakePlayer 不移动属测试侧限制，不代表线上行为。
+- 预览广播：仅服务端 → 半径内其他玩家；payload 类零客户端引用（A4 为空）；P5 前客户端收包静默忽略
+  （不崩、不显示），与其他 S2C 相同；联机握手留 P5。
+- 项目状态缓存打桩后的表现：客户端静默忽略；服务端组装（列表 / 状态）由 t07 断言；下发的
+  projectId / found / 参考系字段在 P5 接客户端缓存后直接可用。
+- 本批未新增 / 删除 wire 字段（布局与 1.20.1 逐字相同）；增删 payload / 改 wire format 须 bump
+  mod_version（D4，类注释已写明）。
+
+八、教训同步：基线为 626a5b5 的副本（blob 行尾 CRLF，按 LF 规范化后比较）；原件 A、副本 C
+逐字相同（SHA256 均 10C89E19…，len=19890）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+九、建议记入：
+1. [建议记入 K] FakePlayer 的 FakePlayerNetHandler.teleport 是空实现：player.teleportTo 对假玩家不移动，
+   验证「服务端真的移动了玩家」要用在场玩家；GameTestHelper.makeMockServerPlayerInLevel 已标记待删
+   （removal 警告破 0 基线）且其 isCreative() 恒 true，可照其构造用公开 API 自建。
+2. [建议记入 C] ServerPreviewTracker 广播遍历 level.players()；FakePlayerFactory 的假玩家不在该列表，
+   GameTest 要手动加入 / 移除。
+3. [建议记入 C] 1.21 字符串 readUtf 上限按编码字节数（cap×3）判，超长抛 DecoderException；
+   checkedCount 计数超限整包拒收。
+4. [供云端问用户] P5 前 S2C 包客户端静默忽略是预期；联机握手测试留到 P5。
+
+十、需要用户做的事：无（本任务无手测项）。

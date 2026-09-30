@@ -1,8 +1,6 @@
 package com.xioyim.spatialblueprint.client;
 
 import com.xioyim.spatialblueprint.util.BlueprintData;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.util.Map;
 import java.util.UUID;
@@ -13,7 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * When {@link ClientBlueprintCache} receives data, call {@link #onDataArrived}
  * so it gets attached to the correct {@link ClientOtherPreviewCache} entry.
  */
-@OnlyIn(Dist.CLIENT)
 public class OtherPlayerDownloadListener {
 
     /** blueprintId → playerUUID */

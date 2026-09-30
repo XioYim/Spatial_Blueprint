@@ -1,0 +1,18 @@
+SBN-007 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-30 00:05 左右（BUILD SUCCESSFUL in 13s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 首编译 2 错：SBN007Tests 里 PacketFlow 的 import 写成 net.minecraft.network.PacketFlow，
+   正确是 net.minecraft.network.protocol.PacketFlow ——改 import 后通过。
+2. 次跑 2 条 removal 警告：「GameTestHelper 中的 makeMockServerPlayerInLevel() 已过时且标记为待删除」。
+   0 警告基线（K1）不能破：该方法的匿名子类还把 isCreative() 硬编码为 true，不适合做权限语义测试；
+   测试改为照它的构造用公开 API 自建在场玩家（new ServerPlayer + new Connection(SERVERBOUND)
+   + EmbeddedChannel + PlayerList.placeNewPlayer），不再引用弃用方法，复编译 0 警告。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 13s
+2 actionable tasks: 1 executed, 1 up-to-date

@@ -1,77 +1,97 @@
 package com.xioyim.spatialblueprint;
 
-import com.xioyim.spatialblueprint.command.SBCommands;
+import com.mojang.logging.LogUtils;
+import com.xioyim.spatialblueprint.item.SpatialBlueprintComponents;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItems;
-import com.xioyim.spatialblueprint.network.BlueprintNetwork;
+import com.xioyim.spatialblueprint.util.BlockSubstitutionGenerator;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.ProjectStorage;
-import com.xioyim.spatialblueprint.util.SBUndoCooldown;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import org.slf4j.Logger;
 
+import java.io.IOException;
+import java.nio.file.Files;
+
+/**
+ * NeoForge 1.21.1 线主类。
+ * 注册、网络、命令等按迁移计划书分阶段从 1.20.1 线（{@code origin/forge-1.20.1}）搬过来，
+ * 本轮（SBN-004 / P2b）接上数据组件、物品、方块与创造物品栏。
+ */
 @Mod(SpatialBlueprintMod.MODID)
 public class SpatialBlueprintMod {
     public static final String MODID = "spatial_blueprint";
-    public static final Logger LOGGER = LogManager.getLogger(MODID);
+    public static final Logger LOGGER = LogUtils.getLogger();
 
-    public SpatialBlueprintMod(FMLJavaModLoadingContext context) {
-        IEventBus modEventBus = context.getModEventBus();
-
-        // Ensure the mod's config subdirectory exists before Forge writes the config file.
+    public SpatialBlueprintMod(IEventBus modEventBus, ModContainer modContainer) {
+        // Ensure the mod's config subdirectory exists before NeoForge writes the config file.
         try {
-            java.nio.file.Files.createDirectories(
-                net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("spatial_blueprint"));
-        } catch (java.io.IOException ignored) {}
+            Files.createDirectories(FMLPaths.CONFIGDIR.get().resolve("spatial_blueprint"));
+        } catch (IOException ignored) {}
 
-        context.registerConfig(ModConfig.Type.COMMON, BlueprintConfig.SPEC, "spatial_blueprint/spatial_blueprint.toml");
+        modContainer.registerConfig(ModConfig.Type.COMMON, BlueprintConfig.SPEC, "spatial_blueprint/spatial_blueprint.toml");
         // ForagersInsight 兼容：关它的作物收获经验，否则捕获预检的 BreakEvent 会被当成收菜而爆发经验
         com.xioyim.spatialblueprint.util.ForagersInsightCompat.patchCropHarvestXpOff();
-        // 自动生成的方块替换候选（独立 toml，仅参考）
-        context.registerConfig(ModConfig.Type.COMMON, GeneratedSubstitutionsConfig.SPEC,
+        modContainer.registerConfig(ModConfig.Type.COMMON, GeneratedSubstitutionsConfig.SPEC,
                 "spatial_blueprint/block_substitutions.toml");
 
+        SpatialBlueprintComponents.register(modEventBus);
         SpatialBlueprintItems.register(modEventBus);
         SpatialBlueprintRegistry.register(modEventBus);
-        BlueprintNetwork.register();
+        modEventBus.addListener(com.xioyim.spatialblueprint.network.BlueprintNetwork::register);
+
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                com.xioyim.spatialblueprint.command.SBCommands::register);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogout);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogin);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onChangeGameMode);
+
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                (net.neoforged.neoforge.event.server.ServerStoppingEvent event)
+                        -> com.xioyim.spatialblueprint.log.BlueprintFileLogger.close());
 
         modEventBus.addListener(this::commonSetup);
-        modEventBus.addListener(this::clientSetup);
         modEventBus.addListener(this::addCreative);
         modEventBus.addListener(BlueprintConfig::onConfigReload);
-
-        MinecraftForge.EVENT_BUS.addListener(SBCommands::register);
-        MinecraftForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogout);
-        MinecraftForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogin);
-        MinecraftForge.EVENT_BUS.addListener(SpatialBlueprintMod::onChangeGameMode);
-        MinecraftForge.EVENT_BUS.addListener(SpatialBlueprintMod::onServerStopping);
-    }
-
-    /** 关服时释放日志句柄（每条已 flush，这里只是收尾）。 */
-    private static void onServerStopping(net.minecraftforge.event.server.ServerStoppingEvent event) {
-        com.xioyim.spatialblueprint.log.BlueprintFileLogger.close();
     }
 
     /**
-     * 登录时把「能否使用蓝图传送」的结论推给客户端。
+     * 登录时四步推送：传送权限 → 存档身份 → 孤儿次元袋提示 → 配置页权限。
      *
-     * <p>客户端自己算不出来（权限名单在服务端世界数据里），不推的话传送按钮会一直显示为无权限。</p>
+     * <p>每个发包步骤都经 {@link #sendLoginStep} 兜 {@code UnsupportedOperationException}（K21）：
+     * GameTest 自建的 mock 玩家在配置相位触发登录事件，NeoForge 相位检查拒绝 play 包；
+     * 真玩家此时已是 play 阶段，不受影响。逐步兜底保证前一步失败不会跳过后面的
+     * —— 尤其 {@code orphanBagsDetected} 的文件日志必须照写。</p>
      */
     private static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
-            SBCommands.syncTeleportPerm(sp);
-            syncWorldIdentity(sp);
+        if (event.getEntity() instanceof ServerPlayer sp) {
+            sendLoginStep(sp, "teleport permission",
+                    () -> com.xioyim.spatialblueprint.command.SBCommands.syncTeleportPerm(sp));
+            sendLoginStep(sp, "world identity", () -> syncWorldIdentity(sp));
             notifyLostDimensionalBlueprints(sp);
-            syncConfigPerm(sp);
+            sendLoginStep(sp, "config permission", () -> syncConfigPerm(sp));
+        }
+    }
+
+    /**
+     * 单个登录发包步骤的 K21 兜底：半成品连接（GameTest 的 mock 玩家还在配置相位）发 play 包
+     * 会抛 {@code UnsupportedOperationException}，记 debug 后继续下一步。
+     * 只接这一种异常，其它异常照常抛出，不静默吞掉真 bug。
+     */
+    private static void sendLoginStep(ServerPlayer sp, String what, Runnable action) {
+        try {
+            action.run();
+        } catch (UnsupportedOperationException e) {
+            LOGGER.debug("[SpatialBlueprint] {} sync skipped for {}: {}",
+                    what, sp.getGameProfile().getName(), e.getMessage());
         }
     }
 
@@ -79,9 +99,8 @@ public class SpatialBlueprintMod {
      * 登录时把「能否打开/编辑服务器配置」推给客户端 —— 配置页面是 OP 专属，
      * 客户端自己算不出权限，不推的话非 OP 也能点开那个保存必被拒的假页面。
      */
-    private static void syncConfigPerm(net.minecraft.server.level.ServerPlayer sp) {
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+    private static void syncConfigPerm(ServerPlayer sp) {
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                 new com.xioyim.spatialblueprint.network.s2c.S2C_ConfigPermMessage(sp.hasPermissions(2)));
     }
 
@@ -90,11 +109,10 @@ public class SpatialBlueprintMod {
      *
      * <p>蓝图目录是所有单人存档共用的，不推这份身份客户端就分不出手里这张蓝图是不是本档的。</p>
      */
-    private static void syncWorldIdentity(net.minecraft.server.level.ServerPlayer sp) {
+    private static void syncWorldIdentity(ServerPlayer sp) {
         com.xioyim.spatialblueprint.util.WorldIdentity id =
                 com.xioyim.spatialblueprint.util.WorldIdentity.get(sp.serverLevel());
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                 new com.xioyim.spatialblueprint.network.S2C_WorldIdentityMessage(
                         id.uuid().toString(),
                         sp.server.getWorldData().getLevelName()));
@@ -109,7 +127,7 @@ public class SpatialBlueprintMod {
      * <p>只提示、不自动清理 —— 万一是误删，管理员还能把文件恢复回来；
      * 要不要放弃这袋材料由玩家自己在材料空间界面决定。</p>
      */
-    private static void notifyLostDimensionalBlueprints(net.minecraft.server.level.ServerPlayer sp) {
+    private static void notifyLostDimensionalBlueprints(ServerPlayer sp) {
         com.xioyim.spatialblueprint.util.MaterialSpace space =
                 com.xioyim.spatialblueprint.util.MaterialSpace.get(sp.serverLevel());
         int lost = 0;
@@ -120,10 +138,10 @@ public class SpatialBlueprintMod {
             }
         }
         if (lost == 0) return;
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
-                new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
-                        false, "spatial_blueprint.message.void_blueprint.lost_notice"));
+        sendLoginStep(sp, "orphan bag notice",
+                () -> com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
+                        new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                                false, "spatial_blueprint.message.void_blueprint.lost_notice")));
         com.xioyim.spatialblueprint.log.BlueprintFileLogger.orphanBagsDetected(sp, lost);
     }
 
@@ -132,43 +150,23 @@ public class SpatialBlueprintMod {
      * 不重推的话玩家切到创造后按钮仍是灰的（切回生存则相反，会留下一个点了被服务端拒绝的按钮）。
      */
     private static void onChangeGameMode(PlayerEvent.PlayerChangeGameModeEvent event) {
-        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         // 本事件在新模式真正生效【之前】触发，此时 sp.isCreative() 还是旧值，
         // 不能直接调 TeleportPermissions.canTeleport()，必须用 event.getNewGameMode()。
         boolean allowed = sp.hasPermissions(2)
                 || event.getNewGameMode() == net.minecraft.world.level.GameType.CREATIVE
                 || com.xioyim.spatialblueprint.util.TeleportPermissions.get(sp.serverLevel())
                         .has(sp.getUUID());
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                 new com.xioyim.spatialblueprint.network.S2C_TeleportPermMessage(allowed));
     }
 
     private static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        SBUndoCooldown.clearPlayer(event.getEntity().getUUID());
+        com.xioyim.spatialblueprint.util.SBUndoCooldown.clearPlayer(event.getEntity().getUUID());
         com.xioyim.spatialblueprint.network.C2S_RequestProjectListMessage.forget(event.getEntity().getUUID());
         // Clear server-side preview entry so nearby players stop seeing a stale box
-        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
+        if (event.getEntity() instanceof ServerPlayer sp) {
             com.xioyim.spatialblueprint.server.ServerPreviewTracker.clear(sp);
-        } else {
-            // 单人退出 / 客户端断线：清空材料空间缓存，避免下次进入其他存档时残留旧数据。
-            //
-            // 必须用 DistExecutor，不能写成 if (FMLEnvironment.dist == Dist.CLIENT) —— 那是
-            // 运行时判断，阻止不了【类加载】：专用服务端加载本类时就会连带解析
-            // ClientMaterialSpaceCache，它又引用 MaterialSpaceScreen（extends Screen），
-            // 触发 RuntimeDistCleaner 的 "invalid dist DEDICATED_SERVER" 直接让服务端启动失败。
-            // unsafeRunWhenOn 把方法引用包在 Supplier 里，只有 dist 匹配时才会实例化。
-            net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
-                    net.minecraftforge.api.distmarker.Dist.CLIENT,
-                    () -> com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache::clear);
-            // 传送权限同理：不清的话会把上一个存档的权限带进下一个
-            net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
-                    net.minecraftforge.api.distmarker.Dist.CLIENT,
-                    () -> com.xioyim.spatialblueprint.client.ClientTeleportPermCache::clear);
-            // 配置页 OP 权限同理
-            net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
-                    net.minecraftforge.api.distmarker.Dist.CLIENT,
-                    () -> com.xioyim.spatialblueprint.client.ClientConfigPermCache::clear);
         }
     }
 
@@ -177,23 +175,8 @@ public class SpatialBlueprintMod {
         ProjectStorage.init();
         com.xioyim.spatialblueprint.log.BlueprintFileLogger.init();
         // 扫描注册表，生成方块替换候选到独立 toml（幂等覆盖写）
-        event.enqueueWork(com.xioyim.spatialblueprint.util.BlockSubstitutionGenerator::generateAndSave);
+        event.enqueueWork(BlockSubstitutionGenerator::generateAndSave);
         LOGGER.info("Spatial Blueprint mod loaded!");
-    }
-
-    /**
-     * 客户端初始化。实际内容全部在 {@link com.xioyim.spatialblueprint.client.ClientModSetup} 里 ——
-     * 本方法不能直接引用任何客户端类型：注册配置界面的 lambda 会把
-     * {@code net.minecraft.client.gui.screens.Screen} 带进本类的方法签名，
-     * 专用服务端加载本类时就会被 RuntimeDistCleaner 拒绝，导致服务端启动失败。
-     */
-    private void clientSetup(final FMLClientSetupEvent event) {
-        // 结构文件目录（.minecraft/schematics/，与 Litematica / Create 共用）不存在就建出来 ——
-        // 空目录也比「没有这个文件夹」强：玩家至少知道该往哪儿放文件。
-        com.xioyim.spatialblueprint.util.StructureFileScanner.ensureDir();
-        net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
-                net.minecraftforge.api.distmarker.Dist.CLIENT,
-                () -> () -> com.xioyim.spatialblueprint.client.ClientModSetup.init(event));
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

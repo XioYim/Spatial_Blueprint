@@ -33,7 +33,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 public final class SBCommands {
 
@@ -436,8 +436,7 @@ public final class SBCommands {
 
     /** 把该玩家的传送权限结论推给他的客户端。 */
     public static void syncTeleportPerm(ServerPlayer player) {
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
                 new com.xioyim.spatialblueprint.network.S2C_TeleportPermMessage(
                         com.xioyim.spatialblueprint.util.TeleportPermissions.canTeleport(player)));
     }
@@ -456,8 +455,7 @@ public final class SBCommands {
                     "spatial_blueprint.config.error.no_permission"));
             return 0;
         }
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
                 new com.xioyim.spatialblueprint.network.s2c.S2C_OpenConfigMessage());
         return 1;
     }

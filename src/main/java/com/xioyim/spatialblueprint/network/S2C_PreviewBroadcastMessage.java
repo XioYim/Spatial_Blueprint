@@ -1,19 +1,27 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * S2C: server broadcasts another player's blueprint preview to nearby clients.
  * origin == null means that player cleared their preview.
  */
-public class S2C_PreviewBroadcastMessage {
+public class S2C_PreviewBroadcastMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_PreviewBroadcastMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_preview_broadcast_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_PreviewBroadcastMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_PreviewBroadcastMessage::encode, S2C_PreviewBroadcastMessage::decode);
 
     public final UUID    playerUUID;
     public final String  playerName;
@@ -39,6 +47,11 @@ public class S2C_PreviewBroadcastMessage {
         this.sizeX       = sizeX;
         this.sizeY       = sizeY;
         this.sizeZ       = sizeZ;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_PreviewBroadcastMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_PreviewBroadcastMessage msg, FriendlyByteBuf buf) {
@@ -70,19 +83,7 @@ public class S2C_PreviewBroadcastMessage {
                 origin, rotation, sizeX, sizeY, sizeZ);
     }
 
-    public static void handle(S2C_PreviewBroadcastMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist != Dist.CLIENT) return;
-            handleClient(msg);
-        });
-        ctx.get().setPacketHandled(true);
-    }
-
-    @net.minecraftforge.api.distmarker.OnlyIn(Dist.CLIENT)
-    private static void handleClient(S2C_PreviewBroadcastMessage msg) {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        // Don't show our own preview via broadcast
-        if (mc.player != null && mc.player.getUUID().equals(msg.playerUUID)) return;
-        com.xioyim.spatialblueprint.client.ClientOtherPreviewCache.receive(msg);
+    public static void handle(S2C_PreviewBroadcastMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.SpatialBlueprintClient.receiveOtherPreview(msg);
     }
 }

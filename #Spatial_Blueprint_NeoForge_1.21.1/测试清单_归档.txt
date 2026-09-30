@@ -1,0 +1,865 @@
+# Spatial_Blueprint_NeoForge_1.21.1 · 测试清单 · 归档
+
+全部通过的组从 `测试清单.txt` 移到这里（规矩见那边文件头）。本文件只追加：新归档的组接在文末，不改已归档内容。
+移入：2026-09-30 00:55:00（SBN-001～006 共 8 组，按任务号排序；每组【自动】末尾补登了 C1「云端复核」）。
+未完成项（旧文件读取基线）已移回正文统一跟踪。
+
+
+--------------------------------------------------------
+一、SBN-001 纯逻辑层 —— 构建 3.0.0（P1a，无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 15:30:00 · 测于 2026-09-29 14:51:54
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条（计数用 源文件:行号:）
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest g01～g08（SBN001Tests，空模板 empty）
+    预期：8 进 8 出全过
+    实际：Running test batch 'defaultBatch:0' (8 tests)... [++++++++] All 8 required tests passed :)
+    g01 位压缩往返 / g02 旋转 / g03 蓝图往返 / g04 坐标兼容 / g05 越界守卫 / g06 批量转换 / g07 复合键 / g08 项目往返 全部通过
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    预期：可选
+    实际：未做。gametest 启动已覆盖完整 mod 加载链（mod loaded、两份 toml 生成、106 条替换候选）；P1a 无新增服务端行为
+    结果：[✓] 全部通过（2026-09-30 00:55:00 补结：SBN-004 / 005 / 006 的必做专服冒烟（runServer 到 Done、RCON stop 正常、0 条本 mod ERROR）已覆盖本组全部代码；原记 [~] 主体通过（待 P2 有物品/服务端行为后再做 runServer 到 Done + stop））
+A4. 旧文件读取基线
+    预期：可选
+    实际：未做。本机无 1.20.1 线捕获的 .litematic/.schem/.schematic/.nbt 旧文件（run 与 schematics 目录均无）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+    跟踪：2026-09-30 00:55:00 起移入测试清单正文「待办·旧文件读取基线」统一跟踪
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：未做：当时云端网络为 Trusted，gradle 依赖被拒（K4），按本地证据验收（SBN-001_验收.txt）
+    结果：[~] 未做（原因见实际）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+二、SBN-002 净化器 —— 构建 3.0.0（P1b，无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 17:05:00 · 测于 2026-09-29 16:55:14
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest s01～s11（SBN002Tests）+ 复跑 SBN001Tests
+    预期：19 进 19 出全过
+    实际：Running test batch 'defaultBatch:0' (19 tests)... [+++++++++++++++++++] All 19 required tests passed :)
+    s01 嵌套非法物品 / s02 容器无残片+components 夹带 / s03 KeepContents / s04 讲台书新旧格式 / s05 告示牌命令 /
+    s06 展示框重建 / s07 刷怪笼+试炼刷怪笼+D9 / s08 蜂箱保留 / s09 盔甲架记录 / s10 战利品表记录 / s11 端到端 全部通过
+    首跑 s05 因未进世界 setText 崩（level null），加 sign.setLevel 后通过；详见证据/GameTest.txt
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    预期：可选，确认新 toml 默认值带 D9 两项
+    实际：未做单独 runServer；等效证据由本次 gametest 启动覆盖——新生成的 spatial_blueprint.toml 两处默认值均含
+          minecraft:trial_spawner / minecraft:vault（原文见证据/GameTest.txt）
+    结果：[✓] 全部通过（2026-09-30 00:55:00 补结：SBN-004 / 005 / 006 的必做专服冒烟（runServer 到 Done、RCON stop 正常、0 条本 mod ERROR）已覆盖本组全部代码；原记 [~] 主体通过（等效覆盖））
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+    跟踪：2026-09-30 00:55:00 起移入测试清单正文「待办·旧文件读取基线」统一跟踪
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：未做：云端网络 Trusted（K4），按本地证据验收（SBN-002_验收.txt）
+    结果：[~] 未做（原因见实际）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+二·补丁、SBN-002a 净化器补丁 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 17:58:00 · 测于 2026-09-29 17:43:49
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+来由：SBN-002 验收不通过（讲台书裸字符串页面漏检）+ 用户拍板一起修的三条两线共有问题。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 19 条（SBN001Tests 8 + SBN002Tests 11；临时取样 s99 已删）
+    预期：19 进 19 出全过
+    实际：Running test batch 'defaultBatch:0' (19 tests)... [+++++++++++++++++++] All 19 required tests passed :)
+    改写用例：
+      s04(c) 裸字符串页面：真实成书 NBT 的 pages 换成字符串列表（内容 = 原 raw JSON）→ ItemStack.parse 成功、
+             解析出页面带 run_command（可达性成立）→ 判危险、净化后无 Book
+      s05 过滤文本：messages 干净、命令只藏 filtered_messages → 判危险；净化后 filtered_messages 无 clickEvent、文字还在、
+             正常文本保留
+      s09 hasEquipment：空盔甲架 = false、手持剑 = true（经 scanBlueprintData 的 ScanEntity 读出）
+      s10 战利品表：stripItemContents / stripDangerousBlockNbt 后无 LootTable/LootTableSeed；KeepContents 保留；
+             components."minecraft:container_loot"（真实物品 API 序列化）经物品放置路径生效，strip 后组件不在、
+             loadWithComponents 读回 getLootTable() = null
+    首跑 s10 的可达性断言用了 loadWithComponents（不调 applyImplicitComponents）而误判，改用
+    applyComponentsFromItemStack 后通过；详见证据/GameTest.txt 与报告第四节
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（同 SBN-002，gametest 已覆盖 mod 加载链）
+    结果：[✓] 全部通过（2026-09-30 00:55:00 补结：SBN-004 / 005 / 006 的必做专服冒烟（runServer 到 Done、RCON stop 正常、0 条本 mod ERROR）已覆盖本组全部代码；原记 [~] 主体通过（等效覆盖））
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+    跟踪：2026-09-30 00:55:00 起移入测试清单正文「待办·旧文件读取基线」统一跟踪
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：未做：云端网络 Trusted（K4），按本地证据验收（SBN-002a_验收.txt）
+    结果：[~] 未做（原因见实际）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+三、SBN-003 存储与 SavedData + D8 材料键组件化 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 19:05:00 · 测于 2026-09-29 18:53:53
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 26 条（SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7）
+    预期：26 进 26 出全过
+    实际：Running test batch 'defaultBatch:0' (26 tests)... [++++++++++++++++++++++++++] All 26 required tests passed :)
+    t01 D8 材料键（纯 ID / 摘要 / 附魔顺序无关 / repair_cost 忽略 / "!" 移除标记 / 空潜影盒等价）
+    t02 of() 与 ItemStack.save components 同编码一致性（7 个样本逐一相等）
+    t03 显示栈往返（附魔/改名 isSameItemSameComponents）+ 旧格式 tag 返回普通栈
+    t04 实体手持物品键 == of()
+    t05 7 个 SavedData 往返 + MaterialSpace 真实 computeIfAbsent 接线
+    t06 BlueprintStorage / ProjectStorage 保存 → 读回 → 删除（含箱子 NBT）
+    t07 旧格式 {X,Y,Z} 坐标经 listSummaries 读出正确
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（gametest 已覆盖 mod 加载链）
+    结果：[✓] 全部通过（2026-09-30 00:55:00 补结：SBN-004 / 005 / 006 的必做专服冒烟（runServer 到 Done、RCON stop 正常、0 条本 mod ERROR）已覆盖本组全部代码；原记 [~] 主体通过（等效覆盖））
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+    跟踪：2026-09-30 00:55:00 起移入测试清单正文「待办·旧文件读取基线」统一跟踪
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：未做：云端网络 Trusted（K4），按本地证据审；第一次验收不通过（SBN-003_验收.txt）
+    结果：[~] 未做（原因见实际）
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+三·补丁、SBN-003a 材料键保留开关型组件 —— 构建 3.0.0（无部署，gametest 服务器实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 19:25:00 · 测于 2026-09-29 19:13:52
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成。
+来由：SBN-003 验收不通过 —— pruneNoOps 把值为空 compound 的「开关型」组件（unbreakable / hide_tooltip 等）整条剔掉，不可破坏镐与普通镐同键。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 26 条（SBN001Tests 8 + SBN002Tests 11 + SBN003Tests 7）
+    预期：26 进 26 出全过
+    实际：Running test batch 'defaultBatch:0' (26 tests)... [++++++++++++++++++++++++++] All 26 required tests passed :)
+    本补丁新增断言（真实 ItemStack + set(DataComponents.XXX, …)）：
+      t01 不可破坏钻石镐 ≠ 普通钻石镐；unbreakable 隐藏提示（show_in_tooltip=false）≠ 默认；
+          HIDE_TOOLTIP 木棍 ≠ 普通木棍；回归：空潜影盒等价、repair_cost 同键仍在
+      t02 以上三个新物品同样验 of == make(id, save().components)
+      t03 不可破坏镐 buildDisplayStack 往返 isSameItemSameComponents
+    结果：[✓] 全部通过
+A3. 专服冒烟
+    实际：未做（同 SBN-003，gametest 已覆盖 mod 加载链）
+    结果：[✓] 全部通过（2026-09-30 00:55:00 补结：SBN-004 / 005 / 006 的必做专服冒烟（runServer 到 Done、RCON stop 正常、0 条本 mod ERROR）已覆盖本组全部代码；原记 [~] 主体通过（等效覆盖））
+A4. 旧文件读取基线
+    实际：未做（本机无旧蓝图文件）
+    结果：[~] 主体通过（待用户提供旧文件或 P4 前再取）
+    跟踪：2026-09-30 00:55:00 起移入测试清单正文「待办·旧文件读取基线」统一跟踪
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：compileJava --rerun 0 警告；runGameTestServer 26/26；变异复核 1 处：pruneNoOps 开关型组件例外关掉 → t01 / t03 转红（SBN-003a 未单列验收文件，见开发日志 e06）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（没有物品、界面、渲染）。
+
+--------------------------------------------------------
+四、SBN-004 数据组件与物品 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 20:35:00 · 测于 2026-09-29 20:23:53
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 33 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 7）
+    预期：33 进 33 出全过
+    实际：Running test batch 'defaultBatch:0' (33 tests)... [+++++++++++++++++++++++++++++++++] All 33 required tests passed :)
+    t01 注册（10 物品 / render_block / 方块实体 / 39 组件 codec+streamCodec）
+    t02 磁盘往返（6 个根物品类 + getter 逐项 + MutableBlockPos immutable）
+    t03 网络往返（STREAM_CODEC）
+    t04 旧物品迁移（真实 DataFixer 3465→当前，9 组；旧键落 custom_data 实证）
+    t05 迁移幂等
+    t06 BuildBlueprintItem.restore 五种 sourceType
+    t07 RenderBlockEntity 存读/更新包/setRealBlock
+    结果：[✓] 全部通过
+A3. 专服冒烟（本任务必做）
+    预期：runServer 起到 Done、stop 正常退出、无本 mod ERROR、配方正常
+    实际：Done (4.876s)；RCON stop 后 Stopping server + All dimensions are saved + BUILD SUCCESSFUL；
+          0 条 ERROR；Loaded 1291 recipes（blank_blueprint 解析错误消失）；18 条 WARN 全为既有/无害项
+    结果：[✓] 全部通过
+A4. GameTest t08_saveModeOutOfRange（云端验收修正追加，2026-09-29 21:40:00）
+    预期：save_mode 越界值（整栈 parse 时为 9、持久化 codec 为 -1、网络 codec 为 VAR_INT 9）全部回退 SAFE、不抛异常；GameTest 34 进 34 出
+    实际：修正前 t08 失败「Index 9 out of bounds for length 3」（1/34）；SpatialBlueprintComponents 加 captureModeOf 后 All 34 required tests passed
+    结果：[✓] 全部通过（云端复跑）
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：compileJava --rerun 0 警告；runGameTestServer 33/33；变异复核 1 处：LegacyItemMigration.migrate 首行 return → t04 转红；验收修正 t08 后 34/34（SBN-004_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】需要用户进游戏（H1，辅助 AI 已写好步骤，结果等用户回）：
+H1. runClient 单人验证（构建 3.0.0，本地开发环境）：
+    (1) 前置：runClient 进入单人创造世界。
+    (2) 操作：打开创造模式物品栏 →「工具与实用物品」页。
+        预期：能看到 8 个蓝图物品（空白 / 空间 / 投影 / 次元 / 工程 / 奖励 / 公用项目 / 私人项目），
+              图标正常（非紫黑方块），名字是中文翻译。
+    (3) 操作：拿一枚投影蓝图右键。
+        预期：无反应、无报错（界面在 P6 打桩，属于预期行为）。
+    (4) 操作：执行 /give @s spatial_blueprint:spatial_blueprint[spatial_blueprint:blueprint_name="测试"]。
+        预期：物品名字显示「空间蓝图 - 测试」。
+    结果：[✓] 全部通过（用户 2026-09-29 本地 runClient 实测：(2)(3)(4) 均符合预期）
+
+--------------------------------------------------------
+五、SBN-005 网络骨架与蓝图传输 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 21:20:00 · 测于 2026-09-29 21:11:03
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 41 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7）
+    预期：41 进 41 出全过
+    实际：Running test batch 'defaultBatch:0' (41 tests)... [+++++++++++++++++++++++++++++++++++++++++] All 41 required tests passed :)
+    t01 协议版本 == ModList 里本 mod 版本
+    t02 8 个消息编码往返字节逐字相等 + TYPE id 命名
+    t03 6 组越界包全部 DecoderException
+    t04 分片 0/1/512000/512001/1500000 → 0/1/1/2/3 块、拼回相等、每块编码 < 1 MiB、上限 257/256
+    t05 请求蓝图：主人收分片拼回 = 原 NBT；限流 / 非主人 / 不存在均按预期回 Fail
+    t06 废蓝图回收：placed=true 换空白、false 不动
+    t07 桩接线：孤儿 / 空置次元蓝图三条路径的收包断言
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、无本 mod ERROR
+    实际：Done (6.455s)；RCON stop 后正常退出；0 条 ERROR；18 条 WARN 全为既有/无害项
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ 与 server\ 下无客户端类引用
+    实际：0 命中（net.minecraft.client / 本 mod client / gui；NotifySound 也 0）
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：compileJava --rerun 0 警告；runGameTestServer 41/41；A4 grep 云端自跑为空；变异复核 1 处：canManageBlueprint 短路 → t05 转红（SBN-005_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+六、SBN-006 轻量消息一 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-29 22:20:00 · 测于 2026-09-29 22:06:41
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 48 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7）
+    预期：48 进 48 出全过
+    实际：Running test batch 'defaultBatch:0' (48 tests)... [++++++++++++++++++++++++++++++++++++++++++++++++] All 48 required tests passed :)
+    t01 32 个 payload ID 命名 + 互不重复（24 新 + 8 旧）
+    t02 24 个消息编码往返字节逐字相等
+    t03 上限 6 组：4 组超限抛 DecoderException、2 组 Math.min 截断
+    t04 物品状态 handler + 三条负例
+    t05 ApplyConfig 权限 / 合法值 / 越界值三路径
+    t06 蓝图库归属（非主人被拒、主人成功）
+    t07 材料存入 + 回推 sync
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (7.236s)；RCON stop 正常退出；0 条 ERROR；18 条 WARN 全为既有/无害项；
+          [BlueprintFileLogger] Log directory 日志行 + config/spatial_blueprint/logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / NotifySound；注释 0）
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 00:55:00 按验收记录补登）
+    实际：compileJava --rerun 0 警告；runGameTestServer 48/48；32 条注册方向与 1.20.1 逐条比对无差；变异复核 2 处：ApplyConfig 非 OP 判定短路 → t05、Rename 归属判定短路 → t06 各自转红（SBN-006_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+七、SBN-007 轻量消息二 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 00:20:00 · 测于 2026-09-30 00:00:00
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行（首跑曾因 makeMockServerPlayerInLevel 弃用警告 2 条，改自建在场玩家后 0）
+    结果：[✓] 全部通过
+A2. GameTest 56 条（SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 + SBN007 8）
+    预期：56 进 56 出全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (6 tests)
+          ========= 56 GAME TESTS COMPLETE IN 2.403 s ======================
+          All 56 required tests passed :)
+    t01 53 个 payload ID 命名 + 互不重复（21 新 + 32 旧）
+    t02 21 个消息编码往返字节逐字相等（含 origin=null 分支）
+    t03 上限 5 组：ProjectList / ProjectEntries / ProjectStatus 计数超限抛，2 个手写超长字符串抛
+    t04 次元袋：非 OP 看别人无回包 / 自己回 / OP 看别人回
+    t05 空置次元重置：非主人拒、主人成功（文件删+换空白）、外档走 foreign 分支
+    t06 传送：无权限拒 + 坐标不变；允许者移动到目标（在场玩家）、冷却拒；工程同样走允许 / 不允许
+    t07 项目只读：STATION 非 OP 无回包 / PRIVATE 主人可见他人不可见 / 不存在项目 found=false
+    t08 预览广播：范围内收到 / B 移出范围收不到
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.646s)；RCON stop 后 Stopping server + All dimensions are saved；0 条 ERROR；
+          19 条 WARN 全为既有/无害项；[BlueprintFileLogger] Log directory 日志行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          network / server / log 下 SB-TODO( 21 处全部为桩标记；全仓桩数 44 = 35 + 新 9
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 01:30:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 56/56；53 条注册方向与 1.20.1 逐条比对无差；A4 grep 云端自跑为空；变异复核 3 处：RequestVoidBags「查别人需 OP」→ t04、VoidTeleport canTeleport → t06、VoidReset 主人判定 → t05 各自转红（SBN-007_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+八、SBN-008 项目写操作与杂项 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 01:05:00 · 测于 2026-09-30 00:56:27
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行（首跑 1 处漏 import 已修）
+    结果：[✓] 全部通过
+A2. GameTest 65 条（SBN001～007 的 56 + SBN008 9）
+    预期：65 进 65 出全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (15 tests)
+          ========= 65 GAME TESTS COMPLETE IN 3.222 s ======================
+          All 65 required tests passed :)
+    t01 65 个 payload ID 命名 + 互不重复（12 新 + 53 旧）
+    t02 12 个消息编码往返字节逐字相等
+    t03 上限 4 组：MAX_ORDER 越界（1025 / -1）回空列表 + 2 个手写超长字符串抛
+    t04 项目创建 / 删除：非 OP 拒、OP 成功、ownerUuid 正确、删除前后文件状态正确
+    t05 蓝图应用 / 取用：次元蓝图归属、工程固定坐标、MODE_PLAN / MODE_IMPORT 的 project_id / task_set_id
+    t06 项目编辑：范围保存 / 重叠拒、排序重编号 / 前置重映射、删子工程与依赖拒
+    t07 领取子工程：工程蓝图 sb_task_set_id / sb_entry_index / 领取进度记录
+    t08 材料清单：非 OP 静默拒 / OP+创造写入读回一致 / 奖励清单清空
+    t09 非法方块：禁捕方块上报、普通方块不报、领地采样（临时监听注册 / 注销）
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.453s)；RCON stop 后正常退出；0 条 ERROR；19 条 WARN 全为既有/无害项；
+          [BlueprintFileLogger] Log directory 日志行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          network / server / log / util 下 SB-TODO( 24 处全部为桩标记；全仓桩数 45 = 44 + 新 1
+    结果：[✓] 全部通过
+
+A5. GameTest t10_submitChangesCountGuard（云端验收修正追加，2026-09-30 02:40:00）
+    预期：C2S_SubmitProjectChangesMessage 解码时 orderCount / deleteCount 越界（Integer.MAX_VALUE、负数）整包拒收（DecoderException），不按计数预分配
+    实际：修正前 t10 失败（1/66，未拒收）；两处计数改走 S2C_OperationResult.checkedCount(buf, buf.readableBytes(), …) 后 All 66 required tests passed
+    结果：[✓] 全部通过（云端复跑）
+C1. 云端复核（验收时云端主会话自测，2026-09-30 02:40:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 65/65（修正后 66/66）；65 条注册方向与 1.20.1 逐条比对无差；A4 grep 云端自跑为空；变异复核 3 处：CreateProject OP → t04、ApplyBlueprint 次元蓝图主人 → t05、RequestIllegalBlocks isCanceled → t09 各自转红（SBN-008_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（S2C 客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+--------------------------------------------------------
+九、SBN-009 上传 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 10:30:00 · 测于 2026-09-30 10:17:26
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，命中 0 行
+    结果：[✓] 全部通过
+A2. GameTest 74 条（SBN001～008 的 66 + SBN009 8）
+    预期：74 进 74 出全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (24 tests)
+          ========= 74 GAME TESTS COMPLETE IN 3.059 s ======================
+          All 74 required tests passed :)
+    t01 71 个 payload ID 命名 + 互不重复（6 新 + 65 旧）
+    t02 6 个消息编码往返字节逐字相等（UploadReport 带真实扫描结果、Chunk 带真实压缩字节）
+    t03 上限：Chunk / 单包模板负载 30001 拒收、30000 通过；UploadReport 计数 4097 拒收
+    t04 单包全链路：非创造传 create 被拒；创造上传 → 报告 → 确认 → 蓝图库出现（净化路径）
+    t05 分块：越界 index / 重复块 / 30001 块 / 他人块 / 257 块 Begin / 超限 totalBytes 全部按语义拒；
+        真实两块 → 组装 → 报告
+    t06 上限：临时调小 MAX_UPLOAD_FILE_BYTES → upload_file_too_large；手写解压炸弹 → invalid_blueprint_data
+    t07 工程报告：非创造无回包；创造对已存蓝图 → 收到报告
+    t08 限流：同一玩家连续两次单包上传 → 第二次 upload_rate_limited
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.422s)；RCON stop 后正常退出；0 条 ERROR；19 条 WARN 全为既有/无害项；
+          [BlueprintFileLogger] Log directory 日志行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          network / server / log / util 下 SB-TODO( 25 处全部为桩标记；全仓桩数 46 = 45 + 新 1
+    结果：[✓] 全部通过
+A5. K13 分配点审计（必做）
+    预期：本批每个 C2S decode 与被它们调用的服务端分配点都有上限来源
+    实际：3 处按客户端值分配的调用点全部有夹（Begin→Staging.begin 的 ArrayList 由 MAX_CHUNKS=256 先夹；
+          Chunk/单包模板 readByteArray(30000)；UploadReport 计数经 checkedCount(4096)）；
+          解压经 SafeNbtIo 的 NbtAccounter（64 MiB）——明细见证据/网络.txt 第四节
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 10:50:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 74/74；71 条注册方向与 1.20.1 逐条比对无差；A4 grep 云端自跑为空；变异复核 3 处：UploadBegin MAX_CHUNKS → t05、UploadStagingRegistry WRONG_PLAYER → t05、单包 MAX_UPLOAD_FILE_BYTES → t06 各自转红（SBN-009_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】本组无手测项（上传界面在 P6）。
+
+--------------------------------------------------------
+十、SBN-010 捕获 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 11:45:00 · 测于 2026-09-30 11:40:00
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 84 条（SBN001～009 计 74 + SBN010 10）
+    预期：84 条全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (34 tests)
+          ========= 84 GAME TESTS COMPLETE IN 2.223 s ======================
+          All 84 required tests passed :)
+    t01 76 个 payload ID 命名 + 互不重复（71 旧 + 5 新全 C2S）
+    t02 5 个消息编码往返字节逐字相等
+    t03 名字/备注四处超长拒收；CaptureMode ordinal 99 抛 ArrayIndexOutOfBoundsException（与 1.20.1 同）
+    t04 空间捕获：空白换空间蓝图，方块数正确，箱子 NBT 存在但内容按 SAFE 非 OP 语义被清；
+        捕获 NBT 读回新箱子为空；盔甲架条目经 EntityType.create 还原同类型；源区域不变；收到冷却通知
+    t05 次元捕获：选区清为空气，手里变次元蓝图，三项经访问器正确归一化；
+        次元袋石头 x3/箱子 x1 入账；KeepContents 箱内保留；文件 ownerUuid 为该玩家
+    t06 非 OP FORCE 降级 SAFE（opBypass=false、容器被清）；OP+创造 FORCE（opBypass=true、容器保留并逐格往返一致）
+    t07 领地采样：监听取消→no_break_permission、选区原样、手仍空白、无新文件；注销后同操作成功
+    t08 投影：非 FORCE 箱不带走、源不清；非 OP reward 回落 project；OP+创造+reward 得 reward 且无材料清单
+    t09 空置重储：非主人拒、foreign 世界拒（文件均不变）；主人覆盖写回原文件 placed=false、新物品三项正确
+    t10 工程现场扫描分支绑定四项正确；子工程新增条目、容器被清、relP1/relP2 相对 anchor
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.411s)；RCON stop 后 java 进程全部退出、gradle 任务 BUILD SUCCESSFUL；
+          全文 0 条 ERROR、0 条本 mod WARN；[BlueprintFileLogger] Log 目录行 + logs 目录建出（沿 SBN-008 口径）
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\ / server\ / log\ / util\ 下无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          5 个新文件 0 处 SB-TODO(；全仓桩数 46 = 46 + 0（本任务新桩 0 条，diff 无增减）
+    结果：[✓] 全部通过
+A5. K13 分配点审计（必做）
+    预期：本批每个 C2S decode 与被它们调用的服务端分配点都有上限来源
+    实际：5 个 decode 只读定长字段与带上限字符串（上限见 t03），无按客户端计数分配之处；
+          fromOrdinal 调用点 3 处（CaptureArea:143 / CaptureProjection:115 / Engineering:105），
+          越界抛 ArrayIndexOutOfBoundsException 与 1.20.1 同（t03 实测记录类型）
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 12:30:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 84/84；76 条注册方向与 1.20.1 逐条比对无差；A4 grep 云端自跑为空；变异复核 3 处：CaptureArea「FORCE 仅 OP」→ t06、CaptureArea 领地 isCanceled → t07、VoidRecapture 主人校验 → t09 各自转红（SBN-010_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】无（捕获界面在 P6）。
+
+--------------------------------------------------------
+十一、SBN-011 数据升级 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 13:05:00 · 测于 2026-09-30 12:59:00
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 91 条（SBN001～010 计 84 + SBN011 7）
+    预期：91 条全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (41 tests)
+          All 91 required tests passed :)
+    t01 修复器单元：grass→short_grass、旧剑转 components 并与真实剑逐格一致、
+        current/更大原样、无 id 原样、恶意输入不抛
+    t02 手写 1.20.1 蓝图升级：草升级、箱剑锋利 III 有名、展示框物品正确、dataVersion 仍 3465
+    t03 真实 1.21 数据 serialize→deserialize 逐字相等；缺键按 3465（内容同 t02、版本记 0）
+    t04 旧键迁移合并：两旧键→同一新键数量 5（==真实剑的键）、stone 原样、新 components 可组展示栈
+    t05 旧 MaterialSpace 存档：键迁移合并、registry 更新、dirty→save 打版本→再 load 不脏
+    t06 旧 SBUndoData 存档：快照状态与箱物品升级、dirty→打版本→再 load 不脏
+    t07 真实文件往返：旧字节落盘→load 同 t02→save 写回当前版本→再 load 不走修复内容相同
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR、logs 目录按 init 建出
+    实际：Done (0.433s)；RCON stop 后 java 进程全部消失、gradle 任务 BUILD SUCCESSFUL；
+          全文 0 条 ERROR、0 条本 mod WARN；[BlueprintFileLogger] Log 目录行 + logs 目录建出
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：util\ 下新改文件无客户端类引用；SB-TODO 示例不在注释里
+    实际：0 命中（net.minecraft.client / 本 mod client / gui / net.minecraftforge）；
+          6 个新改文件 0 处 SB-TODO(；全仓桩数 44 = 46 − 2（BlueprintData、MaterialList 两条 P4）+ 0
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 13:30:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 91/91，云端补物品改名（af1c9bd，加 t08_materialKeyRename）后 92/92；
+          A4 grep 云端自跑为空、SB-TODO( 44；变异复核 4 处：BlueprintData needsFix → t02 / t03 / t07、MaterialList 迁移分支 → t04 / t08、
+          MaterialSpace 迁移 → t05 / t08、改名分支 → t08 各自转红（SBN-011_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】无（旧存档实机升级留到有用户旧文件时，正文「旧文件读取基线」继续跟踪）。
+
+--------------------------------------------------------
+十二、SBN-012 放置引擎 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 15:35:00 · 测于 2026-09-30 15:29:47
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 一次启动内完成；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 100 条（SBN001～011 计 92 + SBN012 8）
+    预期：100 条全过
+    实际：Running test batch 'defaultBatch:0' (50 tests) + 'defaultBatch:1' (50 tests)
+          All 100 required tests passed :)
+    t01 注册：place_blueprint_message 命名合规、合计 77 个互不重复、命名空间正确
+    t02 编解码：真实实例（非零偏移 / CLOCKWISE_90 / clearFirst / 非默认 fluidMode）编码→解码→再编码逐字相等；
+        rotation 超 32 字节拒收；未知 rotation 名回退 NONE；fluidMode 非法字节回退 SHOW_ALL
+    t03 新格式往返：真实捕获（楼梯 / 带名锋利 III 剑箱子 / 写字告示牌 / 带物展示框 / 画 / 盔甲架）→ placeImmediately
+        NONE 与 CLOCKWISE_90 各一次，方块状态 / 方块实体 NBT（去 xyz）/ 实体类型与相对位置逐格相等；楼梯 NONE 北、90° 东
+    t04 旧格式往返：SBN011 手写 1.20.1 蓝图 → deserialize → placeImmediately：short_grass、箱内剑升级正确、展示框物品正确
+    t05 动画放置：生存假玩家 handleServer 全路径 → 动画完成、逐格与 t03 NONE 相同、render_block 无残留、
+        强加载前后集一致（无泄漏）、进度包收到 0<p<1 与 p=1
+    t06 放置消息分支：空间（结构放出 + 主手清空）；投影欠料（insufficient_materials、世界 / 物品 / 材料 / 文件四不变）与
+        材料够（扣除、主手变建造蓝图、restore 回投影且 id 同源）；次元非主人含 OP（not_owner、四不变）；
+        次元主人（袋消耗、文件 placed、主手建造蓝图、restore 回空置次元且 12 组件逐项一致）；
+        创造空间（SBUndoData 多一条 + restoreUndo 世界回到放置前）
+    t07 领地预检：取消 EntityPlaceEvent → placement_protected、材料 / 物品 / 世界 / 文件四不变（预检先于一切状态修改）
+    t08 已放置与外档：placed 标记 → blueprint_already_placed；worldUuid 异档 → foreign_world；两者四不变
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 起到 Done、stop 正常退出、0 条本 mod ERROR（K16）
+    实际：Done (0.454s)；RCON stop 后 java 进程全部消失、gradle 任务 BUILD SUCCESSFUL；
+          全文 0 条 ERROR、0 条本 mod WARN
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：network\、server\、log\、util\ 无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 类引用；注释无 SB-TODO(
+    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；两个新文件 0 处 SB-TODO(；
+          全仓桩数 44 = 基线 44 + 本任务 0
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 15:50:00）
+    实际：compileJava --rerun 0 警告；runGameTestServer 100/100（登录兜底收窄 894ec85 后复跑仍 100/100）；77 条注册方向与 1.20.1 逐条比对无差；
+          A4 grep 云端自跑为空、SB-TODO( 44；变异复核 4 处：次元归属 → t06、领地 EntityPlaceEvent → t07、投影材料扣除 → t06、
+          placeImmediately 的 loadWithComponents → t03 / t04 各自转红（SBN-012_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】无（放置界面在 P6；实机放置随 P6 一起测）。
+
+--------------------------------------------------------
+十三、SBN-013 命令与 Reload —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 17:30:00 · 测于 2026-09-30 17:21:34
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON 先执行 "sb reload" 再 stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 108 条（SBN001～012 计 100 + SBN013 8）
+    预期：108 条全过
+    实际：Running test batch 'defaultBatch:0' (50) + :1 (50) + :2 (8)
+          All 108 required tests passed :)（连跑两轮一致）
+    t01 注册：c2s_reload_config_message 命名合规、78 个 id 互不重复（54 C2S / 24 S2C，与 1.20.1 逐条一致）
+    t02 空消息编解码逐字相等（C15）
+    t03 配置热加载：内存改值 → OP 发 C2S reload → 回盘上值；非 OP 同操作 → 内存值保持；
+        改盘 → "/sb reload" → 读盘新值 + 派生缓存已清；finally 原字节写回 + doReload
+    t04 命令树：子节点 = {undo,config,reload,space,tpperm,project}；非 OP/OP 的 canUse 逐节点断言
+    t05 /sb undo：创造放置 → 冷却内被拦（记录在）；动画完成后清冷却 undo → 世界回放置前、记录空、
+        撤回后冷却生效（冷却先判）；再执行 no_history；生存 creative_only
+    t06 /sb tpperm：权限表 grant/revoke + syncTeleportPerm 推送 true/false + list 命令（非空、
+        非 OP 被 requires 拦）+ 离线 UUID 授权（名字参数路径受测试服 profileCache=null 限制，见报告六）
+    t07 /sb space 与 /sb config：自查与 config 真实执行（包断言）；非 OP 被 requires 拦
+    t08 /sb project：非 OP public activate 拒绝 → OP+创造 activate（claim 注册、物品激活）→
+        claim 1（工程蓝图入库）→ release（claim 移除）→ list 执行
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 到 Done、RCON 执行 "sb reload" 返回成功文本、stop 正常、0 条本 mod ERROR（K16）
+    实际：Done (0.389s)；RCON "sb reload" → "[SpatialBlueprint] Config hot-reloaded successfully"；
+          RCON stop 后 java 全部退出、gradle BUILD SUCCESSFUL；全文 0 条 ERROR、
+          3 条本 mod WARN 均为 C1 既有配置 correction
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：command\、network\、server\、log\、util\ 无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 类引用；注释无 SB-TODO(
+    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；
+          全仓桩数 43 = 基线 44 − 1（主类命令注册桩）+ 本任务 0
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 19:05:00）
+    实际：compileJava --rerun 0 警告；首次复跑 107/108（SBN003 t05 MaterialSpace 往返：HashMap 存盘顺序不定，根因见 SBN-013_验收.txt）→
+          云端补丁 1390509（LinkedHashMap + 新增 t09_materialSpaceSaveOrder、t05 生存 undo 补真实记录）后连跑两轮 109/109；
+          78 条注册与 1.20.1 逐条一致零缺失；A4 grep 云端自跑为空、SB-TODO( 43；变异复核 4 处：Reload OP → t03、reload requires → t04、
+          tpperm requires → t04 / t06、undo isCreative → t05（补强后）各自转红
+    结果：[✓] 全部通过
+
+【手测】无（/sb config 打开界面在 P6；本任务未部署）。
+
+--------------------------------------------------------
+十四、SBN-014 登录事件与兼容 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
+--------------------------------------------------------
+
+登记 2026-09-30 20:10:00 · 测于 2026-09-30 19:58:04
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 117 条（SBN001～013 计 109 + SBN014 8）
+    预期：117 条全过
+    实际：========= 117 GAME TESTS COMPLETE IN 5.569 s ======================
+          All 117 required tests passed :)（连跑两轮一致）
+    t01 登录：非 OP 假玩家 post 登录 → TeleportPerm(false)、WorldIdentity（uuid = WorldIdentity、名字 = 存档名）、
+        ConfigPerm(false)，ConfigSync 恰好一次；OP → TeleportPerm(true) + ConfigPerm(true)
+    t02 孤儿袋：文件缺 + 有料 → lost_notice；文件在 → 无；total=0（反射造空袋）→ 无
+    t03 mock 玩家（配置相位）：post 不抛；四步 debug 各自兜住；ORPHAN_BAGS_DETECTED 行政日志照写
+    t04 切模式：SURVIVAL→CREATIVE 放行（当前模式不变，证明用 newGameMode）；CREATIVE→SURVIVAL 拒；
+        授权后 true；OP true
+    t05 登出：撤回冷却、项目列表缓存（冷却重现）、预览清除广播（watcher 收到 origin=null）三清
+    t06 ForagersInsightCompat：true→false 且只改一行、幂等、已是 false 不动、无文件不抛（C28 原字节写回）
+    t07 内联回退：无 id → 升级数据（short_grass / 箱剑）；文件缺 → 用内联；文件在 → 用文件；
+        坏数据（saveMode=99）→ null 且不抛；空间蓝图仍只认文件；调用前后组件逐字相等
+    t08 内联旧物品端到端：创造假玩家 handleServer → 世界 short_grass + 箱第 0 格锋利 III 有名钻石剑
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做）
+    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR（K16）；启动日志无 ForagersInsight 相关异常
+    实际：Done (0.394s)；RCON stop 后 java 全部退出、gradle BUILD SUCCESSFUL；全文 0 条 ERROR、
+        0 条本 mod WARN；stdout 无 ForagersInsight 行（FI 未装 → 静默跳过）
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：主类、command\、network\、server\、log\、util\、item\ 无 net.minecraft.client / 本 mod client / gui /
+        net.minecraftforge 类引用；注释无 SB-TODO( 示例字样
+    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；
+        全仓桩数 41 = 基线 43 − 3（两条主类 P4 + AbstractBlueprintItem P4）+ 1（登出客户端分支 P5 桩）
+    结果：[✓] 全部通过
+
+C1. 云端复核（验收时云端主会话自测，2026-09-30 20:30:00）
+    实际：compileJava --rerun 0 警告；复跑两轮 117/117；A4 grep 云端自跑为空、SB-TODO( 41（P4 桩 0）；变异复核 4 处：孤儿袋判定 → t02、
+          切模式新模式判定 → t04、ForagersInsight 正则 → t06、内联回退 → t07 各自转红；变异期间暴露 SBN003 t05「SBUndoData roundtrip」
+          （K25 同类）→ 云端补丁 eb7d91a（四张表改 Linked 版 + t09_savedDataSaveOrder）后连跑两轮 118/118（SBN-014_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】无（登录后界面表现随 P5 / P6；本任务未部署）。
+
+--------------------------------------------------------
+十五、SBN-015 客户端入口与缓存 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]（自动部分；H1 / H2 手测转正文跟踪）
+--------------------------------------------------------
+
+登记 2026-09-30 21:30:00 · 测于 2026-09-30 21:21:24
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 126 条（SBN001～014 计 119 + SBN015 7）
+    预期：126 条全过
+    实际：========= 126 GAME TESTS COMPLETE IN 5.361 s ======================
+          All 126 required tests passed :)（连跑两轮一致）
+    t01 分块缓存：真实序列化 + 服务端 splitIntoChunks 乱序重组逐字相等；手切 2 块乱序相等；缺块不挂（进度 50）；
+        超块数 / 越界下标丢弃；markFailed / clearFailed；clearAll 全空
+    t02 他人下载：预览条目 + register → put 挂 fullData；未登记不挂；origin=null 移除
+    t03 项目三缓存：C2S handleServer 真实产包 → 列表 / 条目 / 状态读回字段逐项相等；clear
+    t04 小缓存：身份 / 传送权限与冷却 / 捕获冷却 / 配置镜像（真实快照，按稳定 ID 读回盘值）
+    t05 ConfigAccess：无快照回退本地、pending 优先、快照优先且不写本地 spec、defaultValue；
+        越界值 applyInt 拒绝保留原值
+    t06 物品客户端读缓存：投影缓存 / 内联回退只读 / 空间蓝图 null；Project 三处缓存无 / found=false / found=true
+    t07 断线清理：12 缓存填数据 → SpatialBlueprintClient.clearAllCaches() → 全空
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做，本任务的分边门禁）
+    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR；runServer 与 runGameTestServer 两份日志
+        「invalid dist」「Attempted to load class」「NoClassDefFoundError」0 条（K16）
+    实际：Done (0.493s)；RCON stop 后 gradle BUILD SUCCESSFUL；0 ERROR、0 本 mod WARN；
+        两份日志 invalid dist / Attempted to load class / NoClassDefFoundError / ClassNotFoundException 全 0
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+        spatialblueprint.client 引用逐处列出并说明；注释无 SB-TODO( 示例
+    实际：0 命中；对 client 包引用 21 处（18 执行 + 3 注释）逐条列明（见报告三 / 门禁.txt）；
+        全仓桩数 24 = 基线 41 − 22（清桩）+ 5（新桩：入口 2 + 材料空间开屏 P6 + 预览渲染接线 P5 ×2），P5 5 / P6 19
+    结果：[✓] 全部通过
+C1. 云端复核（验收时云端主会话自测，2026-09-30 22:05:00）
+    实际：compileJava --rerun 0 警告；两轮 126/126；云端自跑专服 runServer 到 Done、分边门禁（invalid dist / Attempted to load class / NoClassDefFoundError / ERROR）0 条；
+          A4 grep 云端自跑为空、client 包引用 18 处全在客户端执行体、SB-TODO( 24（P5 5 / P6 19）；变异复核 4 处：分块下标守卫 → t01、下载登记匹配 → t02、
+          断线漏清 → t07、内联回退 → t06 各自转红（SBN-015_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】H1 / H2 未做，已转 测试清单.txt 正文「十五（手测）」单独跟踪。
+
+--------------------------------------------------------
+十六、SBN-016 渲染底座 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]（自动部分；H1～H4 手测转正文跟踪）
+--------------------------------------------------------
+
+登记 2026-09-30 22:25:00 · 测于 2026-09-30 22:19:48
+
+前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
+
+【自动】辅助 AI 自己测（结果当场写）：
+A1. 编译 compileJava --rerun
+    预期：BUILD SUCCESSFUL，警告 0 条
+    实际：BUILD SUCCESSFUL，警告 0 条
+    结果：[✓] 全部通过
+A2. GameTest 129 条（SBN001～015 计 126 + SBN016 3）
+    预期：129 条全过
+    实际：========= 129 GAME TESTS COMPLETE IN 7.430 s ======================
+          All 129 required tests passed :)（连跑两轮一致）
+    t01 假世界：命中/未命中（空气）、流体、block/sky/raw 亮度恒 15、getShade 五档 + shade=false、
+        getBlockEntity null、高度取真实世界
+    t02 破坏粒子缓存：put→remove 取回并移除、再取 null；clear 全空；clearAllCaches 后第 13 个也空
+    t03 客户端边界：读 Outliner.class 字节，断言存在且常量池含客户端类引用（云端验收由 Class.forName 改写：原写法每轮在日志留一条
+        "Attempted to load class" ERROR 污染门禁）—— outliner 专服不可测，行为随 SBN-017 的 runClient 手测覆盖
+    结果：[✓] 全部通过
+A3. 专服冒烟（必做，分边门禁）
+    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR；两份日志 invalid dist / Attempted to load class /
+        NoClassDefFoundError 0 条（云端复核：t03 改写前日志里每轮有 1 条自己测试触发的拒绝，已消除）（K16 / K29）
+    实际：Done (0.622s)；RCON stop 后 gradle BUILD SUCCESSFUL；0 ERROR、0 本 mod WARN；
+        两份日志 invalid dist / Attempted to load class / NoClassDefFoundError / ClassNotFoundException 全 0
+    结果：[✓] 全部通过
+A4. grep 门禁（必做）
+    预期：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+        spatialblueprint.client 引用逐处列出
+    实际：0 命中；对 client 包引用 22 处（+RenderBlock.java:75 在 isClientSide 分支内，逐条见报告三 / 门禁.txt）；
+        全仓桩数 22 = 基线 24 − 2（渲染器注册 + 破坏特效），P5 3 / P6 19
+    结果：[✓] 全部通过
+C1. 云端复核（验收时云端主会话自测，2026-09-30 23:05:00）
+    实际：compileJava --rerun 0 警告；GameTest 129/129（另见：SBN012 t03 画相关间歇失败 14 轮 2 次，已加诊断，登记待办）；云端自跑专服 runServer 到 Done、
+          分边门禁 0 条（t03 改写后 GameTest 日志亦 0 条）；A4 grep 云端自跑为空、SB-TODO( 22；变异复核 3 处：粒子缓存 remove → t02、
+          断线漏第 13 个 → t02 / t07、假世界阴影 → t01 各自转红，第 4 项 outliner 淡出不可测（SBN-016_验收.txt）
+    结果：[✓] 全部通过
+
+【手测】H1～H4 未做，已转 测试清单.txt 正文「十六（手测）」单独跟踪。
+
+--------------------------------------------------------
+十五（手测）、SBN-015 客户端入口与缓存 —— H1 / H2 用户手测 [✓]
+--------------------------------------------------------
+
+登记 2026-09-30 21:30:00 · 测于 2026-09-30 23:59:45（自动部分已归档，见 测试清单_归档.txt 十五）
+
+【手测】需要用户进游戏（本任务验收的一部分；做完回一句结果，写回本组）：
+H1. runClient 单人持久性（前置：本机开发环境 `.\gradlew.bat runClient`）
+    操作：进单人新存档 → 创造模式拿空白 / 空间 / 投影蓝图各一个，鼠标悬停看提示 → 退出到标题，再进另一个存档
+    预期：全程不崩、日志 0 条本 mod ERROR；tooltip 正常显示
+    实际：用户 runClient 单人：三种蓝图悬停提示正常，换档不崩（用户回报 2026-09-30 晚，H1 通过）
+    结果：[✓] 用户手测通过
+H2. runClient 连本机专服（前置：`.\gradlew.bat runServer` 起服；runClient 多人连接 127.0.0.1）
+    操作：登录 → 走动 / 拿蓝图悬停 → 断开连接 → 重连一次
+    预期：登录成功不断开；客户端与服务端日志均无 invalid dist / Attempted to load class / 本 mod ERROR；重连正常
+    实际：用户 runServer + runClient 连 127.0.0.1：服务端玩家事件 23:58:52 joined → 23:59:43 left → 23:59:45 joined，无掉线无被踢、重连正常；客户端 / 服务端日志 invalid dist、Attempted to load class、NoClassDefFoundError、ClassNotFoundException、本 mod ERROR、全部 ERROR 行均为 0（用户回报 2026-10-01 00:00）
+    结果：[✓] 用户手测通过
+
+--------------------------------------------------------
+十六（手测）、SBN-016 渲染底座 —— H1～H4 用户手测 [✓]
+--------------------------------------------------------
+
+登记 2026-09-30 22:25:00 · 测于 2026-10-01 00:05:00（自动部分已归档，见 测试清单_归档.txt 十六）
+
+【手测】需要用户进游戏（辅助 AI 本机 CLI 会话无显示 / 无法驱动 runClient 窗口，四项「未能目视」，见报告四）：
+H1. 渲染方块生长动画（前置：runClient 进新建单人创造世界）
+    操作：站在空地，依次执行（每条间隔几秒）：
+        /setblock ~2 ~ ~ spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:diamond_block"}}
+        /setblock ~2 ~ ~3 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:glass"},targetBlock:{Name:"minecraft:gold_block"}}
+        /setblock ~2 ~ ~6 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:oak_leaves"},targetBlock:{Name:"minecraft:emerald_block"}}
+        /setblock ~2 ~ ~9 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:grass_block"},targetBlock:{Name:"minecraft:iron_block"}}
+        /setblock ~2 ~ ~12 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:water"},targetBlock:{Name:"minecraft:lapis_block"}}
+        /setblock ~2 ~ ~15 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:lava"},targetBlock:{Name:"minecraft:redstone_block"}}
+    预期：每个位置先出现从中心平滑长大的小方块（石头 / 玻璃半透明 / 树叶镂空 / 草方块带草地染色 / 水蓝色玻璃 /
+        岩浆橙色玻璃），长到整格后变成对应目标方块；全程无黑紫缺失纹理、无闪烁、日志 0 条本 mod ERROR
+    实际：用户目视：6 种渲染方块（石头 / 玻璃 / 树叶 / 草方块 / 水 / 岩浆）生长动画正常，无黑紫纹理、无闪烁（用户回报，H1 通过）
+    结果：[✓] 用户手测通过
+H2. 收缩（替换）动画
+    操作：/setblock ~4 ~ ~ spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:air"},shrinking:1b,drawSize:20b}
+    预期：整格石头平滑缩小直至消失，位置变成空气
+    实际：用户目视：收缩动画正常（用户回报，H2 通过）
+    结果：[✓] 用户手测通过
+H3. 破坏特效
+    操作：/setblock ~4 ~ ~3 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},targetBlock:{Name:"minecraft:diamond_block"},serverTickCount:-100000}
+          （方块停在长满状态）→ 徒手（创造）打掉；再执行
+          /setblock ~4 ~ ~6 spatial_blueprint:render_block{renderBlock:{Name:"minecraft:stone"},serverTickCount:-100000} → 同样打掉
+    预期：第一个飞溅钻石块纹理碎片（不是黑紫方块）；第二个（目标为空气）打掉后无粒子、无黑紫方块
+    实际：用户目视：破坏粒子正常（目标钻石块 → 钻石碎片；目标空气 → 无粒子）（用户回报，H3 通过）
+    结果：[✓] 用户手测通过
+H4. outliner 线框（前置：PowerShell 先 $env:SB_DEBUG_OUTLINER = "1"，再 .\gradlew.bat runClient；
+    进单人创造世界垫平地面，P+(3,0,0) 与 P+(-3,0,0) 旁各竖一堵实心墙）
+    操作：站着不动看 A / B / D；再用准星扫过不同方块看 C；转头、走动、切第三人称（F5）各看一遍；准星移向天空看 C 淡出
+    预期：A 有线框与半透明面、被墙挡住时看不见；B 隔墙可见；C 平滑追随准星方块、离开后约半秒淡出；D 三条角标；
+        所有框严格贴合方块网格，转头 / 走动 / 第三人称不漂移、不抖动、不错位（若错位 = AFTER_PARTICLES 的 pose stack
+        约定变了，云端按报告六.5 修 OutlinerDebug.onRenderLevel）；线粗细正常、半透明面无黑块、日志 0 本 mod ERROR
+    实际：用户目视：A / B / C / D 四种线框贴格、隔墙可见、追随与淡出均正常，转头 / 走动 / 第三人称不漂移不错位 —— AFTER_PARTICLES 的 pose stack 约定在 1.21.1 仍与 1.20.1 一致（用户回报，H4 通过）
+    结果：[✓] 用户手测通过

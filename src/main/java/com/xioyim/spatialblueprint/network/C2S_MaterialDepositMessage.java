@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.item.DimensionalBlueprintItem;
 import com.xioyim.spatialblueprint.item.EngineeringBlueprintItem;
 import com.xioyim.spatialblueprint.item.ProjectionBlueprintItem;
@@ -11,15 +12,16 @@ import com.xioyim.spatialblueprint.util.MaterialKey;
 import com.xioyim.spatialblueprint.util.MaterialList;
 import com.xioyim.spatialblueprint.util.MaterialSpace;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * 客户端 → 服务端：材料存入操作。
@@ -36,7 +38,14 @@ import java.util.function.Supplier;
  *
  * <p>取出功能已整体移除，后续将以严格机制重做。次元袋的材料永久不可取出。</p>
  */
-public class C2S_MaterialDepositMessage {
+public class C2S_MaterialDepositMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_MaterialDepositMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_material_deposit_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_MaterialDepositMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_MaterialDepositMessage::encode, C2S_MaterialDepositMessage::decode);
 
     public static final int OP_QUICK_DEPOSIT   = 0;
     public static final int OP_DEPOSIT         = 2;
@@ -75,6 +84,11 @@ public class C2S_MaterialDepositMessage {
         this.zOffset   = zOffset;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_MaterialDepositMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_MaterialDepositMessage msg, FriendlyByteBuf buf) {
         buf.writeInt(msg.operation);
         buf.writeUtf(msg.blockId, 512);
@@ -98,62 +112,64 @@ public class C2S_MaterialDepositMessage {
         return new C2S_MaterialDepositMessage(op, blockId, amount, alignMode, rotation, xOff, yOff, zOff);
     }
 
-    public static void handle(C2S_MaterialDepositMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_MaterialDepositMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            MaterialSpace space = MaterialSpace.get(player.serverLevel());
+    public static void handleServer(C2S_MaterialDepositMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-            // ── 找手中的投影蓝图 / 工程蓝图 / 次元蓝图 ─────────────────────
-            ItemStack stack = null;
-            InteractionHand hand = null;
-            ItemStack main = player.getMainHandItem();
-            ItemStack off  = player.getOffhandItem();
-            if (isBlueprint(main)) {
-                stack = main; hand = InteractionHand.MAIN_HAND;
-            } else if (isBlueprint(off)) {
-                stack = off; hand = InteractionHand.OFF_HAND;
-            }
-            if (stack == null) return;
+        MaterialSpace space = MaterialSpace.get(player.serverLevel());
 
-            MaterialList ml = ProjectionBlueprintItem.getMaterialListServer(stack);
-            if (ml == null) return;
+        // ── 找手中的投影蓝图 / 工程蓝图 / 次元蓝图 ─────────────────────
+        ItemStack stack = null;
+        InteractionHand hand = null;
+        ItemStack main = player.getMainHandItem();
+        ItemStack off  = player.getOffhandItem();
+        if (isBlueprint(main)) {
+            stack = main; hand = InteractionHand.MAIN_HAND;
+        } else if (isBlueprint(off)) {
+            stack = off; hand = InteractionHand.OFF_HAND;
+        }
+        if (stack == null) return;
 
-            // 创造模式放置不校验材料，故不接受存入 —— 否则等于凭空往池里塞货
-            if (player.isCreative()) return;
+        MaterialList ml = ProjectionBlueprintItem.getMaterialListServer(stack);
+        if (ml == null) return;
 
-            switch (msg.operation) {
-                case OP_QUICK_DEPOSIT -> quickDeposit(player, space, ml);
-                case OP_DEPOSIT       -> depositOne(player, space, ml, msg.blockId, msg.amount);
-                default               -> { return; }
-            }
+        // 创造模式放置不校验材料，故不接受存入 —— 否则等于凭空往池里塞货
+        if (player.isCreative()) return;
 
-            S2C_MaterialSpaceSyncMessage.sendFor(player, ml);
+        switch (msg.operation) {
+            case OP_QUICK_DEPOSIT -> quickDeposit(player, space, ml);
+            case OP_DEPOSIT       -> depositOne(player, space, ml, msg.blockId, msg.amount);
+            default               -> { return; }
+        }
 
-            // ── Bug-1 fix: restore client-only rendering state before syncing ─────────
-            // The client embeds alignMode / rotation / offsets so the ItemStack returned
-            // via ClientboundContainerSetSlotPacket still has them — preventing the
-            // renderer from switching to AlignMode.OFF and the preview from disappearing.
-            // E1: 回写前与 UpdateOffsetMessage 同口径 —— 偏移走 clampOffset，alignMode 白名单，
-            // 改包夹带的超大偏移 / 非法字符串落不了盘（放置距离校验照常在放置时兜底）。
-            String mode = msg.alignMode;
-            if (!"OFF".equals(mode) && !"CENTER".equals(mode)
-                    && !"START".equals(mode) && !"END".equals(mode)) {
-                mode = "OFF";
-            }
-            SpatialBlueprintItem.setAlignModeStr(stack, mode);
-            try {
-                SpatialBlueprintItem.setRotation(stack,
-                        net.minecraft.world.level.block.Rotation.valueOf(msg.rotation));
-            } catch (IllegalArgumentException ignored) {}
-            SpatialBlueprintItem.setXOffset(stack, BlueprintValidator.clampOffset(msg.xOffset));
-            SpatialBlueprintItem.setYOffset(stack, BlueprintValidator.clampOffset(msg.yOffset));
-            SpatialBlueprintItem.setZOffset(stack, BlueprintValidator.clampOffset(msg.zOffset));
+        S2C_MaterialSpaceSyncMessage.sendFor(player, ml);
 
-            ItemSyncUtil.syncHand(player, hand);
-        });
-        ctx.get().setPacketHandled(true);
+        // ── Bug-1 fix: restore client-only rendering state before syncing ─────────
+        // The client embeds alignMode / rotation / offsets so the ItemStack returned
+        // via ClientboundContainerSetSlotPacket still has them — preventing the
+        // renderer from switching to AlignMode.OFF and the preview from disappearing.
+        // E1: 回写前与 UpdateOffsetMessage 同口径 —— 偏移走 clampOffset，alignMode 白名单，
+        // 改包夹带的超大偏移 / 非法字符串落不了盘（放置距离校验照常在放置时兜底）。
+        String mode = msg.alignMode;
+        if (!"OFF".equals(mode) && !"CENTER".equals(mode)
+                && !"START".equals(mode) && !"END".equals(mode)) {
+            mode = "OFF";
+        }
+        SpatialBlueprintItem.setAlignModeStr(stack, mode);
+        try {
+            SpatialBlueprintItem.setRotation(stack,
+                    net.minecraft.world.level.block.Rotation.valueOf(msg.rotation));
+        } catch (IllegalArgumentException ignored) {}
+        SpatialBlueprintItem.setXOffset(stack, BlueprintValidator.clampOffset(msg.xOffset));
+        SpatialBlueprintItem.setYOffset(stack, BlueprintValidator.clampOffset(msg.yOffset));
+        SpatialBlueprintItem.setZOffset(stack, BlueprintValidator.clampOffset(msg.zOffset));
+
+        ItemSyncUtil.syncHand(player, hand);
     }
 
     private static boolean isBlueprint(ItemStack stack) {
@@ -211,7 +227,8 @@ public class C2S_MaterialDepositMessage {
     /**
      * 从玩家背包中消耗与复合键<b>完全匹配</b>的物品最多 {@code amount} 个，返回实际消耗数量。
      *
-     * <p>匹配基于 {@link MaterialKey#of(ItemStack)}，即物品类型 + 规范化 NBT。附魔、耐久
+     * <p>匹配基于 {@link MaterialKey#of(ItemStack, net.minecraft.core.HolderLookup.Provider)}，
+     * 即物品类型 + 规范化 NBT。附魔、耐久
      * 不同的同种物品会得到不同的键，因此不会互相顶替。</p>
      */
     private static int takeFromInventory(ServerPlayer player, String key, int amount) {
@@ -222,7 +239,7 @@ public class C2S_MaterialDepositMessage {
             if (slot >= 36 && slot <= 39) continue;
             ItemStack slotStack = inv.getItem(slot);
             if (slotStack.isEmpty()) continue;
-            if (!key.equals(MaterialKey.of(slotStack))) continue;
+            if (!key.equals(MaterialKey.of(slotStack, player.registryAccess()))) continue;
             int take = Math.min(slotStack.getCount(), remaining);
             slotStack.shrink(take);
             remaining -= take;
@@ -234,11 +251,11 @@ public class C2S_MaterialDepositMessage {
     private static void returnToInventory(ServerPlayer player, String key, int amount,
                                           net.minecraft.nbt.CompoundTag tag) {
         if (amount <= 0) return;
-        ItemStack template = MaterialList.buildDisplayStack(key, tag);
+        ItemStack template = MaterialList.buildDisplayStack(key, tag, player.registryAccess());
         if (template.isEmpty()) return;
 
         int remaining = amount;
-        int maxStack  = template.getItem().getMaxStackSize();
+        int maxStack  = template.getMaxStackSize();
         while (remaining > 0) {
             int batch = Math.min(remaining, maxStack);
             ItemStack toAdd = template.copy();
@@ -251,8 +268,7 @@ public class C2S_MaterialDepositMessage {
     }
 
     private static void sendResult(ServerPlayer player, boolean success, String messageKey) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 new S2C_OperationResult(success, messageKey));
     }
 }

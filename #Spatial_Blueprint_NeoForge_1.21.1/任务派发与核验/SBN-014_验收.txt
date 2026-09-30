@@ -1,0 +1,26 @@
+SBN-014 验收
+验收：2026-09-30 20:30:00（云端主会话）
+对象：task/SBN-014 @ 05a801d（+ 0df7a12 规程回填；+ 云端验收补 eb7d91a）
+结论：PASS（带云端补丁：K25 同类存盘顺序三处）→ 合并进 neoforge-1.21.1
+
+V1 改动清单：338e646..0df7a12 的主类、ForagersInsightCompat（新）、AbstractBlueprintItem（只改 getBlueprintDataServer + readInlineData）、SBN014Tests（新）
+   与任务书第二节两向一致；规程第五节同步提交执行者已回填 05a801d —— 通过。
+V2 云端复编译 0 警告；复跑两轮 117/117。A3 专服冒烟按本地证据审；A4 云端自跑 grep（主类、command\、network\、server\、log\、util\、item\）为空；
+   Javadoc 无 SB-TODO(；SB-TODO( 41，其中 P4 桩 0 —— 通过。
+V3 主类事件与 1.20.1 diff：四步顺序原样；每个发包点经 sendLoginStep 只兜 UnsupportedOperationException（K21），孤儿袋的文件日志在兜底之外照写；
+   onChangeGameMode 用 getNewGameMode（注释原样）；登出服务端三步原样，客户端分支换 SB-TODO(P5) 桩；ForagersInsightCompat 只差 FMLPaths 包名；
+   getBlueprintDataServer 判断顺序与 1.20.1 一致（有 id 且文件读得到 → 文件，否则内联），只读 —— 通过。
+V4 桩数 43 − 3 + 1 = 41，与预期一致 —— 通过。
+V5 登录路径 S2C_ConfigSyncMessage 恰好一次（t01 断言；变异复核期间不受影响）—— 通过。
+V6 变异复核（K7，四处，均已还原）：孤儿袋 findFile == null 判定去掉 → t02；切模式判定改用当前模式 → t04；
+   ForagersInsight 正则放宽到任意键 → t06；「文件读不到回退内联」改为有 id 就不回退 → t07，各自转红 —— 通过。
+   **附带发现**：M2 那轮 SBN003 t05「SBUndoData roundtrip」也转红（与变异无关）。根因同 K25：SBUndoData.history 是 HashMap，
+   pop 不删空队列、save 跳过空队列 → 活实例表比读回副本大，扩容不缩容 → ListTag 顺序不同。全量排查 SavedData：
+   SBUndoData.history、SBSafeCoordData.entries、ProjectProgressData.completedByTaskSet（含内层集合）/ lastClaimTimes 同写法；
+   ProjectClaimRegistry（List）、TeleportPermissions（LinkedHashSet）、MaterialSpace（SBN-013 已修）无问题。
+   补丁 eb7d91a：四张表改 Linked 版；新增 t09_savedDataSaveOrder（40 玩家各一条撤销记录、35 个 pop 空 → 往返相等；安全坐标 40 条往返相等）
+   —— HashMap 下稳定转红，改后连跑两轮 118/118。
+
+报告「任务书出入」1～4 接受。报告九的四条建议待用户点头。
+另：报告九第一条实测确认 e07 登记的「待查」—— BlueprintData 读 saveMode 用 CaptureMode.fromOrdinal 不防越界，越界值（如 99）让整份蓝图
+读取失败（返回 null、WARN，不崩服）；两条线同写法，已在功能联动手册补登结论，是否改为回退 SAFE 待用户定。

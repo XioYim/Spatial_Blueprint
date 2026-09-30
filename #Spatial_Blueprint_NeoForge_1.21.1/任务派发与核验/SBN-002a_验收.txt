@@ -1,0 +1,21 @@
+SBN-002a 验收（连同 SBN-002 一起结案）
+验收：2026-09-29 18:00:00（云端主会话）
+对象：task/SBN-002 @ fe461d1（内容主提交 bedb7c4）
+结论：PASS（V2 云端复编译仍被环境网络策略拦截，按本地证据审）→ SBN-002 + SBN-002a 合并进 neoforge-1.21.1
+
+V1 改动清单：236500a..fe461d1 只动 BlueprintSanitizer、SBN002Tests 与规程允许的交接件 —— 通过。
+V2 本地证据：编译 0 警告；GameTest 批次 19 条全过（SBN001 8 + SBN002 @GameTest 实数 11）。云端 maven.neoforged.net 仍 connect_rejected。
+V3 BlueprintSanitizer 相对 4d77a0f 的 diff 逐段核对，只落在 P1～P4：
+   P1 bookPageJsons 两个 pages 列表都改走 collectPageJsons（不按元素类型过滤，字符串收、compound 收 raw / filtered）—— 漏检根因已消除。
+   P2 hasDangerousBlockNbt 与 applySafetyStripInPlace 对 messages / filtered_messages 同口径检测、净化，不新增键。
+      告示牌仍用 getList(…, 8)：SignText 的文本解码器只收字符串，compound 元素解不出来，不构成同类绕过。
+   P3 stripItemContents / stripDangerousBlockNbt 清 LootTable、LootTableSeed、components."minecraft:container_loot"；KeepContents 有意不清且注释写明。
+   P4 nonEmptyItemList 只把「非空且含字符串 id」的元素算装备。
+   BlueprintConfig / S2C / BulkMaterialConverter 零改动；SBN-002 通过项零改动。
+V4 s04c 可达性成立：真实成书的 pages 换成字符串列表后 ItemStack.parse 成功、第一页点击事件为 RUN_COMMAND，净化侧判危险并移除 Book。
+V5 SB-TODO 实数 15。
+
+任务书出入（报告四.1）接受：loadWithComponents 不调 applyImplicitComponents，container_loot 只在物品放置路径（applyComponentsFromItemStack）生效；
+   清理照做属 fail-closed，P4 写放置逻辑时要记住这一点。
+
+1.20.1 待跟（功能联动手册已登记）：告示牌 filtered_messages、容器 LootTable 清理、盔甲架 hasEquipment 判定。

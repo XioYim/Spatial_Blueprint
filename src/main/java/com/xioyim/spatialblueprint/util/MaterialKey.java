@@ -1,8 +1,11 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 
@@ -43,12 +46,28 @@ public final class MaterialKey {
         return id + SEP + digest(canonical(norm));
     }
 
-    /** 由 ItemStack 构建复合键（耐久值包含在 tag 中，无需单独处理）。 */
-    public static String of(ItemStack stack) {
+    /**
+     * 由 ItemStack 构建复合键（D8：按组件补丁摘要）。
+     *
+     * <p>补丁的 NBT 编码与 {@code ItemStack.save} 写出的 {@code components} 子标签是同一个
+     * （{@link DataComponentPatch#CODEC} + provider 的序列化上下文），因此实体身上的物品
+     * 与玩家手里的物品会算出同一个键。补丁为空 → 纯注册 ID。</p>
+     */
+    public static String of(ItemStack stack, HolderLookup.Provider provider) {
         if (stack.isEmpty()) return "";
         String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
                 .getKey(stack.getItem()).toString();
-        return make(id, stack.getTag());
+        return make(id, encodePatch(stack.getComponentsPatch(), provider));
+    }
+
+    /** 组件补丁 → 与 {@code ItemStack.save} 的 components 子标签同编码的 CompoundTag；空补丁 → null。 */
+    @Nullable
+    private static CompoundTag encodePatch(DataComponentPatch patch, HolderLookup.Provider provider) {
+        if (patch.isEmpty()) return null;
+        Tag encoded = DataComponentPatch.CODEC
+                .encodeStart(provider.createSerializationContext(NbtOps.INSTANCE), patch)
+                .result().orElse(null);
+        return encoded instanceof CompoundTag ct ? ct : null;
     }
 
     // ── 解析 ──────────────────────────────────────────────────────────────
@@ -77,7 +96,7 @@ public final class MaterialKey {
         for (String ignored : ignoredKeys()) {
             copy.remove(ignored);
         }
-        pruneNoOps(copy);
+        pruneNoOps(copy, true);
         return copy.isEmpty() ? null : copy;
     }
 
@@ -85,32 +104,50 @@ public final class MaterialKey {
      * 递归剔除对物品毫无影响的空结构：空 Compound、空 List，以及方块实体标签里
      * 那个与物品 ID 重复的 {@code id} 字段。
      *
-     * <p>同一个空潜影盒在游戏里有好几种等价写法 —— 直接合成出来的完全没有 tag，
-     * 从世界里捡起来的带着 {@code {BlockEntityTag:{Items:[],id:"minecraft:shulker_box"}}}。
+     * <p>同一个空潜影盒在游戏里有好几种等价写法 —— 直接合成出来的没有补丁，
+     * 从世界里挖起来的带着 {@code {minecraft:block_entity_data:{Items:[],id:"minecraft:shulker_box"}}}。
      * 不做归一化的话两者算出的复合键不同，玩家会遇到「手上明明是同一个空潜影盒，
      * 就是存不进材料清单」。空容器如此，{@code display:{}}、{@code Enchantments:[]}
      * 这类同样是有和没有完全等价。</p>
+     *
+     * <p>例外（SBN-003a）：<b>补丁顶层</b>键名含 {@code ':'}（1.21 组件 ID）、值<b>本来</b>就是空
+     * compound 的一律保留 —— 这是「开关型」组件（存在即生效），如 {@code minecraft:unbreakable}
+     * （{@code Unbreakable(true)} 经 {@code optionalFieldOf} 省略默认字段后就是 {@code {}}）、
+     * {@code minecraft:hide_tooltip} 等 Unit 组件。剔掉会让「不可破坏的镐」与普通镐算出同一个
+     * 材料键 —— 材料空间里拿普通镐就能顶掉不可破坏镐，界面也丢掉该标记。旧格式 tag 的顶层键
+     * 不含 {@code ':'}（如 {@code display:{}}），照旧剔除；顶层键值「处理后」才变空的
+     * （如 {@code block_entity_data} 删掉 {@code id} 后）也照旧剔除，空潜影盒的等价关系不丢。</p>
+     *
+     * <p>补丁里「移除某组件」的标记键（形如 {@code !minecraft:xxx}，值为空 compound）
+     * <b>不剔除</b> —— 它表示「这个物品没有该默认组件」，是真差异。</p>
      */
-    private static void pruneNoOps(CompoundTag tag) {
+    private static void pruneNoOps(CompoundTag tag, boolean topLevel) {
         for (String key : new ArrayList<>(tag.getAllKeys())) {
+            if (key.startsWith("!")) continue;
             Tag child = tag.get(key);
             if (child instanceof CompoundTag compound) {
-                // BlockEntityTag.id 恒等于该物品对应的方块实体类型，留着只会制造假差异
-                if (BLOCK_ENTITY_TAG.equals(key)) compound.remove("id");
-                pruneNoOps(compound);
+                boolean wasEmpty = compound.isEmpty();
+                if (topLevel && wasEmpty && key.indexOf(':') >= 0) continue;
+                // BlockEntityTag.id（旧）与 minecraft:block_entity_data.id 恒等于该物品对应的
+                // 方块实体类型，留着只会制造假差异
+                if (BLOCK_ENTITY_TAG.equals(key) || BLOCK_ENTITY_DATA.equals(key)) compound.remove("id");
+                pruneNoOps(compound, false);
                 if (compound.isEmpty()) tag.remove(key);
             } else if (child instanceof ListTag list) {
                 // 列表元素本身还可能嵌着容器（潜影盒套潜影盒）
                 for (Tag element : list) {
-                    if (element instanceof CompoundTag c) pruneNoOps(c);
+                    if (element instanceof CompoundTag c) pruneNoOps(c, false);
                 }
                 if (list.isEmpty()) tag.remove(key);
             }
         }
     }
 
-    /** 容器 / 告示牌等方块物品存放方块实体数据的键。 */
+    /** 容器 / 告示牌等方块物品存放方块实体数据的键（旧格式）。 */
     private static final String BLOCK_ENTITY_TAG = "BlockEntityTag";
+
+    /** 1.21 的方块实体数据组件键；与旧 {@code BlockEntityTag} 同样剔除重复的 {@code id}。 */
+    private static final String BLOCK_ENTITY_DATA = "minecraft:block_entity_data";
 
     private static List<String> ignoredKeys() {
         try {
@@ -119,7 +156,7 @@ public final class MaterialKey {
         } catch (Exception ignored) {
             // 配置尚未加载（注册期 / 客户端早期）——退回默认值
         }
-        return List.of("RepairCost");
+        return List.of("RepairCost", "minecraft:repair_cost");
     }
 
     // ── 摘要 ──────────────────────────────────────────────────────────────

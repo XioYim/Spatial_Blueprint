@@ -347,9 +347,9 @@ public final class BlueprintSanitizer {
      * 但原有策略是<b>只在书里含命令点击事件时才移除</b>，普通书要保留。</p>
      *
      * <p>{@code Bees}（蜂箱 / 蜂巢）无条件保留 —— 蜜蜂是结构本身的一部分，不是可复制的物品，
-     * 玩家捕获一片养蜂场就是想连蜜蜂一起带走。</p>
+     * 玩家捕获一片养蜂场就是想连蜜蜂一起带走。1.21 存盘键是小写 {@code bees}，旧大写 {@code Bees} 照样跳过。</p>
      */
-    private static final Set<String> STRIP_SKIP_KEYS = Set.of("Book", "Bees");
+    private static final Set<String> STRIP_SKIP_KEYS = Set.of("Book", "Bees", "bees");
 
     private static void stripContainers(CompoundTag tag, int depth) {
         if (tag == null || depth > MAX_SCAN_DEPTH) return;
@@ -425,10 +425,14 @@ public final class BlueprintSanitizer {
                 && (ct.contains("Count") || ct.contains("count"));
     }
 
-    /** 该列表里是不是装着物品条目。 */
+    /** 该列表里是不是装着物品条目。1.21 容器组件的槽位包一层 {slot, item} 也算，命中整条删除。 */
     private static boolean listHoldsItemEntries(ListTag lt) {
         for (Tag t : lt) {
-            if (t instanceof CompoundTag ct && isItemEntry(ct)) return true;
+            if (t instanceof CompoundTag ct) {
+                if (isItemEntry(ct)) return true;
+                if (ct.contains("item", Tag.TAG_COMPOUND)
+                        && isItemEntry(ct.getCompound("item"))) return true;
+            }
         }
         return false;
     }
@@ -450,7 +454,23 @@ public final class BlueprintSanitizer {
         // 兜底：个别容器的槽位可能不带 Count，通用识别看不见
         stripped.remove("Items");
         stripped.remove("RecordItem");
+        // 防复制：战利品表留着的话，可反复放置的蓝图每放一次都能重新生成战利品
+        stripped.remove("LootTable");
+        stripped.remove("LootTableSeed");
+        stripContainerLootComponentInPlace(stripped);
         return stripped;
+    }
+
+    /**
+     * 移除方块实体 NBT 里 {@code components."minecraft:container_loot"} 夹带路径
+     * （1.21 新格式：加载时被 {@code applyImplicitComponents} 设成战利品表）。
+     * 删完 components 为空则连键一起删。
+     */
+    private static void stripContainerLootComponentInPlace(CompoundTag tag) {
+        if (!tag.contains("components", 10)) return;
+        CompoundTag components = tag.getCompound("components");
+        components.remove("minecraft:container_loot");
+        if (components.isEmpty()) tag.remove("components");
     }
 
     /**
@@ -483,14 +503,17 @@ public final class BlueprintSanitizer {
         // 而且普通箱子里放几块石头也会被判危险、整箱清空。
         // 现在改为按内容判定，顺带覆盖套娃潜影盒与陶罐的 item 单数键（1.20.2+）。
         if (containsIllegalItemDeep(nbt)) return true;
-        // 告示牌 1.20.x 格式：仅检测命令点击事件，不过滤普通文本
+        // 告示牌 1.20.x 格式：messages 与 filtered_messages 都检测（开了文本过滤的玩家看到 / 点到的是过滤版），
+        // 仅命令点击事件算危险，不过滤普通文本
         for (String side : new String[]{"front_text", "back_text"}) {
             if (nbt.contains(side, 10)) {
                 CompoundTag sideTag = nbt.getCompound(side);
-                if (sideTag.contains("messages", 9)) {
-                    ListTag msgs = sideTag.getList("messages", 8);
-                    for (int i = 0; i < msgs.size(); i++) {
-                        if (hasSignCommandClickEvent(msgs.getString(i))) return true;
+                for (String listKey : new String[]{"messages", "filtered_messages"}) {
+                    if (sideTag.contains(listKey, 9)) {
+                        ListTag msgs = sideTag.getList(listKey, 8);
+                        for (int i = 0; i < msgs.size(); i++) {
+                            if (hasSignCommandClickEvent(msgs.getString(i))) return true;
+                        }
                     }
                 }
             }
@@ -499,29 +522,16 @@ public final class BlueprintSanitizer {
         for (String key : new String[]{"Text1", "Text2", "Text3", "Text4"}) {
             if (nbt.contains(key, 8) && hasSignCommandClickEvent(nbt.getString(key))) return true;
         }
-        // 讲台/书：Book 是物品结构（id/Count/tag），pages 在 Book.tag.pages / Book.tag.filtered_pages
-        if (nbt.contains("Book", 10)) {
-            CompoundTag book = nbt.getCompound("Book");
-            if (book.contains("tag", 10)) {
-                CompoundTag tag = book.getCompound("tag");
-                if (tag.contains("pages", 9)) {
-                    ListTag pages = tag.getList("pages", 8);
-                    for (int i = 0; i < pages.size(); i++) {
-                        if (hasSignCommandClickEvent(pages.getString(i))) return true;
-                    }
-                }
-                if (tag.contains("filtered_pages", 10)) {
-                    CompoundTag fp = tag.getCompound("filtered_pages");
-                    for (String k : fp.getAllKeys()) {
-                        if (hasSignCommandClickEvent(fp.getString(k))) return true;
-                    }
-                }
-            }
-        }
+        // 讲台/书：新旧两种物品存储格式的页面含命令点击事件即危险（普通成书保留）
+        if (nbt.contains("Book", 10) && bookContainsCommand(nbt.getCompound("Book"))) return true;
         // 刷怪笼：SpawnData 非空，或 SpawnPotentials 列表非空
         // （SpawnData/Potentials 里的实体不受上传实体白名单约束，是绕过"禁止生物"规则的另一条路）
         if (nbt.contains("SpawnData", 10) && !nbt.getCompound("SpawnData").isEmpty()) return true;
         if (nbt.contains("SpawnPotentials", 9) && !nbt.getList("SpawnPotentials", 10).isEmpty()) return true;
+        // 试炼刷怪笼（D9 净化兜底）：生成配置任一存在即危险（正常捕获本来就禁捕，见 excludedBlocks）
+        if (nbt.contains("spawn_data", 10) && !nbt.getCompound("spawn_data").isEmpty()) return true;
+        if (nbt.contains("normal_config", 10) && !nbt.getCompound("normal_config").isEmpty()) return true;
+        if (nbt.contains("ominous_config", 10) && !nbt.getCompound("ominous_config").isEmpty()) return true;
         return false;
     }
 
@@ -541,6 +551,10 @@ public final class BlueprintSanitizer {
         stripAllItemContainersInPlace(stripped);
         stripped.remove("Items");
         stripped.remove("RecordItem");
+        // 防复制：与 stripItemContents 同口径清战利品表（含 1.21 components 夹带路径）
+        stripped.remove("LootTable");
+        stripped.remove("LootTableSeed");
+        stripContainerLootComponentInPlace(stripped);
         applySafetyStripInPlace(stripped);
         return stripped;
     }
@@ -562,6 +576,10 @@ public final class BlueprintSanitizer {
      *
      * <p>告示牌命令、含命令的讲台书、刷怪笼 {@code SpawnData}/{@code SpawnPotentials}
      * 仍然照清 —— 这些是能执行命令 / 绕过生物白名单的真安全项，跟财产无关。</p>
+     *
+     * <p>{@code LootTable} / {@code LootTableSeed} <b>有意不清</b>：次元蓝图把结构从世界里搬走，
+     * 原方块已被清除，战利品表跟着走不产生复制；防复制清理只放在可反复放置的
+     * {@link #stripItemContents} / {@link #stripDangerousBlockNbt} 两条路径上。</p>
      */
     public static CompoundTag stripDangerousBlockNbtKeepContents(CompoundTag nbt) {
         if (nbt == null) return null;
@@ -586,13 +604,16 @@ public final class BlueprintSanitizer {
         for (String side : new String[]{"front_text", "back_text"}) {
             if (stripped.contains(side, 10)) {
                 CompoundTag sideTag = stripped.getCompound(side).copy();
-                if (sideTag.contains("messages", 9)) {
-                    ListTag msgs = sideTag.getList("messages", 8);
-                    ListTag cleaned = new ListTag();
-                    for (int i = 0; i < msgs.size(); i++) {
-                        cleaned.add(StringTag.valueOf(sanitizeSignMessageJson(msgs.getString(i))));
+                // messages 与 filtered_messages 都净化；列表不存在时不新增键
+                for (String listKey : new String[]{"messages", "filtered_messages"}) {
+                    if (sideTag.contains(listKey, 9)) {
+                        ListTag msgs = sideTag.getList(listKey, 8);
+                        ListTag cleaned = new ListTag();
+                        for (int i = 0; i < msgs.size(); i++) {
+                            cleaned.add(StringTag.valueOf(sanitizeSignMessageJson(msgs.getString(i))));
+                        }
+                        sideTag.put(listKey, cleaned);
                     }
-                    sideTag.put("messages", cleaned);
                 }
                 stripped.put(side, sideTag);
             }
@@ -602,15 +623,19 @@ public final class BlueprintSanitizer {
                 stripped.putString(key, sanitizeSignMessageJson(stripped.getString(key)));
             }
         }
-        // 讲台/书：检测到 Book.tag 的 pages / filtered_pages 含命令点击事件时，直接移除整本书（保留讲台）
+        // 讲台/书：新旧格式任一页含命令点击事件时，直接移除整本书（保留讲台）
         if (stripped.contains("Book", 10)) {
             CompoundTag book = stripped.getCompound("Book");
-            if (book.contains("tag", 10) && bookContainsCommand(book)) {
+            if (bookContainsCommand(book)) {
                 stripped.remove("Book");
             }
         }
         stripped.remove("SpawnData");
         stripped.remove("SpawnPotentials");
+        // 试炼刷怪笼（D9 净化兜底）：生成配置整段移除
+        stripped.remove("spawn_data");
+        stripped.remove("normal_config");
+        stripped.remove("ominous_config");
     }
 
     // ── 告示牌命令点击事件过滤（保留文本）──────────────────────────────────
@@ -660,23 +685,55 @@ public final class BlueprintSanitizer {
         }
     }
 
-    /** 判断讲台 Book（物品结构）的 tag.pages / tag.filtered_pages 是否含命令点击事件。 */
+    /** 判断讲台 Book（物品结构）的页面是否含命令点击事件。新旧两种物品存储格式都认。 */
     private static boolean bookContainsCommand(CompoundTag book) {
-        if (!book.contains("tag", 10)) return false;
-        CompoundTag tag = book.getCompound("tag");
-        if (tag.contains("pages", 9)) {
-            ListTag pages = tag.getList("pages", 8);
-            for (int i = 0; i < pages.size(); i++) {
-                if (hasSignCommandClickEvent(pages.getString(i))) return true;
-            }
-        }
-        if (tag.contains("filtered_pages", 10)) {
-            CompoundTag fp = tag.getCompound("filtered_pages");
-            for (String k : fp.getAllKeys()) {
-                if (hasSignCommandClickEvent(fp.getString(k))) return true;
-            }
+        for (String page : bookPageJsons(book)) {
+            if (hasSignCommandClickEvent(page)) return true;
         }
         return false;
+    }
+
+    /**
+     * 从 Book 物品 NBT 取出全部页面 JSON 字符串，新旧格式都收：
+     * 旧 {@code tag.pages} / {@code tag.filtered_pages}（compound，值全收），
+     * 新 {@code components."minecraft:written_book_content".pages[]}。
+     * 两个 pages 列表都<b>不按元素类型过滤</b>（fail-closed）：字符串收、compound 收 {@code raw} / {@code filtered} ——
+     * Filterable 解码器接受裸字符串（withAlternative），只看 compound 元素会漏掉整类攻击形状。
+     * 书与笔（writable_book_content）是纯文本，没有点击事件，不用查。
+     */
+    private static List<String> bookPageJsons(CompoundTag book) {
+        List<String> pages = new ArrayList<>();
+        if (book.contains("tag", 10)) {
+            CompoundTag tag = book.getCompound("tag");
+            collectPageJsons(tag.get("pages"), pages);
+            if (tag.contains("filtered_pages", 10)) {
+                CompoundTag fp = tag.getCompound("filtered_pages");
+                for (String k : fp.getAllKeys()) {
+                    pages.add(fp.getString(k));
+                }
+            }
+        }
+        if (book.contains("components", 10)) {
+            CompoundTag components = book.getCompound("components");
+            if (components.contains("minecraft:written_book_content", 10)) {
+                CompoundTag wbc = components.getCompound("minecraft:written_book_content");
+                collectPageJsons(wbc.get("pages"), pages);
+            }
+        }
+        return pages;
+    }
+
+    /** 遍历一个 pages 列表：字符串收、compound 收 raw / filtered；其它元素类型忽略。 */
+    private static void collectPageJsons(Tag pagesTag, List<String> out) {
+        if (!(pagesTag instanceof ListTag list)) return;
+        for (Tag page : list) {
+            if (page instanceof StringTag st) {
+                out.add(st.getAsString());
+            } else if (page instanceof CompoundTag pg) {
+                if (pg.contains("raw", 8)) out.add(pg.getString("raw"));
+                if (pg.contains("filtered", 8)) out.add(pg.getString("filtered"));
+            }
+        }
     }
 
     private static boolean findSignRunCommand(JsonElement el) {
@@ -915,7 +972,12 @@ public final class BlueprintSanitizer {
 
     private static boolean nonEmptyItemList(CompoundTag nbt, String key) {
         if (!nbt.contains(key, 9)) return false;
-        return !nbt.getList(key, 10).isEmpty();
+        // 空槽也存 {}（列表恒 4 / 2 个元素），只看列表空不空会把空盔甲架判成「带装备」；
+        // 存在「非空 compound 且含字符串 id」的元素才算非空。
+        for (Tag t : nbt.getList(key, 10)) {
+            if (t instanceof CompoundTag ct && !ct.isEmpty() && ct.contains("id", Tag.TAG_STRING)) return true;
+        }
+        return false;
     }
 
     /** 展示框 NBT 里框内物品的注册 ID，无物品时为空串。 */
@@ -1196,8 +1258,8 @@ public final class BlueprintSanitizer {
 
     /**
      * 展示框物品内容净化（用于不受信任的上传数据源）：
-     * 危险物品 → 连 id 一并丢弃；安全物品 → 只保留 id + Count，丢弃 tag
-     * （防止用看似安全的物品外壳夹带危险 NBT）。
+     * 危险物品 → 连 id 一并丢弃；安全物品 → 重建为 {id, count:int}（count 取 count → Count → 1），
+     * components 与 tag 都丢（防止用看似安全的物品外壳夹带危险 NBT）。
      */
     public static void sanitizeItemFrameContentInPlace(CompoundTag entityNbt) {
         if (!entityNbt.contains("Item", 10)) return;
@@ -1208,9 +1270,9 @@ public final class BlueprintSanitizer {
         CompoundTag item = entityNbt.getCompound("Item");
         CompoundTag cleaned = new CompoundTag();
         cleaned.putString("id", item.getString("id"));
-        if (item.contains("Count")) {
-            cleaned.putByte("Count", item.getByte("Count"));
-        }
+        int count = item.contains("count") ? item.getInt("count")
+                : (item.contains("Count") ? item.getByte("Count") : 1);
+        cleaned.putInt("count", Math.max(1, count));
         entityNbt.put("Item", cleaned);
     }
 

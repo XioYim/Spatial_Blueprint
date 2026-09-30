@@ -1,21 +1,23 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ProjectListMessage;
 import com.xioyim.spatialblueprint.util.ProjectClaimRegistry;
 import com.xioyim.spatialblueprint.util.ProjectData;
 import com.xioyim.spatialblueprint.util.ProjectProgressData;
 import com.xioyim.spatialblueprint.util.ProjectStorage;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 
 /**
  * C2S：导入项目界面请求某个 tab 的项目清单。
@@ -24,7 +26,14 @@ import java.util.function.Supplier;
  * 每玩家 {@value #COOLDOWN_MS} ms 一次，超频<b>静默丢弃</b>（客户端同样有 2 秒冷却，
  * 正常操作不会撞到这道；撞到的是改包刷包）。蓝图站 tab 非 OP 请求也静默丢。</p>
  */
-public class C2S_RequestProjectListMessage {
+public class C2S_RequestProjectListMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RequestProjectListMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_request_project_list_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RequestProjectListMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RequestProjectListMessage::encode, C2S_RequestProjectListMessage::decode);
 
     public static final String TAB_PUBLIC  = "public";
     public static final String TAB_PRIVATE = "private";
@@ -39,6 +48,11 @@ public class C2S_RequestProjectListMessage {
         this.tab = tab == null ? "" : tab;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_RequestProjectListMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_RequestProjectListMessage msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.tab, 16);
     }
@@ -47,29 +61,31 @@ public class C2S_RequestProjectListMessage {
         return new C2S_RequestProjectListMessage(buf.readUtf(16));
     }
 
-    public static void handle(C2S_RequestProjectListMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_RequestProjectListMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            ProjectData.Kind kind = kindOf(msg.tab);
-            if (kind == null) return;
-            if (kind == ProjectData.Kind.STATION && !player.hasPermissions(2)) return;
+    public static void handleServer(C2S_RequestProjectListMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-            long now = System.currentTimeMillis();
-            boolean[] pass = {false};
-            LAST_REQUEST.compute(player.getUUID(), (id, last) -> {
-                if (last == null || now - last >= COOLDOWN_MS) {
-                    pass[0] = true;
-                    return now;
-                }
-                return last;
-            });
-            if (!pass[0]) return;
+        ProjectData.Kind kind = kindOf(msg.tab);
+        if (kind == null) return;
+        if (kind == ProjectData.Kind.STATION && !player.hasPermissions(2)) return;
 
-            sendList(player, msg.tab);
+        long now = System.currentTimeMillis();
+        boolean[] pass = {false};
+        LAST_REQUEST.compute(player.getUUID(), (id, last) -> {
+            if (last == null || now - last >= COOLDOWN_MS) {
+                pass[0] = true;
+                return now;
+            }
+            return last;
         });
-        ctx.get().setPacketHandled(true);
+        if (!pass[0]) return;
+
+        sendList(player, msg.tab);
     }
 
     /** 主动推某 tab 的最新清单（删除项目等写操作后刷新界面用）；不走冷却。 */
@@ -77,8 +93,7 @@ public class C2S_RequestProjectListMessage {
         ProjectData.Kind kind = kindOf(tab);
         if (kind == null) return;
         if (kind == ProjectData.Kind.STATION && !player.hasPermissions(2)) return;
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 new S2C_ProjectListMessage(tab, buildList(player, kind)));
     }
 

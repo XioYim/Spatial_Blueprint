@@ -1,12 +1,11 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * S2C：允许客户端打开空置次元蓝图界面。
@@ -17,7 +16,20 @@ import java.util.function.Supplier;
  * <p>早先客户端抢先 openScreen、服务端并行判定，结果失效时界面已经开出来了，
  * 提示横幅只是盖在上面，关掉横幅就露出本该被拦截的界面。</p>
  */
-public class S2C_OpenVoidScreenMessage {
+public class S2C_OpenVoidScreenMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_OpenVoidScreenMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_open_void_screen_message"));
+
+    /** 空消息：空 encode / decode（与 1.20.1 同）。unit codec 要求解码返回同一实例，不适用。 */
+    public static final StreamCodec<FriendlyByteBuf, S2C_OpenVoidScreenMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_OpenVoidScreenMessage::encode, S2C_OpenVoidScreenMessage::decode);
+
+    @Override
+    public CustomPacketPayload.Type<S2C_OpenVoidScreenMessage> type() {
+        return TYPE;
+    }
 
     public static void encode(S2C_OpenVoidScreenMessage msg, FriendlyByteBuf buf) {}
 
@@ -25,22 +37,7 @@ public class S2C_OpenVoidScreenMessage {
         return new S2C_OpenVoidScreenMessage();
     }
 
-    public static void handle(S2C_OpenVoidScreenMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) openScreen();
-        });
-        ctx.get().setPacketHandled(true);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static void openScreen() {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.player == null) return;
-        net.minecraft.world.item.ItemStack stack = mc.player.getMainHandItem();
-        if (!(stack.getItem() instanceof com.xioyim.spatialblueprint.item.VoidDimensionalBlueprintItem)) {
-            stack = mc.player.getOffhandItem();
-        }
-        if (!(stack.getItem() instanceof com.xioyim.spatialblueprint.item.VoidDimensionalBlueprintItem)) return;
-        mc.setScreen(new com.xioyim.spatialblueprint.gui.VoidDimensionalScreen(stack));
+    public static void handle(S2C_OpenVoidScreenMessage msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端打开空置次元蓝图界面（VoidDimensionalScreen，主手/副手找物品）
     }
 }

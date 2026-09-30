@@ -1,10 +1,11 @@
 package com.xioyim.spatialblueprint.util;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraftforge.server.ServerLifecycleHooks;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 import javax.annotation.Nullable;
 import java.util.UUID;
@@ -40,7 +41,7 @@ public class WorldIdentity extends SavedData {
         MinecraftServer server = level.getServer();
         WorldIdentity data = server.overworld()
                 .getDataStorage()
-                .computeIfAbsent(WorldIdentity::load, WorldIdentity::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(WorldIdentity::new, WorldIdentity::load, null), SAVE_KEY);
         // 立即落盘（必须先标脏再 save：DimensionDataStorage.save() 只写 dirty 条目，
         // computeIfAbsent 新建/载入后不会自动标脏，不标就等于没写）。蓝图 .litematic 创建
         // 即写盘，而身份 dat 若等世界级保存，中途未保存就退出会导致重进换 UUID、同档工程/
@@ -116,12 +117,12 @@ public class WorldIdentity extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         tag.putString("uuid", uuid.toString());
         return tag;
     }
 
-    private static WorldIdentity load(CompoundTag tag) {
+    private static WorldIdentity load(CompoundTag tag, HolderLookup.Provider provider) {
         WorldIdentity data = new WorldIdentity();
         try {
             data.uuid = UUID.fromString(tag.getString("uuid"));

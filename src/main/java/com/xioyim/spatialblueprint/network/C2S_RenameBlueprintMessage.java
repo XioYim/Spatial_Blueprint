@@ -1,15 +1,17 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.server.BlueprintValidator;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * C2S: creative-mode client requests renaming a server-side blueprint.
@@ -17,7 +19,14 @@ import java.util.function.Supplier;
  * <p>After a successful rename the server pushes a fresh {@link S2C_LibrarySyncMessage}
  * so the client list stays in sync.</p>
  */
-public class C2S_RenameBlueprintMessage {
+public class C2S_RenameBlueprintMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RenameBlueprintMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_rename_blueprint_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RenameBlueprintMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RenameBlueprintMessage::encode, C2S_RenameBlueprintMessage::decode);
 
     private final String blueprintId;
     private final String newName;
@@ -32,6 +41,11 @@ public class C2S_RenameBlueprintMessage {
         this.noteLong    = noteLong == null ? "" : noteLong;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_RenameBlueprintMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_RenameBlueprintMessage msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.blueprintId, 64);
         buf.writeUtf(msg.newName,    128);
@@ -44,34 +58,34 @@ public class C2S_RenameBlueprintMessage {
                 buf.readUtf(64), buf.readUtf(128), buf.readUtf(15), buf.readUtf(200));
     }
 
-    public static void handle(C2S_RenameBlueprintMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null || !player.isCreative()) return;
+    public static void handle(C2S_RenameBlueprintMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            String name = BlueprintValidator.sanitizeName(msg.newName);
-            if (name.isEmpty()) return;
+    public static void handleServer(C2S_RenameBlueprintMessage msg, ServerPlayer player) {
+        if (player == null || !player.isCreative()) return;
 
-            // ── 归属校验：主人或 OP 才能改名 ──────────────────────────────
-            // 上面的 isCreative() 只说明「这是蓝图库管理场景」，不代表有权动这一份。
-            // 开放创造的服上，少了这道校验等于任何人都能改任何人的蓝图名字和备注。
-            if (!BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
-                BlueprintNetwork.CHANNEL.send(
-                        PacketDistributor.PLAYER.with(() -> player),
-                        new S2C_OperationResult(false, "spatial_blueprint.error.blueprint_not_owner"));
-                return;
-            }
+        String name = BlueprintValidator.sanitizeName(msg.newName);
+        if (name.isEmpty()) return;
 
-            BlueprintStorage.rename(msg.blueprintId, name);
-            BlueprintStorage.updateNotes(msg.blueprintId, msg.noteShort.trim(), msg.noteLong.trim());
+        // ── 归属校验：主人或 OP 才能改名 ──────────────────────────────
+        // 上面的 isCreative() 只说明「这是蓝图库管理场景」，不代表有权动这一份。
+        // 开放创造的服上，少了这道校验等于任何人都能改任何人的蓝图名字和备注。
+        if (!BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
+            BlueprintNetwork.sendToPlayer(player,
+                    new S2C_OperationResult(false, "spatial_blueprint.error.blueprint_not_owner"));
+            return;
+        }
 
-            // Push the updated list back so the client refreshes immediately.
-            // H2：按下发口径过滤后再推，避免改名一次就把全量列表泄一次。
-            List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_LibrarySyncMessage(updated));
-        });
-        ctx.get().setPacketHandled(true);
+        BlueprintStorage.rename(msg.blueprintId, name);
+        BlueprintStorage.updateNotes(msg.blueprintId, msg.noteShort.trim(), msg.noteLong.trim());
+
+        // Push the updated list back so the client refreshes immediately.
+        // H2：按下发口径过滤后再推，避免改名一次就把全量列表泄一次。
+        List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
+        BlueprintNetwork.sendToPlayer(player,
+                new S2C_LibrarySyncMessage(updated));
     }
 }

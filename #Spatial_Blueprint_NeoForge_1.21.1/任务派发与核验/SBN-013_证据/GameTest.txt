@@ -1,0 +1,22 @@
+SBN-013 GameTest 证据（A2，必做）
+命令：$env:JAVA_HOME = "C:\Program Files\Zulu\zulu-21"; .\gradlew.bat runGameTestServer
+时间：2026-09-30 17:21:34（连跑两轮均全过；前几轮暴露并修复：profileCache 环境限制 / night-config set+save 不落盘 / 跨轮配置遗留，见报告六）
+
+运行输出：
+  [17:21:31] [Server thread/INFO] [minecraft/GameTestRunner]: Running test batch 'defaultBatch:0' (50 tests)...
+  [17:21:33] [Server thread/INFO] [minecraft/GameTestRunner]: Running test batch 'defaultBatch:1' (50 tests)...
+  [17:21:34] [Server thread/INFO] [minecraft/GameTestRunner]: Running test batch 'defaultBatch:2' (8 tests)...
+  [17:21:34] [Server thread/INFO] [minecraft/GameTestServer]: All 108 required tests passed :)
+  BUILD SUCCESSFUL in 22s
+
+注解实数：gametest/*.java 内 @GameTest 共 108 处（SBN001～012 计 100 + SBN013 8），与 108 一致（C2 口径）。
+
+SBN013 8 条（t01～t08）：
+  t01 注册：c2s_reload_config_message 命名合规、78 个 id 互不重复、命名空间正确
+  t02 空消息编解码：编码→解码→再编码逐字相等（C15）
+  t03 配置热加载：内存改值 → OP 发 C2S reload → 回盘上值；非 OP 同操作 → 内存值保持；改盘 → "/sb reload" → 读盘新值 + 派生缓存清（引用变化）；finally 原字节写回 + doReload
+  t04 命令树：子节点 = {undo,config,reload,space,tpperm,project}；非 OP/OP 的 canUse 逐节点断言
+  t05 /sb undo：创造放置 → 冷却内 undo 被拦（记录在）；动画完成后清冷却 undo → 世界回到放置前、记录空、撤回后冷却生效；冷却先判 + no_history + 生存 creative_only
+  t06 /sb tpperm：权限表 grant/revoke + syncTeleportPerm 推送 true/false + list 命令（非空计数、非 OP 被 requires 拦）+ 离线 UUID 授权
+  t07 /sb space 与 /sb config：自查与 config 真实执行（包断言）；非 OP 被 requires 拦
+  t08 /sb project：非 OP public activate 被拒 → OP+创造 activate（claim 注册、物品激活）→ claim 1（工程蓝图入库）→ release（claim 移除）→ list 执行

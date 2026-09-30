@@ -1,15 +1,15 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.client.ClientProjectListCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.ProjectData;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C：导入项目界面某个 tab 的项目清单（对 {@code C2S_RequestProjectListMessage} 的应答）。
@@ -18,7 +18,14 @@ import java.util.function.Supplier;
  * 「构建中 N%」「已完成」由 {@code completedCount / entryCount} 在客户端算，
  * 私人项目的进度是<b>查看者自己</b>那份任务集的。</p>
  */
-public class S2C_ProjectListMessage {
+public class S2C_ProjectListMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_ProjectListMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_project_list_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_ProjectListMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_ProjectListMessage::encode, S2C_ProjectListMessage::decode);
 
     /**
      * @param completedCount 已完成子工程数；<b>-1 = 没有进度可看</b>（蓝图站项目 /
@@ -37,6 +44,11 @@ public class S2C_ProjectListMessage {
     public S2C_ProjectListMessage(String tab, List<ProjectSummary> projects) {
         this.tab = tab == null ? "" : tab;
         this.projects = projects == null ? List.of() : projects;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_ProjectListMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_ProjectListMessage msg, FriendlyByteBuf buf) {
@@ -73,12 +85,7 @@ public class S2C_ProjectListMessage {
         return new S2C_ProjectListMessage(tab, projects);
     }
 
-    public static void handle(S2C_ProjectListMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientProjectListCache.onReceive(msg);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_ProjectListMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientProjectListCache.onReceive(msg);
     }
 }

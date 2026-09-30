@@ -4,8 +4,7 @@ import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtUtils;
-import net.minecraftforge.fml.loading.FMLPaths;
+import net.neoforged.fml.loading.FMLPaths;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -74,7 +73,7 @@ public class BlueprintStorage {
     private static void writeCompressedAtomic(CompoundTag tag, Path target) throws IOException {
         Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
         try {
-            NbtIo.writeCompressed(tag, tmp.toFile());
+            NbtIo.writeCompressed(tag, tmp);
             try {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException ex) {
@@ -515,14 +514,12 @@ public class BlueprintStorage {
                     if (ml.contains("entries", 9)) materialCount = ml.getList("entries", 10).size();
                 }
                 int blockCount      = metadata.contains("TotalBlocks") ? metadata.getInt("TotalBlocks") : 0;
-                BlockPos fixedStartPos = mod.contains("fixedStartPos", 10)
-                        ? NbtUtils.readBlockPos(mod.getCompound("fixedStartPos")) : null;
-                BlockPos fixedEndPos   = mod.contains("fixedEndPos",   10)
-                        ? NbtUtils.readBlockPos(mod.getCompound("fixedEndPos"))   : null;
+                BlockPos fixedStartPos = NbtCompat.readBlockPos(mod, "fixedStartPos");
+                BlockPos fixedEndPos   = NbtCompat.readBlockPos(mod, "fixedEndPos");
                 String fixedDimension = mod.contains("fixedDimension") ? mod.getString("fixedDimension") : "";
                 com.xioyim.spatialblueprint.util.CaptureMode saveMode =
                         mod.contains("saveMode")
-                                ? com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"))
+                                ? com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinalOrSafe(mod.getInt("saveMode"))
                                 : com.xioyim.spatialblueprint.util.CaptureMode.SAFE;
                 boolean placed  = mod.getBoolean("placed");
                 int placedX     = mod.getInt("placedX");

@@ -1,0 +1,107 @@
+SBN-009 报告
+执行：2026-09-30 10:10:35 ～ 2026-09-30 10:30:00
+提交：ebd488b（内容主提交；哈希回填提交见推送后 HEAD，仅改本报告与规程表两处哈希字段）
+备份：| 2026-09-30 10:10 | Spatial_Blueprint_NeoForge_1.21.1_20260930_101035 | CF90A329 | SBN-009 执行前 |
+
+一、完成情况（对照任务书三.1～三.3）：
+1. BlueprintNetwork 追加 6 条注册（5 C2S playToServer + S2C_UploadReportMessage 1 条 playToClient，
+   与 1.20.1 归类逐条一致）· BlueprintNetwork.java:243-254；其余零改动。
+2. 有意差异（三.2 / K13）：C2S_UploadProjectionTemplateMessage.decode 的单包上限从
+   NETWORK_HARD_CAP_BYTES（32 MiB，常量已删）改为 C2S_UploadBeginMessage.SINGLE_PACKET_LIMIT（30000）·
+   C2S_UploadProjectionTemplateMessage.java:144-152；原因注释写明（1.20.1 有 32767 单包挡着、
+   NeoForge 自动拆包使 32 MiB 真实可达）。分块路径 readByteArray(30000) 原样
+   （C2S_UploadChunkMessage.java:56）；其余 decode 原样。
+3. 各要点核对：
+   a. C2S_UploadBeginMessage：totalChunks ∈ [2, MAX_CHUNKS]、totalBytes ∈ (0, 配置上限]、create 需创造
+      的判定全部在 UploadStagingRegistry.begin 之前 · :84-96；begin 内按 totalChunks 预分配（≤256）·
+      UploadStagingRegistry.java:41；顺序未动。
+   b. UploadStagingRegistry：WRONG_PLAYER / BAD_INDEX / DUPLICATE / OVERSIZE 与 5 分钟 TTL 原样
+      （与 1.20.1 diff -w 零残差）；PendingUploadRegistry 同样零残差。
+   c. C2S_UploadProjectionTemplateMessage 的校验顺序原样：创造 → 限流 → 槽位预检 → 压缩字节数 →
+      解压（SafeNbtIo 64 MiB）→ deserialize → 包围盒 → NBT 预算 → FORCE 拦截 → 越界丢弃 →
+      名称/字段净化 → 方块总数 → 扫描 → PendingUploadRegistry.put → 回报告（:171-313）。
+      BlueprintData.deserialize 前的 DataFixer 桩未动。
+   d. C2S_ConfirmUploadMessage：take → force 仅 OP → sanitizeForUploadInPlace / uploadForced 日志 →
+      归属与世界戳覆盖 → animDuration 自动分档 → uploadMode → 写盘 → 回 S2C_LibrarySyncMessage +
+      成功横幅（:78-139）。
+   e. C2S_RequestEngineeringReportMessage：非创造直接 return 原样（:57）。
+   f. S2C_UploadReportMessage：客户端体整体打桩 SB-TODO(P5)（:328-330）；服务端组包与
+      decode 计数（checkedCount 4096）原样。
+
+二、改了写法的调用（1.20.1 → 1.21.1 · file:line · 依据）：
+【通用（6 个消息）】NetworkEvent/Supplier → IPayloadContext；enqueueWork / setPacketHandled /
+  getSender → instanceof + handleServer · 各文件 · C14；CHANNEL.send(PacketDistributor.PLAYER…) →
+  BlueprintNetwork.sendToPlayer · C2S_UploadBeginMessage.java:113、C2S_UploadChunkMessage.java:83、
+  C2S_UploadProjectionTemplateMessage.java:311/319/325、C2S_ConfirmUploadMessage.java:127/144/152、
+  C2S_RequestEngineeringReportMessage.java:76 · J33。
+【分片组装口】handleAssembled(byte[], category, force, Supplier<NetworkEvent.Context>) →
+  (byte[], category, force, ServerPlayer) 直接调 handleServer ·
+  C2S_UploadProjectionTemplateMessage.java:100-104；调用方 C2S_UploadChunkMessage.java:78-80 传 player。
+  依据：1.21 的 payload handler 已在主线程，1.20.1 的嵌套 enqueueWork 没有对应物。
+【单包上限】（有意差异，单列）见一.2 / 证据三。
+【S2C 打桩】S2C_UploadReportMessage.handle 整体换一条 SB-TODO(P5) · :328-330（原 handleClient
+  打开/更新 UploadReportScreen 的两条路径写进注释）。
+【登记表】PendingUploadRegistry / UploadStagingRegistry 逐字搬（diff -w 零残差），无 API 改动。
+
+三、网络实测（详见证据/网络.txt）：
+1. 6 个 payload 的 ID 与方向：5 C2S + 1 S2C，与 1.20.1 归类逐条一致（注册行号见证据第一节）。
+2. 本批 decode 上限与 A5 分配点审计（逐条 file:line · 上限来源）见证据第二 / 四节；摘要：
+   - 按客户端值分配共 3 处：UploadStagingRegistry.begin 的 ArrayList（由 MAX_CHUNKS=256 先夹）·
+     append 的 new byte[total]（受每块 30000 与声明总量 / 配置上限夹）· 单包分片
+     readByteArray(30000)；解压经 SafeNbtIo 的 NbtAccounter（64 MiB）。无未夹上限项。
+   - UploadReport 的 5 处列表计数全部经 checkedCount(4096)（S2C 纵深防御）。
+3. 本批权限 / 限流 / 槽位判定清单：见证据第五节（file:line 逐条）。
+
+四、测试覆盖：
+A1 编译 0 警告（首跑即过）；A2 GameTest 74/74（@GameTest 实数 74 = SBN001～008 的 66 + SBN009 8；
+  批次 50 + 24）；A3 专服冒烟：Done (0.422s) → RCON stop 正常退出、0 ERROR、19 WARN 全既有、
+  BlueprintFileLogger logs 目录建出；A4 grep 门禁 0 命中（network/server/log/util），
+  SB-TODO( 25 处全为桩标记；A5 分配点审计无未夹上限项（见三.2）。
+t01～t08 全部通过（逐条见证据/GameTest.txt）。
+
+五、迁移桩清单：新 1（S2C_UploadReportMessage 客户端体）+ 存量 45 =
+  grep -rn "SB-TODO(" src 实数 46。新增逐条：
+  network/s2c/S2C_UploadReportMessage.java:328 P5（上传报告界面：loading 态换真实报告 / 常规路径
+  以当前上传页为 parent 打开 UploadReportScreen）
+  存量 45 = SBN-008 的 45（本任务未拆桩）。
+
+六、任务书出入：
+1. 任务书 t06 写「超限上传回 upload_too_large」；单包路径源码的实际 key 是
+   `spatial_blueprint.error.upload_file_too_large`（Begin 的 totalBytes 超限才回 `upload_too_large`）。
+   测试按源码断言两个 key，未改文案。
+2. 任务书 t05 要求「Begin 被拒且 UploadStagingRegistry 未建组包」；登记表无查询接口，
+   断言方式为「随后给该 uploadId 发块得到 UNKNOWN_ID → staging_rejected」。
+3. 任务书未提 handleAssembled 的 ctx 处理：1.21 handler 已在主线程，改为直接传 ServerPlayer
+   （见二）。行为等价（1.20.1 的嵌套 enqueueWork 只是排到下一 tick）。
+4. 任务书 t06 解压炸弹只写「手写：小压缩体、解压后超上限」；实现为「合法 NBT 前缀 + 声明
+   0x7FFFFFFF 长的 IntArray」的 gzip，NbtAccounter 在计数 / EOF 处截断，无需真的产出 64 MiB，
+   测试毫秒级且不占内存。
+5. 任务书三.2 允许 NETWORK_HARD_CAP_BYTES「删掉或改名」：选择删除，原因写进 decode 上方注释。
+6. 无其它出入。
+
+七、双端同步自查：
+- 上传报告回包：S2C_UploadReportMessage 只由服务端在单包 / 组装完成后发；客户端体在 P5 前
+  静默忽略（与其他 S2C 相同）。字段与 1.20.1 逐字相同。
+- 确认后蓝图库同步：ConfirmUpload 写盘后 sendToPlayer(S2C_LibrarySyncMessage(buildFilteredSummaries))，
+  与 1.20.1 相同；t04 实测收到。
+- 两个登记表的清理时机：PendingUploadRegistry 按玩家单条、确认 take 即消费、5 分钟 TTL、
+  登出/取消 clear；UploadStagingRegistry 同玩家单组包、Begin 顶旧、5 分钟 TTL（begin/append 顺手
+  扫除）、到齐即移除。均纯内存、不进存档；测试 finally 清理测试玩家残留。
+- 本批无新增 wire 字段（布局与 1.20.1 逐字相同）；三.2 只改了「服务端解码时接受的最大长度」，
+  合法客户端发送的字节流不变，不构成协议差异；增删 payload / 改格式仍须 bump mod_version（D4）。
+
+八、教训同步：基线为 4487793 的副本（blob 行尾 CRLF，按 LF 规范化后比较）；原件 A、副本 C
+逐字相同（SHA256 均 10C89E19…，len=19890）。A→C 0 条、C→A 0 条、冲突无。规程同步表已追加一行。
+
+九、建议记入：
+1. [建议记入 K/C] 1.21 C2S 的 decode 会被自动拆包喂到 32 MiB 级负载，而 decode 早于任何权限判定 ——
+   本批按客户端值分配的三处全部先夹上限（K13 的落地模板：常量上限 / 声明值 ≤ 配置上限 /
+   checkedCount）。解压类负载用 SafeNbtIo 的 NbtAccounter（64 MiB）当第二道闸。
+2. [建议记入 C] 上传单包 / 分片的边界：单包 ≤ SINGLE_PACKET_LIMIT（30000）走
+   C2S_UploadProjectionTemplateMessage，更大走 Begin + Chunk（MAX_CHUNKS=256、每块 30000）；
+   1.20.1 的 32 MiB 单包上限在 1.21 不再等价（J41），已恢复为 30000。
+3. [建议记入 C] 解压炸弹测试模板：合法 NBT 前缀 + 超大声明长度的小 gzip，走 NbtAccounter
+   截断路径（毫秒级），不需要真产出配额大小的数据。
+4. [供云端问用户] 上传界面在 P6；P5 前 S2C 包静默忽略是预期。
+
+十、需要用户做的事：无（本任务无手测项）。

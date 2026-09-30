@@ -1,11 +1,7 @@
 package com.xioyim.spatialblueprint.client;
 
+import com.xioyim.spatialblueprint.network.BlueprintNetwork;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -23,8 +19,6 @@ import java.util.List;
  * <p>The cache is invalidated whenever a mutating operation completes (rename / delete),
  * causing the next {@link #requestIfNeeded()} call to re-fetch.</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public class ClientLibraryCache {
 
     @Nullable private static List<BlueprintStorage.BlueprintSummary> cachedList = null;
@@ -82,8 +76,7 @@ public class ClientLibraryCache {
         cachedList = null;
         loading = true;
         version++;
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL
-                .sendToServer(new com.xioyim.spatialblueprint.network.C2S_RequestLibraryMessage());
+        BlueprintNetwork.sendToServer(new com.xioyim.spatialblueprint.network.C2S_RequestLibraryMessage());
     }
 
     /** Returns {@code true} while a request is in-flight (no response yet). */
@@ -98,8 +91,7 @@ public class ClientLibraryCache {
     public static void requestIfNeeded() {
         if (cachedList == null && !loading) {
             loading = true;
-            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL
-                    .sendToServer(new com.xioyim.spatialblueprint.network.C2S_RequestLibraryMessage());
+            BlueprintNetwork.sendToServer(new com.xioyim.spatialblueprint.network.C2S_RequestLibraryMessage());
         }
     }
 
@@ -111,19 +103,6 @@ public class ClientLibraryCache {
         cachedList = list;
         loading = false;
         version++;
-    }
-
-    /**
-     * 断线 / 退出世界时清空，避免把上一个存档的蓝图列表显示在下一个存档里。
-     *
-     * <p>{@link #requestIfNeeded()} 只在 {@code cachedList == null} 时才发请求，
-     * 所以不清的话换服后打开蓝图库看到的仍是上一个服的列表，而且永远不会自己刷新。
-     * {@code loading} 一并复位 —— 断线时若正好有请求在飞，那个回包再也不会到，
-     * 标志位挂着就把后续所有请求都挡住了。</p>
-     */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        invalidate();
     }
 
     /**

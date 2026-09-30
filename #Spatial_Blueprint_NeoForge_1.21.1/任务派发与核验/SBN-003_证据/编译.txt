@@ -1,0 +1,17 @@
+SBN-003 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 18:53（BUILD SUCCESSFUL in 7s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. SBN003Tests 首版对 4 个 private load 直接调用 → 编译错误（ProjectClaimRegistry 等）。
+   处理：测试改走反射调用同一个 private load（不改源码可见性，保持与 1.20.1 零残差）；
+   见报告「任务书出入」。
+2. 临时取样方法里 `var snbt = NbtUtils::structureToSnbt` 无法推断类型 → 显式函数式接口。
+   （取样后该方法已删。）
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 7s
+2 actionable tasks: 1 executed, 1 up-to-date

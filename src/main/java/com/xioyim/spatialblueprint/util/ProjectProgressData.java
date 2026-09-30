@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.util;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -7,8 +8,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -18,16 +20,17 @@ public class ProjectProgressData extends SavedData {
     private static final String SAVE_KEY = "sb_project_progress";
 
     /** 完成状态必须按任务集隔离：公用项目共享一份，私人项目每位玩家各一份。 */
-    private final Map<String, Set<Integer>> completedByTaskSet = new HashMap<>();
+    // 存盘写成 ListTag：用 LinkedHashMap 保证 save → load → save 逐字相同（K25，SBN-014 验收）
+    private final Map<String, Set<Integer>> completedByTaskSet = new LinkedHashMap<>();
     /** 同一玩家、同一任务集、同一条目的最后领取时间（epoch millis）。 */
-    private final Map<ClaimKey, Long> lastClaimTimes = new HashMap<>();
+    private final Map<ClaimKey, Long> lastClaimTimes = new LinkedHashMap<>();
 
     private record ClaimKey(String playerUuid, String taskSetId, int entryIndex) {}
 
     public static ProjectProgressData get(ServerLevel level) {
         return level.getServer().overworld()
                 .getDataStorage()
-                .computeIfAbsent(ProjectProgressData::load, ProjectProgressData::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(ProjectProgressData::new, ProjectProgressData::load, null), SAVE_KEY);
     }
 
     public boolean isCompleted(String taskSetId, int entryIndex) {
@@ -36,7 +39,7 @@ public class ProjectProgressData extends SavedData {
     }
 
     public void markCompleted(String taskSetId, int entryIndex) {
-        if (completedByTaskSet.computeIfAbsent(taskSetId, ignored -> new HashSet<>()).add(entryIndex)) {
+        if (completedByTaskSet.computeIfAbsent(taskSetId, ignored -> new LinkedHashSet<>()).add(entryIndex)) {
             setDirty();
         }
     }
@@ -75,7 +78,7 @@ public class ProjectProgressData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         ListTag completedList = new ListTag();
         for (Map.Entry<String, Set<Integer>> taskSet : completedByTaskSet.entrySet()) {
             for (int entryIndex : taskSet.getValue()) {
@@ -100,7 +103,7 @@ public class ProjectProgressData extends SavedData {
         return tag;
     }
 
-    private static ProjectProgressData load(CompoundTag tag) {
+    private static ProjectProgressData load(CompoundTag tag, HolderLookup.Provider provider) {
         ProjectProgressData data = new ProjectProgressData();
 
         ListTag completedList = tag.getList("completed", Tag.TAG_COMPOUND);
@@ -109,7 +112,7 @@ public class ProjectProgressData extends SavedData {
             String taskSetId = completedTag.getString("taskSetId");
             int entryIndex = completedTag.getInt("entryIndex");
             data.completedByTaskSet
-                    .computeIfAbsent(taskSetId, ignored -> new HashSet<>())
+                    .computeIfAbsent(taskSetId, ignored -> new LinkedHashSet<>())
                     .add(entryIndex);
         }
 

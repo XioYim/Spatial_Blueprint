@@ -1,10 +1,14 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialSpace;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -12,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * C2S：请求某玩家的「次元蓝图材料空间」内容（材料空间界面的 ✦ 按钮）。
@@ -22,7 +25,14 @@ import java.util.function.Supplier;
  *
  * <p>查看他人需要 OP 权限，与 {@code /sb space <玩家>} 一致。</p>
  */
-public class C2S_RequestVoidBagsMessage {
+public class C2S_RequestVoidBagsMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RequestVoidBagsMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_request_void_bags_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RequestVoidBagsMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RequestVoidBagsMessage::encode, C2S_RequestVoidBagsMessage::decode);
 
     /** 被查看玩家的 UUID 字符串。 */
     private final String targetUuid;
@@ -34,6 +44,11 @@ public class C2S_RequestVoidBagsMessage {
         this.targetName = targetName == null ? "" : targetName;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_RequestVoidBagsMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_RequestVoidBagsMessage msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.targetUuid, 64);
         buf.writeUtf(msg.targetName, 64);
@@ -43,23 +58,25 @@ public class C2S_RequestVoidBagsMessage {
         return new C2S_RequestVoidBagsMessage(buf.readUtf(64), buf.readUtf(64));
     }
 
-    public static void handle(C2S_RequestVoidBagsMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_RequestVoidBagsMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            UUID target;
-            try {
-                target = msg.targetUuid.isEmpty() ? player.getUUID() : UUID.fromString(msg.targetUuid);
-            } catch (IllegalArgumentException e) {
-                return;
-            }
-            // 查看他人需要 OP
-            if (!target.equals(player.getUUID()) && !player.hasPermissions(2)) return;
+    public static void handleServer(C2S_RequestVoidBagsMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-            sendVoidBags(player, target, msg.targetName);
-        });
-        ctx.get().setPacketHandled(true);
+        UUID target;
+        try {
+            target = msg.targetUuid.isEmpty() ? player.getUUID() : UUID.fromString(msg.targetUuid);
+        } catch (IllegalArgumentException e) {
+            return;
+        }
+        // 查看他人需要 OP
+        if (!target.equals(player.getUUID()) && !player.hasPermissions(2)) return;
+
+        sendVoidBags(player, target, msg.targetName);
     }
 
     /**

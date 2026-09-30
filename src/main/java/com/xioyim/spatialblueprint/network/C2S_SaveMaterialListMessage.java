@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintSanitizer;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
@@ -7,14 +8,15 @@ import com.xioyim.spatialblueprint.util.MaterialList;
 import com.xioyim.spatialblueprint.util.NotifySound;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * C2S：创造模式 OP 玩家点击 ⎙ 按钮，将当前材料清单（需要数量）整体保存至服务端蓝图文件。
@@ -29,7 +31,14 @@ import java.util.function.Supplier;
  * 只发 {@code blockCounts} 的话服务端会留下一个没有 tag 的复合键，
  * 重新加载后那件物品会退化成无 NBT 的普通物品。</p>
  */
-public class C2S_SaveMaterialListMessage {
+public class C2S_SaveMaterialListMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_SaveMaterialListMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_save_material_list_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_SaveMaterialListMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_SaveMaterialListMessage::encode, C2S_SaveMaterialListMessage::decode);
 
     public final String blueprintId;
     public final LinkedHashMap<String, Integer> blockCounts;
@@ -41,6 +50,11 @@ public class C2S_SaveMaterialListMessage {
         this.blueprintId = blueprintId;
         this.blockCounts = new LinkedHashMap<>(blockCounts);
         this.keyTags     = new LinkedHashMap<>(keyTags);
+    }
+
+    @Override
+    public CustomPacketPayload.Type<C2S_SaveMaterialListMessage> type() {
+        return TYPE;
     }
 
     public static void encode(C2S_SaveMaterialListMessage msg, FriendlyByteBuf buf) {
@@ -76,58 +90,59 @@ public class C2S_SaveMaterialListMessage {
         return new C2S_SaveMaterialListMessage(blueprintId, counts, tags);
     }
 
-    public static void handle(C2S_SaveMaterialListMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_SaveMaterialListMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            // ── 必须是创造模式 + OP ────────────────────────────────────────
-            if (!player.hasPermissions(2) || !player.isCreative()) return;
-            if (msg.blueprintId.isEmpty()) return;
+    public static void handleServer(C2S_SaveMaterialListMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-            // ── 非法方块检查：材料清单中不允许出现命令方块等禁用方块 ─────────
-            // 注意：不走 S2C_OperationResult——它的客户端处理器会在 PlacementScreen
-            // 打开时强制关闭该界面，这里只是校验失败，不应把玩家踢出材料清单界面。
-            for (String materialKey : msg.blockCounts.keySet()) {
-                // 键可能是带 NBT 摘要后缀的复合键，先还原为注册 ID 再检查，
-                // 否则带 NBT 的非法方块（如展示框内的命令方块）会绕过校验
-                String blockId = com.xioyim.spatialblueprint.util.MaterialKey.idOf(materialKey);
-                if (BlueprintSanitizer.isIllegalBlockId(blockId)) {
-                    BlueprintNetwork.CHANNEL.send(
-                            PacketDistributor.PLAYER.with(() -> player),
-                            new S2C_OperationResult(false, "spatial_blueprint.error.illegal_material"));
-                    // 回推服务端真实清单，覆盖客户端界面上的非法条目
-                    pushData(player, msg.blueprintId);
-                    return;
-                }
+        // ── 必须是创造模式 + OP ────────────────────────────────────────
+        if (!player.hasPermissions(2) || !player.isCreative()) return;
+        if (msg.blueprintId.isEmpty()) return;
+
+        // ── 非法方块检查：材料清单中不允许出现命令方块等禁用方块 ─────────
+        // 注意：不走 S2C_OperationResult——它的客户端处理器会在 PlacementScreen
+        // 打开时强制关闭该界面，这里只是校验失败，不应把玩家踢出材料清单界面。
+        for (String materialKey : msg.blockCounts.keySet()) {
+            // 键可能是带 NBT 摘要后缀的复合键，先还原为注册 ID 再检查，
+            // 否则带 NBT 的非法方块（如展示框内的命令方块）会绕过校验
+            String blockId = com.xioyim.spatialblueprint.util.MaterialKey.idOf(materialKey);
+            if (BlueprintSanitizer.isIllegalBlockId(blockId)) {
+                BlueprintNetwork.sendToPlayer(player,
+                        new S2C_OperationResult(false, "spatial_blueprint.error.illegal_material"));
+                // 回推服务端真实清单，覆盖客户端界面上的非法条目
+                pushData(player, msg.blueprintId);
+                return;
             }
+        }
 
-            BlueprintData data = BlueprintStorage.load(msg.blueprintId);
-            if (data == null) return;
+        BlueprintData data = BlueprintStorage.load(msg.blueprintId);
+        if (data == null) return;
 
-            if (data.materialList == null) {
-                data.materialList = new MaterialList();
-                data.materialList.blueprintName = data.name != null ? data.name : "";
+        if (data.materialList == null) {
+            data.materialList = new MaterialList();
+            data.materialList.blueprintName = data.name != null ? data.name : "";
+        }
+        data.materialList.blockCounts.clear();
+        data.materialList.blockCounts.putAll(msg.blockCounts);
+        // tag 表整体替换：清单里已删除的条目不该留下孤儿 tag
+        data.materialList.keyTags.clear();
+        for (Map.Entry<String, net.minecraft.nbt.CompoundTag> e : msg.keyTags.entrySet()) {
+            if (msg.blockCounts.containsKey(e.getKey())) {
+                data.materialList.keyTags.put(e.getKey(), e.getValue());
             }
-            data.materialList.blockCounts.clear();
-            data.materialList.blockCounts.putAll(msg.blockCounts);
-            // tag 表整体替换：清单里已删除的条目不该留下孤儿 tag
-            data.materialList.keyTags.clear();
-            for (Map.Entry<String, net.minecraft.nbt.CompoundTag> e : msg.keyTags.entrySet()) {
-                if (msg.blockCounts.containsKey(e.getKey())) {
-                    data.materialList.keyTags.put(e.getKey(), e.getValue());
-                }
-            }
+        }
 
-            try {
-                BlueprintStorage.save(UUID.fromString(msg.blueprintId), data);
-                NotifySound.server(player);
-            } catch (IllegalArgumentException ignored) {}
+        try {
+            BlueprintStorage.save(UUID.fromString(msg.blueprintId), data);
+            NotifySound.server(player);
+        } catch (IllegalArgumentException ignored) {}
 
-            // 回推最新数据，让客户端界面以服务端结果为准
-            pushData(player, msg.blueprintId);
-        });
-        ctx.get().setPacketHandled(true);
+        // 回推最新数据，让客户端界面以服务端结果为准
+        pushData(player, msg.blueprintId);
     }
 
     /** 把服务端文件里的蓝图数据推回客户端缓存，使界面显示服务端权威结果。 */

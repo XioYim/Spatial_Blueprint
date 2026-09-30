@@ -1,21 +1,28 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.client.ClientProjectEntriesCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C：回复 {@code C2S_RequestProjectEntriesMessage}，携带项目的条目清单
  * 与作者参考系（origin / size），供「创建子工程蓝图」页使用。
  */
-public class S2C_ProjectEntriesMessage {
+public class S2C_ProjectEntriesMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_ProjectEntriesMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_project_entries_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_ProjectEntriesMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_ProjectEntriesMessage::encode, S2C_ProjectEntriesMessage::decode);
 
     public record Entry(int index, String label) {}
 
@@ -37,6 +44,11 @@ public class S2C_ProjectEntriesMessage {
         this.origin       = origin;
         this.size         = size;
         this.entries      = entries == null ? List.of() : entries;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_ProjectEntriesMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_ProjectEntriesMessage msg, FriendlyByteBuf buf) {
@@ -69,13 +81,7 @@ public class S2C_ProjectEntriesMessage {
         return new S2C_ProjectEntriesMessage(projectId, true, projectName, origin, size, entries);
     }
 
-    public static void handle(S2C_ProjectEntriesMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            // 只写客户端缓存（纯静态字段），不碰任何客户端专属类型，无需 @OnlyIn
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientProjectEntriesCache.onReceive(msg);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_ProjectEntriesMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientProjectEntriesCache.onReceive(msg);
     }
 }

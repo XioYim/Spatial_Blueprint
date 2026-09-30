@@ -1,11 +1,6 @@
 package com.xioyim.spatialblueprint.client;
 
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 /**
  * 客户端缓存：本玩家能否打开 /sb config 配置页面。
@@ -14,8 +9,6 @@ import net.minecraftforge.fml.common.Mod;
  * 真正拦截在服务端（C2S 请求 / 应用都校验 OP），这里只负责别让非 OP 看到那个
  * 读了本地 toml、保存又被拒的假配置页面。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientConfigPermCache {
 
     /**
@@ -41,11 +34,6 @@ public final class ClientConfigPermCache {
      * Mod 列表里的 Config 按钮仍会放行 —— 进去看到的是一个读本地 toml、
      * 保存又被服务端拒绝的假页面，正是 {@link #canOpen} 想避免的情形。</p>
      */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clear();
-    }
-
     public static void clear() {
         allowed = false;
     }

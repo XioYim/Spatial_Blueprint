@@ -1,0 +1,36 @@
+SBN-016 改动清单（V1，两向比对）
+时间：2026-09-30 22:22:45 · 基准 task/SBN-016 @ 802ef0e（分支未提交改动；origin/neoforge-1.21.1 @ 162c5fb）
+工作区（git status --short）：
+  M src/main/java/com/xioyim/spatialblueprint/block/RenderBlock.java
+  M src/main/java/com/xioyim/spatialblueprint/client/SpatialBlueprintClient.java
+  M src/main/java/com/xioyim/spatialblueprint/gametest/SBN015Tests.java
+  ?? src/main/java/com/xioyim/spatialblueprint/client/outliner/（6 个新文件）
+  ?? src/main/java/com/xioyim/spatialblueprint/client/renderer/（RenderBlockRenderer.java）
+  ?? src/main/java/com/xioyim/spatialblueprint/client/BlueprintFakeWorld.java
+  ?? src/main/java/com/xioyim/spatialblueprint/client/RenderBlockParticleCache.java
+  ?? src/main/java/com/xioyim/spatialblueprint/client/RenderBlockClientExtensions.java
+  ?? src/main/java/com/xioyim/spatialblueprint/gametest/SBN016Tests.java
+  ?? "#…/任务派发与核验/SBN-016_证据/"
+
+允许清单（任务书第二节）→ 实际：
+  新 client/outliner/ 6 个（Outline / AABBOutline / ChasingAABBOutline / CornerOutline / Outliner / SBOutlinerRenderTypes）→ 有
+  新 client/renderer/RenderBlockRenderer.java → 有
+  新 client/BlueprintFakeWorld.java → 有
+  新 client/RenderBlockParticleCache.java → 有（纯逻辑，取代 RenderBlock 静态表）
+  新 client/RenderBlockClientExtensions.java → 有（IClientBlockExtensions.addDestroyEffects）
+  新 client/outliner/OutlinerDebug.java → 有（环境变量 SB_DEBUG_OUTLINER 开关）
+  改 client/SpatialBlueprintClient.java → 有（注册渲染器 / 客户端扩展 / 调试驱动；clearAllCaches + 第 13 个缓存）
+  改 block/RenderBlock.java → 有（onRemove 桩 → RenderBlockParticleCache.put；连带删掉已死的 CLIENT_PARTICLE_CACHE 字段与 import）
+  改 gametest/SBN015Tests.java → 有（只改 t07：+13 个缓存）
+  新 gametest/SBN016Tests.java → 有（t01～t03）
+  交接件：SBN-016_报告.txt / SBN-016_证据\ / 开发日志.md / 测试清单.txt（含 H1～H4 手测）/
+    云端协作规程.md 第五节表 / 通用经验副本 → 按规程范围
+
+反向（实际 → 允许）：无允许清单外文件。
+  diff -w 残差（行数含 diff 头）：Outline.java +56/-56（顶点 API 改名 + double→float 显式转换）、
+  AABBOutline / ChasingAABBOutline / CornerOutline / Outliner 0（字节同拷贝）、
+  SBOutlinerRenderTypes +2/-2（new ResourceLocation → ResourceLocation.withDefaultNamespace）、
+  RenderBlockRenderer +1/-1（ModelData 换 neoforge 包）、BlueprintFakeWorld +0/-3（去 @OnlyIn / forge import）、
+  RenderBlock +5/-21（去静态表字段 + 桩注释 → 调用；注释与 import 调整）。
+  几何 / 颜色 / 透明度 / 淡出时长 / 批次顺序零改动。
+  run\ 取证后整目录删除；无其它包改动。

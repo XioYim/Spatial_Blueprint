@@ -1,16 +1,21 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.gui.SpatialBlueprintConfigScreen;
-import net.minecraft.client.Minecraft;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** 服务端 → 客户端：让玩家打开 Spatial Blueprint 游戏内配置主页面（/sb config）。 */
-public class S2C_OpenConfigMessage {
+public class S2C_OpenConfigMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_OpenConfigMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_open_config_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_OpenConfigMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_OpenConfigMessage::encode, S2C_OpenConfigMessage::decode);
 
     public S2C_OpenConfigMessage() {}
 
@@ -20,19 +25,12 @@ public class S2C_OpenConfigMessage {
         return new S2C_OpenConfigMessage();
     }
 
-    public static void handle(S2C_OpenConfigMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        // lambda 体内只能调用带 @OnlyIn 的方法，不能直接碰客户端类型 ——
-        // 否则 Screen 会进入本类 synthetic 方法的签名，专用服务端注册消息时就会崩
-        ctx.get().enqueueWork(() -> openScreen());
-        ctx.get().setPacketHandled(true);
+    @Override
+    public CustomPacketPayload.Type<S2C_OpenConfigMessage> type() {
+        return TYPE;
     }
 
-    @OnlyIn(Dist.CLIENT)
-    private static void openScreen() {
-        Minecraft mc = Minecraft.getInstance();
-        // 本消息只能由服务端在 /sb config 命令里发出，而那条命令已带 OP 校验 ——
-        // 收到即代表服务端认可，不再用客户端的缓存（可能还没刷新）二次拦截，
-        // 否则刚被提升 OP 的玩家会因为登录时的旧缓存而打不开。
-        mc.setScreen(new SpatialBlueprintConfigScreen(mc.screen));
+    public static void handle(S2C_OpenConfigMessage msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端打开 Spatial Blueprint 游戏内配置主页面（SpatialBlueprintConfigScreen，/sb config）
     }
 }

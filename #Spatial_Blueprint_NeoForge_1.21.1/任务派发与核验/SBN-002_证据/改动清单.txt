@@ -1,0 +1,27 @@
+SBN-002 改动清单（V1 两向比对）
+基线：da05c98（task/SBN-002 任务书提交，自 neoforge-1.21.1 @ f5784a0 拉出）
+时间：2026-09-29 17:00 左右
+
+一、git 实际改动（对照任务书第二节允许清单）：
+新 src/main/java/com/xioyim/spatialblueprint/util/BlueprintSanitizer.java
+新 src/main/java/com/xioyim/spatialblueprint/network/s2c/S2C_IllegalBlocksListMessage.java（只放嵌套 record + 1 条 SB-TODO）
+改 src/main/java/com/xioyim/spatialblueprint/util/BulkMaterialConverter.java（去 SBN-001 桩、恢复 collectConversions；与 1.20.1 源 diff -w 为零）
+改 src/main/java/com/xioyim/spatialblueprint/BlueprintConfig.java（只改 excludedBlocks / excludedItems 两个默认值，与 SBN-001 版 diff = 2 行修改 + 4 行新增）
+新 src/main/java/com/xioyim/spatialblueprint/gametest/SBN002Tests.java
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-002_证据/（编译.txt、GameTest.txt、改动清单.txt、javap.txt、nbt_样本.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-002 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（追加「二、SBN-002 净化器」一组）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+改 #Spatial_Blueprint_NeoForge_1.21.1/通用经验/Mod开发与迁移_通用铁律经验教训.md（只按规程第五节三方同步；本轮 A=C 无变化时不动）
+
+二、两向比对结论：
+允许清单 → 实际：全部命中；无多余文件。
+实际 → 允许清单：无清单外文件。
+run/ 残留已删（gitignored，本就不进提交）；临时取样用例 s99 已从 SBN002Tests.java 删除（采集的 SNBT 存 nbt_样本.txt）。
+两向一致。
+
+三、与 1.20.1 源的 diff -w 残差（正文在报告第三节）：
+BlueprintSanitizer.java：残差 = 第三节 2～6 点名的改动（listHoldsItemEntries 槽位包层、STRIP_SKIP_KEYS+bees、讲台书新旧格式、试炼刷怪笼三键、展示框 {id,count} 重建），无 import 变化（Gson 等 1.21.1 全在）。
+BulkMaterialConverter.java：0 残差。
+BlueprintConfig.java：仅 4 行默认值（有意分叉，D9）。

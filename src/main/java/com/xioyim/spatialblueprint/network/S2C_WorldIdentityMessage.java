@@ -1,9 +1,11 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * S2C：登录时把当前存档的身份（UUID + 存档名）推给客户端。
@@ -13,7 +15,14 @@ import java.util.function.Supplier;
  * 客户端拿到这份身份后，右键时就能立刻判断手里这张蓝图是不是本档的，
  * 不必先开界面再被服务端赶出来。</p>
  */
-public class S2C_WorldIdentityMessage {
+public class S2C_WorldIdentityMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_WorldIdentityMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_world_identity_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_WorldIdentityMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_WorldIdentityMessage::encode, S2C_WorldIdentityMessage::decode);
 
     private final String uuid;
     private final String name;
@@ -27,6 +36,11 @@ public class S2C_WorldIdentityMessage {
 
     public String getName() { return name; }
 
+    @Override
+    public CustomPacketPayload.Type<S2C_WorldIdentityMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(S2C_WorldIdentityMessage msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.uuid, 64);
         buf.writeUtf(msg.name, 64);
@@ -36,15 +50,7 @@ public class S2C_WorldIdentityMessage {
         return new S2C_WorldIdentityMessage(buf.readUtf(64), buf.readUtf(64));
     }
 
-    public static void handle(S2C_WorldIdentityMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    // 必须标 @OnlyIn：lambda 体只调用本方法，客户端类型只出现在这里，
-    // 否则专用服务端注册消息时就会去加载客户端类。
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
-    private static void handleClient(S2C_WorldIdentityMessage msg) {
+    public static void handle(S2C_WorldIdentityMessage msg, IPayloadContext ctx) {
         com.xioyim.spatialblueprint.client.ClientWorldIdentity.set(msg.getUuid(), msg.getName());
     }
 }

@@ -1,0 +1,34 @@
+SBN-004 改动清单（V1 两向比对）
+基线：10d3b1c（task/SBN-004 任务书提交，自 neoforge-1.21.1 @ d5a8798 拉出）
+时间：2026-09-29 20:30 左右
+
+一、git 实际改动（对照任务书第二节允许清单）：
+新 src/main/java/com/xioyim/spatialblueprint/item/SpatialBlueprintComponents.java
+新 src/main/java/com/xioyim/spatialblueprint/item/LegacyItemMigration.java
+新 item/AbstractBlueprintItem.java、BlankBlueprintItem.java、BuildBlueprintItem.java、
+   DimensionalBlueprintItem.java、EngineeringBlueprintItem.java、PrivateProjectBlueprintItem.java、
+   ProjectBlueprintItem.java、ProjectionBlueprintItem.java、PublicProjectBlueprintItem.java、
+   RewardBlueprintItem.java、SpatialBlueprintItem.java、SpatialBlueprintItems.java、
+   VoidDimensionalBlueprintItem.java（13 个）
+新 SpatialBlueprintRegistry.java、block/RenderBlock.java、block/entity/RenderBlockEntity.java
+新 util/ItemSyncUtil.java、util/OrphanBlueprintGuard.java
+改 SpatialBlueprintMod.java（三组注册 + addCreative，删 3 条 P2 桩）
+新 gametest/SBN004Tests.java
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-004_报告.txt
+新 #Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-004_证据/（编译.txt、GameTest.txt、改动清单.txt、
+   javap.txt、nbt_样本.txt、服务端.txt）
+改 #Spatial_Blueprint_NeoForge_1.21.1/开发日志.md（只文末追加 ## SBN-004 执行记录）
+改 #Spatial_Blueprint_NeoForge_1.21.1/测试清单.txt（追加「四、SBN-004 数据组件与物品」+ H1 手测步骤）
+改 #Spatial_Blueprint_NeoForge_1.21.1/云端协作规程.md（只第五节同步表追加一行）
+通用经验副本：三方比对 A=C=B 逐字相同（10C89E19…），未动。
+
+二、两向比对结论：允许清单 → 实际全部命中；实际 → 允许清单无清单外文件。
+资源未动；run/ 残留已删；临时取样 t99 已删。两向一致。
+
+三、18 个新搬文件相对 1.20.1 源的 diff -w 残差（V3）：
+残差只有四类（逐文件明细见报告第二节）：
+  NBT 读写 → 组件读写（三.2.a 口径）
+  1.21 签名（appendHoverText 带 TooltipContext、context.level()、方块实体 load/save/updateTag 带 Provider 等）
+  打桩（三.2.c～e 的客户端方法、三.4.b 的 addDestroyEffects、三.5 的网络发送、主类其余桩）
+  三.2.f 的 restore 抽取、三.2.i 的迁移钩子
+访问器方法名与签名零改动（public static 全部保留原样）。

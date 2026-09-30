@@ -46,7 +46,7 @@ public final class SafeNbtIo {
         // 原版 NbtIo.createDecompressorStream 正是 DataInputStream(FastBuffered(GZIP))。
         try (DataInputStream data = new DataInputStream(
                 new FastBufferedInputStream(new GZIPInputStream(input)))) {
-            return NbtIo.read(data, new NbtAccounter(maxUncompressedBytes));
+            return NbtIo.read(data, NbtAccounter.create(maxUncompressedBytes));
         } catch (RuntimeException e) {
             throw new IOException("Compressed NBT exceeds the decompression quota or is invalid", e);
         }

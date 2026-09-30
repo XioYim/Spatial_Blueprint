@@ -1,6 +1,7 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -8,6 +9,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.SharedConstants;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -29,6 +31,11 @@ public class BlueprintData {
     public final List<EntityEntry> entities = new ArrayList<>();
     public BlockPos size = BlockPos.ZERO;
     public String name = "";
+    /**
+     * 读入文件的 {@code MinecraftDataVersion}（根标签，缺键记 0）。
+     * 只读不写：serialize 写出去的本来就是它。
+     */
+    public int dataVersion = 0;
     /** 玩家在捕捉时设定的动画时长（秒）。0 表示未设置，使用配置文件默认值。 */
     public int animDuration = 0;
     /**
@@ -239,7 +246,7 @@ public class BlueprintData {
 
         CompoundTag root = new CompoundTag();
         root.putInt("Version", 7);
-        root.putInt("MinecraftDataVersion", 3465); // 1.20.1
+        root.putInt("MinecraftDataVersion", SharedConstants.getCurrentVersion().getDataVersion().getVersion());
         root.put("Metadata", metadata);
         root.put("Regions", regionsTag);
         root.put("SpatialBlueprintData", serializeModData());
@@ -273,8 +280,8 @@ public class BlueprintData {
         if (animDuration > 0) mod.putInt("animDuration", animDuration);
         if (uploadMode > 0) mod.putInt("uploadMode", uploadMode);
         if (!fixedDimension.isEmpty()) mod.putString("fixedDimension", fixedDimension);
-        if (fixedStartPos != null) mod.put("fixedStartPos", NbtUtils.writeBlockPos(fixedStartPos));
-        if (fixedEndPos != null) mod.put("fixedEndPos", NbtUtils.writeBlockPos(fixedEndPos));
+        if (fixedStartPos != null) mod.put("fixedStartPos", NbtCompat.writeBlockPos(fixedStartPos));
+        if (fixedEndPos != null) mod.put("fixedEndPos", NbtCompat.writeBlockPos(fixedEndPos));
         return mod;
     }
 
@@ -314,12 +321,18 @@ public class BlueprintData {
     public static BlueprintData deserialize(CompoundTag tag) {
         BlueprintData data = new BlueprintData();
 
+        // D2（SBN-011）：按 dataVersion 走原版 DataFixer 升级旧数据；dataVersion 字段仍记原值。
+        data.dataVersion = tag.contains("MinecraftDataVersion") ? tag.getInt("MinecraftDataVersion") : 0;
+        final int from = LegacyDataFixer.effectiveFrom(data.dataVersion);
+        final boolean fix = LegacyDataFixer.needsFix(from);
+        final int[] unupgraded = new int[1];
+
         CompoundTag metadata = tag.getCompound("Metadata");
         data.name = metadata.getString("Name");
 
         CompoundTag mod = tag.getCompound("SpatialBlueprintData");
         if (mod.contains("category")) data.category = mod.getString("category");
-        if (mod.contains("materialList")) data.materialList = MaterialList.deserialize(mod.getCompound("materialList"));
+        if (mod.contains("materialList")) data.materialList = MaterialList.deserialize(mod.getCompound("materialList"), from, unupgraded);
         if (mod.contains("creatorName")) data.creatorName = mod.getString("creatorName");
         if (mod.contains("sourceName")) data.sourceName = mod.getString("sourceName");
         if (mod.contains("ownerUuid")) data.ownerUuid = mod.getString("ownerUuid");
@@ -328,7 +341,7 @@ public class BlueprintData {
         data.parentProjectId = mod.contains("parentProjectId")
                 ? mod.getString("parentProjectId") : "";
         if (mod.contains("createdAt")) data.createdAt = mod.getLong("createdAt");
-        if (mod.contains("saveMode")) data.saveMode = com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"));
+        if (mod.contains("saveMode")) data.saveMode = com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinalOrSafe(mod.getInt("saveMode"));
         if (mod.contains("opBypassCapture")) data.opBypassCapture = mod.getBoolean("opBypassCapture");
         if (mod.contains("noteShort")) data.noteShort = mod.getString("noteShort");
         if (mod.contains("noteLong")) data.noteLong = mod.getString("noteLong");
@@ -342,8 +355,8 @@ public class BlueprintData {
         if (mod.contains("animDuration")) data.animDuration = mod.getInt("animDuration");
         if (mod.contains("uploadMode")) data.uploadMode = mod.getInt("uploadMode");
         if (mod.contains("fixedDimension")) data.fixedDimension = mod.getString("fixedDimension");
-        if (mod.contains("fixedStartPos")) data.fixedStartPos = NbtUtils.readBlockPos(mod.getCompound("fixedStartPos"));
-        if (mod.contains("fixedEndPos")) data.fixedEndPos = NbtUtils.readBlockPos(mod.getCompound("fixedEndPos"));
+        if (mod.contains("fixedStartPos")) data.fixedStartPos = NbtCompat.readBlockPos(mod, "fixedStartPos");
+        if (mod.contains("fixedEndPos")) data.fixedEndPos = NbtCompat.readBlockPos(mod, "fixedEndPos");
 
         CompoundTag regionsTag = tag.getCompound("Regions");
         if (regionsTag.isEmpty()) return data; // 空文件，返回空蓝图而不是抛异常
@@ -359,7 +372,13 @@ public class BlueprintData {
         ListTag paletteTag = region.getList("BlockStatePalette", 10);
         List<BlockState> palette = new ArrayList<>(paletteTag.size());
         for (int i = 0; i < paletteTag.size(); i++) {
-            palette.add(readPaletteEntry(paletteTag.getCompound(i)));
+            CompoundTag stateTag = paletteTag.getCompound(i);
+            if (fix) {
+                LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockState(stateTag, from);
+                if (!r.ok()) unupgraded[0]++;
+                stateTag = r.tag();
+            }
+            palette.add(readPaletteEntry(stateTag));
         }
         if (palette.isEmpty()) palette.add(Blocks.AIR.defaultBlockState());
         final int bits = LitematicaCodec.bitsPerEntry(palette.size());
@@ -370,6 +389,11 @@ public class BlueprintData {
             ListTag teList = region.getList("TileEntities", 10);
             for (int i = 0; i < teList.size(); i++) {
                 CompoundTag te = teList.getCompound(i);
+                if (fix) {
+                    LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockEntity(te, from);
+                    if (!r.ok()) unupgraded[0]++;
+                    te = r.tag();
+                }
                 tileMap.put(LitematicaCodec.packXYZ(te.getInt("x"), te.getInt("y"), te.getInt("z")), te);
             }
         }
@@ -416,9 +440,21 @@ public class BlueprintData {
         if (region.contains("Entities", 9)) {
             ListTag entitiesTag = region.getList("Entities", 10);
             for (int i = 0; i < entitiesTag.size(); i++) {
-                EntityEntry entry = deserializeEntity(entitiesTag.getCompound(i));
+                CompoundTag entityTag = entitiesTag.getCompound(i);
+                if (fix) {
+                    LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixEntity(entityTag, from);
+                    if (!r.ok()) unupgraded[0]++;
+                    entityTag = r.tag();
+                }
+                EntityEntry entry = deserializeEntity(entityTag);
                 if (entry != null) data.entities.add(entry);
             }
+        }
+
+        if (unupgraded[0] > 0) {
+            SpatialBlueprintMod.LOGGER.warn(
+                    "[BlueprintData] {} entries could not be upgraded from dataVersion {} (blueprint='{}')",
+                    unupgraded[0], data.dataVersion, data.name);
         }
 
         return data;

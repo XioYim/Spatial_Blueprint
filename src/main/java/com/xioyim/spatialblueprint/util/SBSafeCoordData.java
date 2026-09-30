@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.util;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -7,7 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -24,12 +25,13 @@ public class SBSafeCoordData extends SavedData {
 
     public record SafeEntry(boolean hasCoord, int x, int y, int z) {}
 
-    private final Map<String, SafeEntry> entries = new HashMap<>();
+    // 存盘写成 ListTag：用 LinkedHashMap 保证 save → load → save 逐字相同（K25，SBN-014 验收）
+    private final Map<String, SafeEntry> entries = new LinkedHashMap<>();
 
     public static SBSafeCoordData get(ServerLevel level) {
         return level.getServer().overworld()
                 .getDataStorage()
-                .computeIfAbsent(SBSafeCoordData::load, SBSafeCoordData::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(SBSafeCoordData::new, SBSafeCoordData::load, null), SAVE_KEY);
     }
 
     private SBSafeCoordData() {}
@@ -46,7 +48,7 @@ public class SBSafeCoordData extends SavedData {
 
     // ── NBT persistence ──────────────────────────────────────────────────────
 
-    public static SBSafeCoordData load(CompoundTag tag) {
+    public static SBSafeCoordData load(CompoundTag tag, HolderLookup.Provider provider) {
         SBSafeCoordData data = new SBSafeCoordData();
         ListTag list = tag.getList("entries", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
@@ -59,7 +61,7 @@ public class SBSafeCoordData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         ListTag list = new ListTag();
         for (Map.Entry<String, SafeEntry> e : entries.entrySet()) {
             CompoundTag entry = new CompoundTag();

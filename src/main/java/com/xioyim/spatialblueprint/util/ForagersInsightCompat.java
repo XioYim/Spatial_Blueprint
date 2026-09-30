@@ -32,7 +32,7 @@ public final class ForagersInsightCompat {
     public static void patchCropHarvestXpOff() {
         Path toml;
         try {
-            toml = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
+            toml = net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get()
                     .resolve("foragersinsight-common.toml");
         } catch (Exception e) {
             return;

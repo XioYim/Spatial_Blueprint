@@ -26,7 +26,7 @@ public abstract class SBOutlinerRenderTypes extends RenderType {
             RenderType.CompositeState.builder()
                     .setShaderState(RENDERTYPE_ENTITY_SOLID_SHADER)
                     .setTextureState(new RenderStateShard.TextureStateShard(
-                            new ResourceLocation("textures/misc/white.png"), false, false))
+                            ResourceLocation.withDefaultNamespace("textures/misc/white.png"), false, false))
                     .setCullState(CULL)
                     .setLightmapState(LIGHTMAP)
                     .setOverlayState(OVERLAY)
@@ -39,7 +39,7 @@ public abstract class SBOutlinerRenderTypes extends RenderType {
             RenderType.CompositeState.builder()
                     .setShaderState(RENDERTYPE_ENTITY_SOLID_SHADER)
                     .setTextureState(new RenderStateShard.TextureStateShard(
-                            new ResourceLocation("textures/misc/white.png"), false, false))
+                            ResourceLocation.withDefaultNamespace("textures/misc/white.png"), false, false))
                     .setDepthTestState(NO_DEPTH_TEST)
                     .setCullState(CULL)
                     .setLightmapState(LIGHTMAP)

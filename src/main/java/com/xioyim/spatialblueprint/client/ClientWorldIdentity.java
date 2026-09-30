@@ -1,11 +1,5 @@
 package com.xioyim.spatialblueprint.client;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.api.distmarker.OnlyIn;
-
 /**
  * 客户端侧的当前存档身份缓存。
  *
@@ -13,8 +7,6 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  * 工程 / 次元蓝图右键时靠它就地判断「这张蓝图是不是本档的」，
  * 不用等一个来回的网络请求 —— 服务端那边还有一道权威校验兜底。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientWorldIdentity {
 
     private ClientWorldIdentity() {}
@@ -28,11 +20,6 @@ public final class ClientWorldIdentity {
     }
 
     /** 断开连接时清掉，避免上一个存档的身份被下一个存档误用。 */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clear();
-    }
-
     public static void clear() {
         uuid = "";
         name = "";

@@ -1,0 +1,157 @@
+SBN-013 · P4 命令与 Reload：SBCommands + C2S_ReloadConfigMessage
+派发：2026-09-30 16:20:00（云端主会话）
+分支：task/SBN-013（从 neoforge-1.21.1 @ e26f1cc 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-013 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2；本机取 git 输出按 K15。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K10、K11、K12、K16、K20、K21、C1、C2、C14、C15、C16、C26；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-012_任务_P4放置引擎.txt 第五节 t06（创造放置 → 撤销记录的造法）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P4 收尾第一段（待办事项「P4 收尾」子项一）。P3 网络与放置引擎已全部完成（e08～e15），服务端还缺命令与配置热加载：
+  command/SBCommands.java（1.20.1 534 行）：/sb undo、/sb config、/sb reload、/sb space [玩家]、/sb tpperm grant|revoke|list、
+      /sb project activate|claim|release|list。引用的类云端逐个查过，全部已在集成分支（BlueprintPlacementHandler.restoreUndo、SBUndoData、
+      SBUndoCooldown、TeleportPermissions、S2C_TeleportPermMessage、s2c/S2C_OpenConfigMessage、S2C_MaterialSpaceSyncMessage、SubProjectClaimHandler、
+      ProjectClaimRegistry、ProjectStorage、ProjectBlueprintItem、ItemSyncUtil）；唯一缺的是本任务的 C2S_ReloadConfigMessage.doReload。
+  network/C2S_ReloadConfigMessage.java（64 行，C2S，空消息，OP 2 级）：doReload 从磁盘重读本 mod 全部配置并清缓存。
+  command/SBClientCommands.java 是客户端命令，留 P5，不动。
+
+本任务结束时：78 条注册与 1.20.1 完全对齐（P3 网络清零）；主类 SB-TODO(P4) SBCommands 桩去掉。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  command/SBCommands.java                                                    ← 1.20.1 同路径
+  新  network/C2S_ReloadConfigMessage.java                                       ← 1.20.1 同路径
+  改  network/BlueprintNetwork.java                                              ← 只加 1 条注册
+  改  SpatialBlueprintMod.java                                                   ← 只把「// SB-TODO(P4): SBCommands（命令注册）」一行换成
+                                                                                    NeoForge.EVENT_BUS.addListener(SBCommands::register)（与 1.20.1 同位置同写法）
+  新  gametest/SBN013Tests.java
+
+交接件（规程允许范围）：SBN-013_报告.txt、SBN-013_证据\、开发日志.md 文末「## SBN-013 执行记录」、
+测试清单.txt 追加「十三、SBN-013 命令与 Reload」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切。登录事件里的 SBCommands.syncTeleportPerm 调用属于 SBN-014（主类登录登出事件），本任务只提供该方法，不接事件。
+若实测引用了第二节以外、尚未迁移的类：该调用按口径打桩（SB-TODO 写阶段），写进报告；不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005～012：字段、校验、权限等级、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）改写。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork：register 里追加 C2S_ReloadConfigMessage 一条，playToServer（1.20.1 是 c2s）；payload ID 按命名规则（类名 snake_case）。
+   空消息 codec 按 C15：ofMember + 空 encode / decode，不用 StreamCodec.unit。其余零改动。
+
+2. C2S_ReloadConfigMessage
+   a. handle(IPayloadContext) + handleServer(msg, ServerPlayer)；handleServer 里「player 为 null 或 !hasPermissions(2) → return」原样，成功后 sendSystemMessage 原样。
+   b. doReload 必须改写（1.20.1 用的 ConfigTracker.INSTANCE.configSets() 在 FML 4 是包内可见字段，ForgeConfigSpec → ModConfigSpec）。
+      口径：三步语义不变 ——「磁盘重读 → 清 ConfigValue 缓存 → 清本 mod 派生缓存」：
+        for (ModConfig mc : ModConfigs.getModConfigs(SpatialBlueprintMod.MODID)) {
+          loaded = mc.getLoadedConfig()；为 null 跳过；
+          CommentedFileConfig.of(mc.getFullPath()) → load() → 若 !mc.getSpec().isCorrect(fc) 则 mc.getSpec().correct(fc)（只改内存，不回写磁盘）→
+          loaded.config().putAll(fc) → 关闭 fc；
+          mc.getSpec() instanceof ModConfigSpec spec → spec.afterReload()；
+        }
+        外层 try / catch 与 WARN 文本原样；最后 BlueprintConfig.clearCache()、GeneratedSubstitutionsConfig.invalidateCache() 原样。
+      （本段是云端给的写法骨架，不是代码块照抄；实测某步 API 不同就照实测，写进「任务书出入」。）
+   c. 背景（写进报告第七节）：FML 4 自带 ConfigWatcher，改盘后会异步自动重载并发 ModConfigEvent.Reloading（主类已挂 BlueprintConfig::onConfigReload）；
+      手动 doReload 的价值是「立即生效 + GUI 用 .set() 改内存值后恢复成盘上值」。两者并存重复清缓存无害。
+
+3. SBCommands
+   a. 注册：RegisterCommandsEvent 换 net.neoforged.neoforge.event.RegisterCommandsEvent（J46），主类 addListener 一行（第二节）。
+   b. 命令树、requires(hasPermission(2)) 的挂载位置、参数（IntegerArgumentType、GameProfileArgument）逐字原样 —— 验收按 requires 计数与挂载节点比对。
+   c. 网络：syncTeleportPerm、executeOpenConfig 的 CHANNEL.send → BlueprintNetwork.sendToPlayer；其余零改动。
+   d. 物品数据：若 project claim / activate 里有 stack.getTag() 直读，按 C12 走访问器（null 补 ""，与 SBN-010 同）；没有就报告写「无」。
+   e. executeUndo：isCreative → 冷却 → pop → 维度 → restoreUndo → 撤回后冷却 → 声音 / 消息，顺序原样。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged + fancymodloader loader-4.0.44 + night-config core-3.8.3）
+========================================================
+
+  J46 RegisterCommandsEvent#getDispatcher()（net.neoforged.neoforge.event）；
+      ModConfigs#getModConfigs(String) → List<ModConfig>（public static）；ModConfig#getLoadedConfig() → IConfigSpec.ILoadedConfig、#getFullPath()、#getSpec()；
+      IConfigSpec.ILoadedConfig#config() → CommentedConfig、#save()；IConfigSpec#isCorrect(UnmodifiableCommentedConfig) / #correct(CommentedConfig)；
+      ModConfigSpec#afterReload()、#resetCaches(RestartType)；CommentedFileConfig#of(Path)；Config#putAll(UnmodifiableConfig)；
+      ConfigTracker 的 configSets / configsByMod / fileMap 都是包内可见（不能用），ConfigWatcher 包内类（自动重载存在）。
+  其余沿用 J31～J45。
+
+========================================================
+五、测试（新格式数据由真实对象产生；伪造包是唯一允许手写处）
+========================================================
+
+命令一律走真实 dispatcher：server.getCommands().performPrefixedCommand(源, "sb …") 或 dispatcher.execute，源用假玩家的 createCommandSourceStack()；
+OP 按 K11 直接写 ServerOpListEntry 等级 4，finally 删。
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1、K20）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～012 的 100 条照旧全过。
+    t01_registration     本类 payload ID 合规；合计 78 个互不重复；方向与 1.20.1 逐条一致（54 C2S / 24 S2C），1.20.1 有而 1.21.1 无的 = 0（清单进证据）。
+    t02_codec            空消息编码 → 解码 → 再编码逐字相等（C15：decode 出的新实例能再编码）。
+    t03_reload           a. 内存改值再恢复：某个整数配置项（C16 的完整路径定位）先 .set(新值) 不存盘 → OP 发 C2S_ReloadConfigMessage → .get() 回到盘上值；
+                         b. 非 OP 同样操作 → .get() 仍是内存新值（没重载）；
+                         c. 改盘生效：把该项在 toml 里改成另一个值写盘 → OP 执行 "/sb reload" → .get() 等于盘上新值、BlueprintConfig 派生缓存已清（按 clearCache 清掉的一项断言）；
+                         finally 原字节写回配置文件并再 doReload 一次，确认回到原值（ConfigWatcher 异步重载不影响断言：三个断言值都与盘上一致或刻意不一致）。
+    t04_permissionTree   dispatcher 里 sb 的子节点集合 = {undo, config, reload, space, tpperm, project}；非 OP 源对 config / reload / tpperm / space <玩家> /
+                         project release / project list 的 canUse 为 false、OP 为 true；undo / space / project activate / claim 非 OP 可用 —— 与 1.20.1 的 requires 挂载逐条一致。
+    t05_undo             创造假玩家走 PlaceBlueprintMessage.handleServer 放一次空间蓝图（SBN-012 t06 造法）→ 冷却内 "/sb undo" → 冷却提示、世界不变、记录还在；
+                         冷却过后（等待或按 SBUndoCooldown 的公开方法，照源码）→ 世界回到放置前、SBUndoData 记录少一条、撤回后冷却生效；
+                         再执行 → no_history 或冷却提示（按 1.20.1 顺序：冷却先判）；生存模式 → creative_only、什么都不变。
+    t06_tpperm           OP 执行 grant <在线假玩家> → TeleportPermissions 记录、该玩家 sink 收到 S2C_TeleportPermMessage(true)；revoke → false；
+                         grant <离线 GameProfile>（GameProfileArgument 认离线档）→ 记录；list 成功返回；非 OP 执行 → 失败、状态不变；finally 复原 TeleportPermissions。
+    t07_spaceAndConfig   "/sb space" 自查 → 按 1.20.1 语义（sink 收到 S2C_MaterialSpaceSyncMessage 或聊天输出，照源码断言）；"/sb space <他人>" 非 OP 不可用、OP 可用；
+                         "/sb config" OP → sink 收到 s2c/S2C_OpenConfigMessage，非 OP → 不可用。
+    t08_project          ProjectStorage 存一个项目：activate / claim / release / list 按 1.20.1 语义各走一遍（公开激活需 OP：非 OP → public_requires_op 失败），
+                         ProjectClaimRegistry 状态逐项断言；finally 删项目文件与领取记录。
+    测试 finally 恢复 fakePlayerSink、op 状态、配置文件与内存值、TeleportPermissions、游戏模式；删测试文件与 run\ 残留。
+A3  专服冒烟（必做）：runServer 到 Done、控制台 RCON 执行 "sb reload" 返回成功文本、stop 正常、0 条本 mod ERROR（K16）。
+A4  grep 门禁（必做）：command\、network\、server\、log\、util\ 下无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 引用；注释里无 SB-TODO( 字样（K10）。
+
+【手测】无（/sb config 打开界面在 P6；本任务未部署）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致；主类 diff 只有那一行。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  SBCommands 与 1.20.1 diff -w 残差只在口径内；requires 计数、挂载节点、return 分支数与 1.20.1 相等；C2S_ReloadConfigMessage 的残差只有 payload 外壳与 doReload 的三步改写。
+V4  78 条注册方向与 1.20.1 逐条一致、零缺失；A4 为空。
+V5  SB-TODO( 实数 = 44 − 1（主类命令桩）+ 本任务新桩（预期 0）= 43，逐条列出。
+V6  变异复核（云端验收时做）：handleServer 的 hasPermissions(2)、/sb reload 的 requires、executeUndo 的 isCreative、tpperm 的 requires，
+    各临时短路一次 → t03 / t04 / t05 / t06（或 t04）应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-013 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.3 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按文件分组）
+三、网络与命令实测：payload ID 与方向；命令树与 requires 挂载清单（file:line，与 1.20.1 行号对照）；doReload 三步各自落在哪行
+四、测试覆盖：A1～A4；t01～t08；@GameTest 实数
+五、迁移桩清单（去掉的一条 + 新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（Reload 后客户端拿到的配置是否同步：哪些值走 S2C_ConfigSyncMessage、哪些不走；tpperm 改后在线玩家的同步；ConfigWatcher 与手动 doReload 并存）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-013』」。

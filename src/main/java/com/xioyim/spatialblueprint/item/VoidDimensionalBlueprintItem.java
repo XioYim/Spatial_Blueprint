@@ -2,7 +2,6 @@ package com.xioyim.spatialblueprint.item;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -14,7 +13,6 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -26,6 +24,11 @@ public class VoidDimensionalBlueprintItem extends Item {
 
     public VoidDimensionalBlueprintItem(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public void verifyComponentsAfterLoad(ItemStack stack) {
+        LegacyItemMigration.migrate(stack);
     }
 
     @Override
@@ -71,14 +74,14 @@ public class VoidDimensionalBlueprintItem extends Item {
      *
      * <p>文件被 OP 清理（或「重置并删除」）后，这枚空置蓝图永远无法再回收结构，
      * 留在背包里只会误导玩家 —— 直接换成空白蓝图，与「重置」的处理一致，物品不白丢。
-     * 没有 {@code blueprintId} 的旧物品同样按失效处理。</p>
+     * 没有 {@code blueprint_id} 的旧物品同样按失效处理。</p>
      *
      * <p>文件有效时才发指令让客户端打开界面。</p>
      */
     private static void handleServerUse(Player player, InteractionHand hand) {
         if (!(player instanceof net.minecraft.server.level.ServerPlayer sp)) return;
         ItemStack stack = player.getItemInHand(hand);
-        String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+        String bpId = stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_ID.get(), "");
 
         boolean valid = !bpId.isEmpty()
                 && com.xioyim.spatialblueprint.util.BlueprintStorage.findFile(bpId) != null;
@@ -86,8 +89,7 @@ public class VoidDimensionalBlueprintItem extends Item {
         if (!valid) {
             player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
             com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
-            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                     new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
                             false, "spatial_blueprint.error.void_blueprint_orphaned"));
             return;
@@ -99,8 +101,7 @@ public class VoidDimensionalBlueprintItem extends Item {
         if (!com.xioyim.spatialblueprint.util.WorldIdentity.belongsToCurrentWorld(getWorldUuid(stack))) {
             player.setItemInHand(hand, ItemStack.EMPTY);
             com.xioyim.spatialblueprint.util.ItemSyncUtil.syncHand(sp, hand);
-            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                     new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
                             false, "spatial_blueprint.error.foreign_world.discarded"));
             return;
@@ -111,22 +112,20 @@ public class VoidDimensionalBlueprintItem extends Item {
         // 这里只拦截、不换空白蓝图 —— 物品本身对它真正的主人仍然有效。
         String owner = com.xioyim.spatialblueprint.util.BlueprintStorage.ownerUuidOf(bpId);
         if (!sp.getUUID().toString().equals(owner)) {
-            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                     new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
                             false, "spatial_blueprint.message.void_blueprint.not_owner"));
             return;
         }
 
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(sp,
                 new com.xioyim.spatialblueprint.network.s2c.S2C_OpenVoidScreenMessage());
     }
 
     // ── Tooltip ───────────────────────────────────────────────────────────────
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level,
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltip, TooltipFlag flag) {
         BlockPos min = getCaptureMin(stack);
         BlockPos max = getCaptureMax(stack);
@@ -148,62 +147,66 @@ public class VoidDimensionalBlueprintItem extends Item {
         }
     }
 
-    // ── NBT helpers ──────────────────────────────────────────────────────────
+    // ── 组件辅助 ──────────────────────────────────────────────────────────────
 
     public static String getBlueprintName(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("blueprintName")
-                ? stack.getTag().getString("blueprintName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), "");
     }
 
     public static void setBlueprintName(ItemStack stack, String name) {
-        stack.getOrCreateTag().putString("blueprintName", name);
+        stack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), name);
     }
 
-    @Nullable
+    @javax.annotation.Nullable
     public static BlockPos getCaptureMin(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains("captureMin")) return null;
-        return NbtUtils.readBlockPos(stack.getTag().getCompound("captureMin"));
+        return stack.get(SpatialBlueprintComponents.CAPTURE_MIN.get());
     }
 
-    @Nullable
+    @javax.annotation.Nullable
     public static BlockPos getCaptureMax(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains("captureMax")) return null;
-        return NbtUtils.readBlockPos(stack.getTag().getCompound("captureMax"));
+        return stack.get(SpatialBlueprintComponents.CAPTURE_MAX.get());
     }
 
     public static String getCreatorName(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("creatorName")
-                ? stack.getTag().getString("creatorName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.CREATOR_NAME.get(), "");
     }
 
     public static void setCreatorName(ItemStack stack, String name) {
-        stack.getOrCreateTag().putString("creatorName", name);
+        stack.set(SpatialBlueprintComponents.CREATOR_NAME.get(), name);
     }
 
     public static void setCaptureRange(ItemStack stack, BlockPos min, BlockPos max) {
-        stack.getOrCreateTag().put("captureMin", NbtUtils.writeBlockPos(min));
-        stack.getOrCreateTag().put("captureMax", NbtUtils.writeBlockPos(max));
+        stack.set(SpatialBlueprintComponents.CAPTURE_MIN.get(), min.immutable());
+        stack.set(SpatialBlueprintComponents.CAPTURE_MAX.get(), max.immutable());
     }
 
     public static boolean hasTpCoord(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("tpDimension");
+        return stack.has(SpatialBlueprintComponents.TP_DIMENSION.get());
     }
 
-    public static double getTpX(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpX") : 0; }
-    public static double getTpY(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpY") : 0; }
-    public static double getTpZ(ItemStack stack) { return stack.hasTag() ? stack.getTag().getDouble("tpZ") : 0; }
+    public static double getTpX(ItemStack stack) {
+        return stack.getOrDefault(SpatialBlueprintComponents.TP_X.get(), 0.0);
+    }
+
+    public static double getTpY(ItemStack stack) {
+        return stack.getOrDefault(SpatialBlueprintComponents.TP_Y.get(), 0.0);
+    }
+
+    public static double getTpZ(ItemStack stack) {
+        return stack.getOrDefault(SpatialBlueprintComponents.TP_Z.get(), 0.0);
+    }
 
     /** 生成这枚空置次元蓝图时所在存档的 UUID；空串 = 本机制加入前生成的旧物品。 */
     public static String getWorldUuid(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("worldUuid") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.WORLD_UUID.get(), "");
     }
 
     /** 生成时所在的存档名，仅用于提示文案。 */
     public static String getWorldName(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("worldName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.WORLD_NAME.get(), "");
     }
 
     public static String getTpDimension(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("tpDimension") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.TP_DIMENSION.get(), "");
     }
 }

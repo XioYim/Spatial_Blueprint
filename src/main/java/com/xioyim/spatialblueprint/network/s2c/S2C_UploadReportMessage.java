@@ -1,14 +1,15 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.gui.UploadBlueprintScreen;
-import com.xioyim.spatialblueprint.gui.UploadReportScreen;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintSanitizer;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C：上传文件的检测报告。
@@ -20,9 +21,16 @@ import java.util.function.Supplier;
  * <p>坐标全部是<b>蓝图内相对坐标</b>：这片结构还不在世界里，跟捕获报告的世界坐标不是一回事。</p>
  *
  * <p>原始文件名 / 扩展名 / 磁盘字节数只有客户端知道，不在这包里 —— 由
- * {@link UploadBlueprintScreen} 在打开报告页时直接传给 {@link UploadReportScreen}。</p>
+ * {@code UploadBlueprintScreen} 在打开报告页时直接传给 {@code UploadReportScreen}。</p>
  */
-public class S2C_UploadReportMessage {
+public class S2C_UploadReportMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_UploadReportMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_upload_report_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_UploadReportMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_UploadReportMessage::encode, S2C_UploadReportMessage::decode);
 
     private final String blueprintName;
     private final int    totalBlocks;
@@ -97,6 +105,11 @@ public class S2C_UploadReportMessage {
         this.volumeLimit   = volumeLimit;
         this.nbtPerEntryLimit = nbtPerEntryLimit;
         this.nbtTotalLimit = nbtTotalLimit;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_UploadReportMessage> type() {
+        return TYPE;
     }
 
     public String getBlueprintName() { return blueprintName; }
@@ -301,38 +314,8 @@ public class S2C_UploadReportMessage {
         return list;
     }
 
-    public static void handle(S2C_UploadReportMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    // 必须标 @OnlyIn：lambda 体只调用本方法，客户端类型只出现在这里，
-    // 否则专用服务端注册消息时就会去加载 Screen。
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
-    private static void handleClient(S2C_UploadReportMessage msg) {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        // 已在「上传中」报告页：扫描结果到达，换成同一份真实报告（loading 页也停在上传页上面）
-        if (mc.screen instanceof com.xioyim.spatialblueprint.gui.UploadReportScreen urs && urs.isLoading()) {
-            mc.setScreen(new com.xioyim.spatialblueprint.gui.UploadReportScreen(msg,
-                    urs.getParentScreen(), urs.getPendingFileName(), urs.getPendingFileExt(),
-                    urs.getPendingFileSize(), urs.getCategory(), urs.isForceRequested(),
-                    urs.getConfirmHost()));
-            return;
-        }
-        // 常规路径：把当前的上传页作为 parent 传进去：报告页的按钮（上传/净化/强制/取消）
-        // 都会退回上传页，而不是关闭全部 UI
-        net.minecraft.client.gui.screens.Screen parent = mc.screen;
-        // 文件名 / 扩展名 / 磁盘字节数只有客户端知道，从上传页本地读取
-        String fileName = "";
-        String ext = "";
-        long size = 0L;
-        String category = "";
-        if (parent instanceof com.xioyim.spatialblueprint.gui.UploadBlueprintScreen ubs) {
-            fileName = ubs.getPendingFileName();
-            ext = ubs.getPendingFileExt();
-            size = ubs.getPendingFileSize();
-            category = ubs.getActiveCategory();
-        }
-        mc.setScreen(new UploadReportScreen(msg, parent, fileName, ext, size, category));
+    public static void handle(S2C_UploadReportMessage msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端上传报告界面（原 handleClient：loading 态换真实报告 / 常规路径
+        // 以当前上传页为 parent 打开 UploadReportScreen）
     }
 }

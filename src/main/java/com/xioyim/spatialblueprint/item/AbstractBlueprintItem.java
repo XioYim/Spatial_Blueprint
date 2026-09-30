@@ -1,6 +1,5 @@
 package com.xioyim.spatialblueprint.item;
 
-import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialList;
@@ -12,7 +11,7 @@ import javax.annotation.Nullable;
 
 /**
  * 公共基类，消除 {@link ProjectionBlueprintItem} 与 {@link EngineeringBlueprintItem}
- * 之间大量重复的 NBT 辅助方法。
+ * 之间大量重复的组件辅助方法。
  *
  * <p>所有方法均为静态，因此子类名称仍可直接用于调用（Java 会沿继承链解析静态方法）：
  * {@code ProjectionBlueprintItem.getBlueprintName(stack)} → 实际执行本类方法。</p>
@@ -23,81 +22,94 @@ public abstract class AbstractBlueprintItem extends Item {
         super(properties);
     }
 
+    @Override
+    public void verifyComponentsAfterLoad(ItemStack stack) {
+        LegacyItemMigration.migrate(stack);
+    }
+
     // ── 蓝图名称 ──────────────────────────────────────────────────────────────
 
     public static String getBlueprintName(ItemStack stack) {
-        return (stack.hasTag() && stack.getTag().contains("blueprintName"))
-                ? stack.getTag().getString("blueprintName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), "");
     }
 
     public static void setBlueprintName(ItemStack stack, String name) {
-        stack.getOrCreateTag().putString("blueprintName", name);
+        stack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), name);
     }
 
     // ── 蓝图 ID ───────────────────────────────────────────────────────────────
 
     @Nullable
     public static String getBlueprintId(ItemStack stack) {
-        return (stack.hasTag() && stack.getTag().contains("blueprintId"))
-                ? stack.getTag().getString("blueprintId") : null;
+        return stack.has(SpatialBlueprintComponents.BLUEPRINT_ID.get())
+                ? stack.get(SpatialBlueprintComponents.BLUEPRINT_ID.get()) : null;
     }
 
     public static void setBlueprintId(ItemStack stack, String id) {
-        stack.getOrCreateTag().putString("blueprintId", id);
+        stack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(), id);
     }
 
-    // ── 蓝图数据（优先文件，回退内联 NBT）────────────────────────────────────
+    // ── 蓝图数据（优先文件；文件读不到回退旧物品的内联数据）──────────────────
 
     /**
-     * 服务端读法：<b>文件是唯一权威</b>，没有再回退内联 NBT。
+     * 服务端读法：<b>优先文件；文件读不到时回退旧物品的内联数据</b>（与 1.20.1 同语义）。
+     *
+     * <p>1.20.1 时代的物品可以整份内联存数据（{@code custom_data.blueprintData}）；D1 之后
+     * 新物品只存 blueprintId 引用、数据一律在文件里，但旧物品没有文件可读，只好读它带着的
+     * 内联数据（经 {@link BlueprintData#deserialize} 的 DataFixer 自动升级）。只读：不改物品、
+     * 不写文件、不发包 —— 不做「读到内联就转存为文件」，那会引入新状态与双端不同步。</p>
      *
      * <p>服务端逻辑一律走这条，包括单人与局域网主机的集成服务器 —— 那两种情况下
      * 服务端跑在客户端进程里，但它要读的仍然是自己硬盘上的文件，不是某个玩家的内存缓存。</p>
      */
     @Nullable
     public static BlueprintData getBlueprintDataServer(ItemStack stack) {
-        if (!stack.hasTag()) return null;
-        var tag = stack.getTag();
-        if (tag.contains("blueprintId")) {
-            BlueprintData fromFile = BlueprintStorage.load(tag.getString("blueprintId"));
+        String id = getBlueprintId(stack);
+        if (id != null && !id.isEmpty()) {
+            BlueprintData fromFile = BlueprintStorage.load(id);
             if (fromFile != null) return fromFile;
         }
-        return readInlineData(tag);
+        return readInlineData(stack);
     }
 
     /**
-     * 客户端读法：只认 S2C 包填进来的内存缓存。
-     *
-     * <p>客户端在多人游戏里没有蓝图文件，因此<b>永远不读本地文件</b>。
-     * 带 blueprintId 却没缓存时返回 null（界面会显示「下载数据」按钮），
-     * 不回退内联 NBT —— 带 id 的蓝图早就不内联存数据了。</p>
-     *
-     * <p>只能在客户端线程调用。方法体里引用了 {@code ClientBlueprintCache}，
-     * 专用服务端只要不执行到就不会去加载那个类。</p>
+     * 旧物品内联数据回退：从 {@code custom_data.blueprintData} 读整份蓝图数据。
+     * 反序列化失败记 warn 并返回 null，不让异常抛给调用方（1.20.1 同文本）。
      */
     @Nullable
-    public static BlueprintData getBlueprintDataClient(ItemStack stack) {
-        if (!stack.hasTag()) return null;
-        var tag = stack.getTag();
-        if (tag.contains("blueprintId")) {
-            return com.xioyim.spatialblueprint.client.ClientBlueprintCache
-                    .get(tag.getString("blueprintId"));
-        }
-        return readInlineData(tag);
-    }
-
-    /** 内联 NBT 回退。反序列化失败时记 warn 并返回 null，不吞掉异常。 */
-    @Nullable
-    private static BlueprintData readInlineData(net.minecraft.nbt.CompoundTag tag) {
+    private static BlueprintData readInlineData(ItemStack stack) {
+        net.minecraft.world.item.component.CustomData data =
+                stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        if (data == null) return null;
+        CompoundTag tag = data.copyTag();
         if (!tag.contains("blueprintData")) return null;
         try {
             return BlueprintData.deserialize(tag.getCompound("blueprintData"));
         } catch (Exception e) {
-            SpatialBlueprintMod.LOGGER.warn(
+            com.xioyim.spatialblueprint.SpatialBlueprintMod.LOGGER.warn(
                     "[AbstractBlueprintItem] Failed to deserialize inline blueprintData: {}",
                     e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 客户端读法：有 {@code blueprintId} 时只认 S2C 包填进来的内存缓存
+     * （{@link com.xioyim.spatialblueprint.client.ClientBlueprintCache}），
+     * 没有 id 的旧物品回退读内联数据（与服务端 readInlineData 同一份只读读法）。
+     *
+     * <p>客户端在多人游戏里没有蓝图文件，因此<b>永远不读本地文件</b>。
+     * 带 id 却没缓存时返回 null（界面会显示「下载数据」按钮）。</p>
+     *
+     * <p>只允许在客户端线程调用（方法体引用 client 包，专用服务端不执行到这里）。</p>
+     */
+    @Nullable
+    public static BlueprintData getBlueprintDataClient(ItemStack stack) {
+        String id = getBlueprintId(stack);
+        if (id != null && !id.isEmpty()) {
+            return com.xioyim.spatialblueprint.client.ClientBlueprintCache.get(id);
+        }
+        return readInlineData(stack);
     }
 
     // ── 材料清单（内嵌于 BlueprintData）──────────────────────────────────────
@@ -129,13 +141,13 @@ public abstract class AbstractBlueprintItem extends Item {
      */
     @Nullable
     public static MaterialList getMaterialListForTooltip(ItemStack stack) {
-        return net.minecraftforge.fml.loading.FMLEnvironment.dist.isClient()
+        return net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
                 ? getMaterialListClient(stack)
                 : getMaterialListServer(stack);
     }
 
     // ── 已存入材料 ────────────────────────────────────────────────────────────
-    // 已迁移至世界级 MaterialSpace（按玩家 UUID 分表），不再存于物品 NBT。
+    // 已迁移至世界级 MaterialSpace（按玩家 UUID 分表），不再存于物品数据里。
     // 服务端查询走 MaterialSpace.count() / canAfford()，客户端显示走 ClientMaterialSpaceCache。
     // 这样材料不再随蓝图物品丢失，且多个蓝图共用同一个池。
 

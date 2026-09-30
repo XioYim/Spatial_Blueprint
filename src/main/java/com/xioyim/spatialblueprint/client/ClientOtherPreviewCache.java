@@ -3,11 +3,6 @@ package com.xioyim.spatialblueprint.client;
 import com.xioyim.spatialblueprint.network.S2C_PreviewBroadcastMessage;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import net.minecraft.core.BlockPos;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -19,8 +14,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Client-side cache of other players' blueprint preview states received via
  * {@link com.xioyim.spatialblueprint.network.S2C_PreviewBroadcastMessage}.
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public class ClientOtherPreviewCache {
 
     public static final class Entry {
@@ -90,18 +83,6 @@ public class ClientOtherPreviewCache {
 
     public static boolean isEmpty() {
         return ENTRIES.isEmpty();
-    }
-
-    /**
-     * 断线 / 退出世界时清空。
-     *
-     * <p>条目按玩家 UUID 存，正常情况下靠服务端发 origin=null 的广播来撤销。
-     * 断线时那个广播不会来，残留的条目会在换服后继续画出一个不存在的他人预览框，
-     * 而且因为源玩家已经不在，永远没人来清它。</p>
-     */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clear();
     }
 
     public static void clear() {

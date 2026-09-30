@@ -1,12 +1,13 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * C2S: client requests the full blueprint library summary list.
@@ -15,9 +16,21 @@ import java.util.function.Supplier;
  * with an {@link S2C_LibrarySyncMessage}.  Enables the blueprint library screen to
  * display server-side blueprints in multiplayer (#2).</p>
  */
-public class C2S_RequestLibraryMessage {
+public class C2S_RequestLibraryMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RequestLibraryMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_request_library_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RequestLibraryMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RequestLibraryMessage::encode, C2S_RequestLibraryMessage::decode);
 
     public C2S_RequestLibraryMessage() {}
+
+    @Override
+    public CustomPacketPayload.Type<C2S_RequestLibraryMessage> type() {
+        return TYPE;
+    }
 
     public static void encode(C2S_RequestLibraryMessage msg, FriendlyByteBuf buf) {
         // no payload
@@ -27,17 +40,18 @@ public class C2S_RequestLibraryMessage {
         return new C2S_RequestLibraryMessage();
     }
 
-    public static void handle(C2S_RequestLibraryMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_RequestLibraryMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            BlueprintStorage.invalidateSummaryCache();
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_LibrarySyncMessage(buildFilteredSummaries(player)));
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handleServer(C2S_RequestLibraryMessage msg, ServerPlayer player) {
+        if (player == null) return;
+
+        BlueprintStorage.invalidateSummaryCache();
+        BlueprintNetwork.sendToPlayer(player,
+                new S2C_LibrarySyncMessage(buildFilteredSummaries(player)));
     }
 
     /**

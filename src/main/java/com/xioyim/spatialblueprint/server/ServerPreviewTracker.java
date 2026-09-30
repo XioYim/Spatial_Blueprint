@@ -6,7 +6,6 @@ import com.xioyim.spatialblueprint.network.S2C_PreviewBroadcastMessage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.PacketDistributor;
 
 import java.util.Map;
 import java.util.UUID;
@@ -108,7 +107,7 @@ public class ServerPreviewTracker {
             double dy = target.getY() - oy;
             double dz = target.getZ() - oz;
             if (dx * dx + dy * dy + dz * dz <= (double) radius * radius) {
-                BlueprintNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> target), msg);
+                BlueprintNetwork.sendToPlayer(target, msg);
             }
         }
     }

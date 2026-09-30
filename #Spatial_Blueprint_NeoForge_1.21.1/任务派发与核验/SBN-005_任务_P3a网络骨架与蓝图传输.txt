@@ -1,0 +1,207 @@
+SBN-005 · P3a 网络骨架与蓝图传输
+派发：2026-09-29 22:30:00（云端主会话）
+分支：task/SBN-005（从 neoforge-1.21.1 @ 87fe893 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-005 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K5、K7、K9、C2、C12；迁移计划书.md 第四节「网络」各条与第五节 D4 / D5 拍板记录；
+通用经验副本第五节（API 对照）。1.20.1 源码：git show origin/forge-1.20.1:<路径>。
+以源码为准。本任务书的 API 结论已在云端 javap 核过（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3 共 79 个消息，拆三段（按引用簇）：
+  SBN-005（本任务，P3a）：网络骨架 + 蓝图数据传输 + SBN-004 已打桩的那几条消息 —— 定下「1.20.1 消息 → 1.21 payload」的改写口径（三.2），
+                          后两段照这个口径批量做；
+  SBN-006（P3b）：其余轻量消息（配置、蓝图库、材料空间、次元袋、传送、预览、项目只读类）；
+  SBN-007（P3c）：带大段服务端逻辑的消息（捕获、放置、上传、项目写操作），与 P4 服务端逻辑交界，届时再定边界。
+
+本任务范围：
+  骨架：network/BlueprintNetwork（RegisterPayloadHandlersEvent 注册器、D4 协议版本、发送封装、D5 蓝图分片）
+  消息（8 个）：s2c/S2C_OperationResult、S2C_BlueprintChunkMessage、S2C_BlueprintDataMessage、S2C_BlueprintDataFailMessage、
+               C2S_RequestBlueprintDataMessage、C2S_DiscardInvalidBlueprintMessage、s2c/S2C_OpenVoidScreenMessage、
+               s2c/S2C_IllegalBlocksListMessage（替换 SBN-002 留的只含 record 的占位文件）
+  依赖：server/BlueprintValidator（C2S 消息的权限 / 限流判定；只依赖已迁的 BlueprintConfig、FluidCaptureFilter、BlueprintStorage）
+  拆桩：SBN-004 留下的 P3 桩（VoidDimensionalBlueprintItem 4 条、OrphanBlueprintGuard 1 条）与主类的网络注册桩
+
+本任务结束时：网络通道在双端注册、协议版本 = mod 版本；服务端能按请求把蓝图分片发出去；物品里的提示包能发出去。
+S2C 消息的客户端处理（缓存、横幅、界面）仍打桩（P5 / P6）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  network/BlueprintNetwork.java                                            ← 1.20.1 同路径（三.1）
+  新  network/S2C_BlueprintChunkMessage.java、network/S2C_BlueprintDataMessage.java、network/S2C_BlueprintDataFailMessage.java、
+      network/C2S_RequestBlueprintDataMessage.java、network/C2S_DiscardInvalidBlueprintMessage.java、
+      network/s2c/S2C_OperationResult.java、network/s2c/S2C_OpenVoidScreenMessage.java      ← 1.20.1 同路径（7 个）
+  改  network/s2c/S2C_IllegalBlocksListMessage.java                             ← 由占位改为完整消息（嵌套 record 原样保留）
+  新  server/BlueprintValidator.java                                            ← 1.20.1 同路径
+  改  item/VoidDimensionalBlueprintItem.java、util/OrphanBlueprintGuard.java     ← 只拆 P3 桩（三.4）
+  改  SpatialBlueprintMod.java                                                  ← 三.5
+  新  gametest/SBN005Tests.java
+
+交接件（规程允许范围）：SBN-005_报告.txt、SBN-005_证据\、开发日志.md 文末「## SBN-005 执行记录」、
+测试清单.txt 追加「五、SBN-005 网络骨架与蓝图传输」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（SBN-001～004 的通过项、gradle 文件、资源、待办、记忆、联动手册、迁移计划书）。
+明确不在本任务：其余 71 个消息（SBN-006 / 007）、ClientBlueprintCache 等客户端类（P5）、界面（P6）、上传分片 C2S_UploadBegin / Chunk（随上传簇进 SBN-007）。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；只按三.2 的口径改写 API。每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork
+   a. 注册：public static void register(RegisterPayloadHandlersEvent event)（mod 总线，J31）：
+      PayloadRegistrar r = event.registrar(protocolVersion())（registrar 的参数就是版本号，J31；等价于 new PayloadRegistrar(版本)）——
+      **效果必须是注册器版本 = mod 版本**（D4），报告写明实测依据。
+      C2S 用 r.playToServer(TYPE, STREAM_CODEC, X::handle)，S2C 用 r.playToClient(...)；**方向必须绑定**（1.20.1 注释里的改包攻击，
+      NeoForge 按注册方向校验，反向包直接断开）。不设 executesOn（默认 MAIN，J31），handler 里不再 enqueueWork。
+      1.20.1 「注册顺序 = 线上序号，只能末尾追加」那段注释删掉，改写成一句：1.21 按 payload ID 区分，顺序无关；增删 payload / 改 wire format
+      仍须 bump mod_version（D4）。
+   b. D4：public static String protocolVersion() = ModList 取本 mod 容器的 getModInfo().getVersion().toString()，取不到回 "1.0.0"（与 1.20.1 同）。
+      ModList 在 net.neoforged.fml（J31）。
+   c. 发送封装（替换 1.20.1 全部 CHANNEL.send / sendToServer 写法）：
+        public static void sendToPlayer(ServerPlayer player, CustomPacketPayload payload)
+          —— player 是 FakePlayer（net.neoforged.neoforge.common.util.FakePlayer）时不走网络，交给
+             public static volatile BiConsumer<ServerPlayer, CustomPacketPayload> fakePlayerSink（默认丢弃）；否则 PacketDistributor.sendToPlayer。
+             理由（写进注释）：假玩家没有真连接，别的 mod 的假玩家触发我们的逻辑时丢弃是正确行为；GameTest 借这个口子收回包断言。
+        public static void sendToServer(CustomPacketPayload payload) —— PacketDistributor.sendToServer。
+      本任务及以后所有发包一律走这两个封装，不直接调 PacketDistributor。
+   d. D5 sendBlueprintTo(ServerPlayer, String, BlueprintData)：逻辑原样（整份 writeCompressed → 按 CHUNK_SIZE 切 → 超 MAX_TOTAL_CHUNKS 记 warn 不发）。
+      为了能测，切块部分抽成 public static List<S2C_BlueprintChunkMessage> splitIntoChunks(String blueprintId, byte[] full)
+      （超上限返回 null，由调用方记原来那条 warn）；sendBlueprintTo 调它再逐个 sendToPlayer。行为不变。
+
+2. 消息改写口径（本任务 8 个照做；SBN-006 / 007 沿用 —— 写进 BlueprintNetwork 类注释，简短）
+   a. 类名、包名、字段、构造器不改。类加 implements CustomPacketPayload；
+      public static final CustomPacketPayload.Type<X> TYPE = new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(MODID, <id>))，
+      <id> = 类名转小写 snake_case（S2C_OperationResult → s2c_operation_result，C2S_RequestBlueprintDataMessage → c2s_request_blueprint_data_message）；
+      @Override public Type<X> type() { return TYPE; }。
+   b. 编解码：1.20.1 的 static encode(X, FriendlyByteBuf) / static decode(FriendlyByteBuf) 原样保留，
+      public static final StreamCodec<FriendlyByteBuf, X> STREAM_CODEC = StreamCodec.ofMember(X::encode, X::decode)（J32）。
+      decode 里的 DecoderException 上限校验一个不删。需要注册表的字段（ItemStack、Component）才改用 RegistryFriendlyByteBuf —— 本任务 8 个都不需要。
+      1.20.1 若用了 1.21 已删的 FriendlyByteBuf 方法，按 J32 换等价写法并进报告。
+   c. C2S handler：public static void handle(X msg, IPayloadContext ctx) { if (ctx.player() instanceof ServerPlayer player) handleServer(msg, player); }
+      + static void handleServer(X msg, ServerPlayer player)（public，测试直接调）装原来 enqueueWork 里的全部逻辑；
+      去掉 enqueueWork、setPacketHandled、getSender() 判空（改成上面的 instanceof）。
+   d. S2C handler：public static void handle(X msg, IPayloadContext ctx)。
+      **payload 类里不许出现任何客户端类引用**（net.minecraft.client.*、本 mod 的 client / gui 包、NotifySound 的客户端方法）——
+      1.20.1 靠 @OnlyIn 在专服上剥掉这些方法体（S2C_OperationResult 的注释写了不剥就崩）；NeoForge 1.21 不剥离，专服加载 payload 类时就会出事。
+      客户端处理体整体换成一行 // SB-TODO(P5): <原来做什么>（P5 建 client 包里的客户端处理类，由它接）。
+      例外：S2C_IllegalBlocksListMessage 的 handle 只是把字段写进本类的 static volatile 字段、不碰客户端类 —— 原样保留，不打桩。
+   e. 发送点：CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), m) → BlueprintNetwork.sendToPlayer(p, m)。
+
+3. 各消息要点
+   a. S2C_BlueprintChunkMessage：CHUNK_SIZE 512_000、MAX_TOTAL_CHUNKS 256 与三条 decode 校验原样；handle 打桩（ClientBlueprintCache.receiveChunk）。
+   b. S2C_BlueprintDataMessage：MAX_PAYLOAD_BYTES、SafeNbtIo 解码原样；handle 打桩（ClientBlueprintCache.put）。
+   c. S2C_BlueprintDataFailMessage：handle 打桩（ClientBlueprintCache.markFailed）。
+   d. C2S_RequestBlueprintDataMessage：COOLDOWN_MS、LAST_REQUEST 限流、canManageBlueprint 判定、三种失败回包原样。
+   e. C2S_DiscardInvalidBlueprintMessage：两只手遍历、服务端重验 placed、换空白蓝图 + ItemSyncUtil.syncHand 原样。
+   f. S2C_OperationResult：三个构造器、success / failure 工厂、checkedCount（public，SBN-006 的 S2C 列表消息会用）、MAX_DETAIL_ARGS 原样；
+      handleClient 整段打桩。
+   g. S2C_OpenVoidScreenMessage：空消息；handle 打桩（打开 VoidDimensionalScreen）。编解码用 StreamCodec.unit(INSTANCE) 或 ofMember 均可，报告写明。
+   h. S2C_IllegalBlocksListMessage：保留占位文件里的 7 个嵌套 record（签名不变），补回 1.20.1 的字段、构造器、encode / decode、
+      client* 静态字段与 hasCrossingBoxEntityIn、handle（见 2.d 例外）；删掉文件头那条 SB-TODO(P3)。
+   i. server/BlueprintValidator：原样搬；只改 1.21 API 残差（若有）。
+
+4. 拆 SBN-004 的 P3 桩
+   VoidDimensionalBlueprintItem 的 4 条（三条 S2C_OperationResult、一条 S2C_OpenVoidScreenMessage）与 OrphanBlueprintGuard 的 1 条：
+   恢复 1.20.1 的发送语句，写法改成 BlueprintNetwork.sendToPlayer(sp, new …)。其余零改动。
+
+5. 主类
+   modEventBus.addListener(BlueprintNetwork::register)，删掉 SB-TODO(P3): BlueprintNetwork。其余 SB-TODO 不动。
+
+========================================================
+四、取证（云端 2026-09-29 已 javap neoforge-21.1.252-merged.jar）
+========================================================
+
+  J31 RegisterPayloadHandlersEvent#registrar(String)（mod 总线事件）；PayloadRegistrar#versioned(String) / playToServer / playToClient /
+      executesOn(HandlerThread)（HandlerThread.MAIN / NETWORK）；IPayloadContext#player() / reply / disconnect / flow；
+      net.neoforged.fml.ModList（本地确认包名）
+  J32 StreamCodec.of / ofMember / unit；CustomPacketPayload#type()、CustomPacketPayload.Type(ResourceLocation)
+  J33 PacketDistributor.sendToPlayer(ServerPlayer, CustomPacketPayload, …) / sendToServer(CustomPacketPayload, …)
+  J34 单包上限：ServerboundCustomPayloadPacket.MAX_PAYLOAD_SIZE = 32767；ClientboundCustomPayloadPacket.MAX_PAYLOAD_SIZE = 1048576
+      （D5：S2C 块 512000 + 头 < 1 MiB，NeoForge 拆包器不介入）
+  J35 FakePlayerFactory.get(ServerLevel, GameProfile)；FakePlayer$FakePlayerNetHandler 为包私有（测试不能继承它截包 → 用 1.c 的 fakePlayerSink）
+
+========================================================
+五、测试（新格式数据一律由真实对象产生；越界 / 恶意包是唯一允许手写处 —— 证明该形状可达再断言被拒）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：报告写 @GameTest 实数）。SBN001～004 的 34 条照旧全过。
+    t01_protocolVersion     BlueprintNetwork.protocolVersion() 等于 ModList 里本 mod 的版本字符串（gradle.properties 的 mod_version）。
+    t02_codecRoundTrip      8 个消息各造一条真实实例（IllegalBlocksList 各列表至少一条；OperationResult 带 detailArgs；
+                            DataMessage 用真实 BlueprintData；Chunk 用 splitIntoChunks 切出来的一块）
+                            → STREAM_CODEC 经 RegistryFriendlyByteBuf 编码 → 解码 → 再编码，两次字节逐字相等；
+                            每个 TYPE.id() 符合三.2.a 的命名规则。
+    t03_decodeGuards        手写越界包：Chunk 的 totalChunks = 0 / 257、chunkIndex = totalChunks、length = CHUNK_SIZE + 1；
+                            OperationResult 的 detailArgs 计数 17；DataMessage 的 length = 1_048_577 —— 全部抛 DecoderException。
+    t04_splitIntoChunks     byte[] 长度 0、1、512_000、512_001、1_500_000（内容用确定性伪随机填充）→ 块数分别 0 / 1 / 1 / 2 / 3，
+                            拼回与原数组逐字相等；每块编码后字节数 < 1_048_576（D5 / J34）；
+                            chunkIndex / totalChunks 正确。超上限分支：用一个真实的 257 × 512_000 长度判定（不必真分配，
+                            允许把「块数计算」抽成 public static int chunkCount(int length) 单独测）。
+    t05_requestBlueprintData  FakePlayerFactory.get(level, 新 GameProfile) + fakePlayerSink 收包（finally 复原为丢弃）：
+                            ① BlueprintStorage.save 一份 ownerUuid = 该假玩家 UUID 的真实蓝图 → handleServer → 收到 ≥1 条 S2C_BlueprintChunkMessage，
+                               拼回后 SafeNbtIo 解压 = 原 data.serialize()；
+                            ② 同一假玩家 500 ms 内再请求 → 收到 S2C_BlueprintDataFailMessage，reason = request_rate_limited；
+                            ③ 另一个非 OP 假玩家请求①的蓝图 → Fail，reason = blueprint_not_found（不泄露存在性）；
+                            ④ 不存在的 id → blueprint_not_found。测试写出的蓝图文件 finally 删除。
+    t06_discardInvalid      假玩家主手放一枚指向 placed = true 蓝图文件的空间蓝图 → handleServer → 主手变空白蓝图；
+                            placed = false 的 → 不变。
+    t07_itemStubsWired      ① OrphanBlueprintGuard.discardIfFileMissing：主手蓝图指向不存在的文件 → 变空白蓝图，sink 收到
+                               S2C_OperationResult(false, spatial_blueprint.error.blueprint_file_missing)；
+                            ② VoidDimensionalBlueprintItem 服务端 use（真实 item.use(level, 假玩家, MAIN_HAND)）：文件存在、world_uuid = 当前存档、
+                               文件主人 = 该假玩家 → sink 收到 S2C_OpenVoidScreenMessage；文件缺失 → 变空白蓝图 + OperationResult(void_blueprint_orphaned)。
+    测试 finally 恢复 fakePlayerSink、删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 起到 Done、stop 正常退出；0 条本 mod ERROR；证据/服务端.txt。
+    注意：开发环境的 runServer 类路径里有客户端类，A3 **证明不了**「专服加载 payload 类不崩」（三.2.d）—— 那条的门禁是 A4。
+A4  grep 门禁（必做）：network\ 与 server\ 下没有 net.minecraft.client、com.xioyim.spatialblueprint.client、com.xioyim.spatialblueprint.gui
+    的任何引用（import 与全限定名都算），结果贴进证据/改动清单.txt。
+
+【手测】无（S2C 的客户端处理全部打桩；双端联机握手留到 P5 有客户端缓存后一起测）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  9 个搬迁文件与 1.20.1 源 diff -w 残差只有三.2 的改写口径、三.1.c～d 的封装与抽取、三.3 点名的打桩；上限常量与 decode 校验一个不少。
+V4  所有 payload 方向绑定正确（C2S 全 playToServer、S2C 全 playToClient）；A4 grep 为空。
+V5  SB-TODO 实数 = 31 − 1（主类 P3）− 5（SBN-004 的 P3 桩）− 1（IllegalBlocksList 占位）+ 本任务新桩，逐条列出。
+V6  变异复核（K7，云端验收时做）：把 C2S_RequestBlueprintDataMessage 的 canManageBlueprint 判定临时改成恒 true → t05 ③ 应转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-005 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」
+三、网络实测：注册器版本字符串的来源与值；8 个 payload 的 ID 与方向清单（file:line）；最大块编码字节数
+四、测试覆盖：A1～A4；t01～t07；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（方向绑定、专服类加载、协议版本不一致时的表现）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-005』」。

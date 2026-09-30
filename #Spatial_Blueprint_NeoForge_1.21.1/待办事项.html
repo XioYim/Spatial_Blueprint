@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spatial_Blueprint_NeoForge_1.21.1 · 待办事项</title>
+<style>
+  :root{
+    --bg:#f6f5f2; --card:#ffffff; --ink:#1f2328; --muted:#6b7280; --line:#e8e4dc;
+    --accent:#d97706; --accent-soft:#fdf3e3; --accent-line:#f0dcb4;
+    --code-bg:#f4f2ee; --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12110f; --card:#1b1916; --ink:#e8e5e0; --muted:#a09a90; --line:#2c2823;
+      --accent:#fbbf24; --accent-soft:#2a2212; --accent-line:#4a3a16;
+      --code-bg:#232019; --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:40px 20px 72px}
+  .hero{
+    position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; box-shadow:var(--shadow); padding:28px 30px 24px; overflow:hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; left:0; right:0; top:0; height:4px;
+    background:linear-gradient(90deg,var(--accent),#fcd34d);
+  }
+  h1{margin:0 0 6px; font-size:26px; letter-spacing:.5px}
+  h1 .dot{color:var(--accent)}
+  .sub{color:var(--muted); font-size:13.5px}
+  .chips{margin-top:14px; display:flex; flex-wrap:wrap; gap:8px}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 11px; border-radius:999px;
+    font-size:12.5px; background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
+    font-variant-numeric:tabular-nums;
+  }
+  .chip.gray{background:var(--code-bg); color:var(--muted); border-color:var(--line)}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); padding:22px 26px; margin-top:18px;
+  }
+  h2{font-size:16.5px; margin:0 0 14px; padding-left:12px; line-height:1.5; border-left:4px solid var(--accent)}
+  p{margin:8px 0}
+  .muted{color:var(--muted); font-size:13.5px}
+  code{
+    font:.88em/1.6 ui-monospace,"Cascadia Code",Consolas,"JetBrains Mono",monospace;
+    background:var(--code-bg); border:1px solid var(--line); border-radius:6px; padding:1px 6px;
+  }
+  /* 一条待办 = 一个 .task；状态靠类名：无 = 未开始，doing = 进行中，done = 已完成，dropped = 已取消 */
+  .task{display:flex; gap:13px; padding:14px 0; border-top:1px dashed var(--line)}
+  .task:first-of-type{border-top:none; padding-top:4px}
+  .box{
+    flex:0 0 auto; width:20px; height:20px; margin-top:5px; border-radius:6px;
+    border:2px solid var(--accent); background:transparent; position:relative;
+  }
+  .box::after{content:""; position:absolute; inset:3px; border-radius:3px; background:var(--accent-soft)}
+  .task.doing .box::after{background:linear-gradient(90deg,var(--accent) 0 50%,var(--accent-soft) 50% 100%)}
+  .task.done .box{background:var(--accent)}
+  .task.done .box::after{
+    content:"✓"; inset:0; background:none; color:#fff; font-size:13px; font-weight:700;
+    line-height:16px; text-align:center;
+  }
+  .task.done .title{color:var(--muted)}
+  .task.done .title .t{text-decoration:line-through}
+  .task.dropped .box{border-color:var(--muted); border-style:dashed}
+  .task.dropped .box::after{background:none}
+  .task.dropped .title{color:var(--muted)}
+  .task.dropped .title .t{text-decoration:line-through}
+  .task .body{flex:1; min-width:0}
+  .task .title{font-weight:600}
+  .tag{
+    margin-left:8px; font-size:11.5px; font-weight:500; color:var(--accent);
+    background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:999px; padding:1px 9px;
+    vertical-align:1px; white-space:nowrap;
+  }
+  .tag.gray{background:var(--code-bg); color:var(--muted); border-color:var(--line)}
+  .task .meta{color:var(--muted); font-size:12.5px; margin-top:2px; font-variant-numeric:tabular-nums}
+  .task .meta b{color:var(--ink); font-weight:600}
+  .task .meta .sep{margin:0 6px; opacity:.5}
+  .task ul{margin:6px 0 0; padding:0 0 0 2px; list-style:none}
+  .task ul li{position:relative; padding:2px 0 2px 18px; color:var(--ink)}
+  .task ul li::before{content:"▹"; position:absolute; left:2px; color:var(--accent)}
+  .task ul li.ok{color:var(--muted)}
+  .task ul li.ok::before{content:"✓"}
+  .task .note{color:var(--muted); font-size:13.5px; margin-top:4px}
+  table{border-collapse:separate; border-spacing:0; width:100%; margin:4px 0; font-size:14px}
+  th,td{padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  thead th{background:var(--code-bg); color:var(--muted); font-weight:600; font-size:12.5px; letter-spacing:.4px}
+  thead th:first-child{border-top-left-radius:10px} thead th:last-child{border-top-right-radius:10px}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--accent-soft)}
+  td .box{display:inline-block; margin:0; vertical-align:middle}
+  td .task{display:inline-flex; padding:0; border:none}
+  footer{margin-top:26px; text-align:center; color:var(--muted); font-size:12.5px; line-height:2; font-variant-numeric:tabular-nums}
+  footer .sep{margin:0 8px; opacity:.5}
+  @media print{
+    :root{--bg:#fff; --shadow:none}
+    .wrap{max-width:none; padding:0}
+    .card,.hero{border-color:#ddd; box-shadow:none; break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Spatial_Blueprint_NeoForge_1.21.1 <span class="dot">·</span> 待办事项</h1>
+    <div class="sub">用户维护的清单 · AI 不得私自写入；AI 认为该增 / 删 / 改时先在对话里提出，用户授权后才动</div>
+    <div class="chips">
+      <span class="chip gray">更新：2026-09-30 19:20:00</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>规矩</h2>
+    <p class="muted" style="margin-top:0;">
+      本文件由<strong style="color:var(--ink);">用户</strong>维护。AI 读它决定做什么；AI 认为某条该新增、该改状态、该删除，
+      <strong style="color:var(--ink);">在对话里提出，等用户授权</strong>，未授权一个字都不写。要不要提出，由 AI 自己判断
+      （做完了的、发现的新问题、已经失效的条目都该提）。
+    </p>
+    <p class="muted">
+      每条带时间：<b>登记</b>（写进来的时刻）、<b>更新</b>（最近一次改动）、<b>完成 / 取消</b>。
+      一律 <code>YYYY-MM-DD HH:mm:ss</code>，精确到秒，不写「上午」「14:1x」这类模糊值。
+    </p>
+    <p class="muted">
+      职责边界：做了什么、为什么、踩了什么坑 → <code>开发日志.md</code>（AI 做完即写）；
+      测没测、测的结果 → <code>测试清单.txt</code>（AI 写前先问）；
+      本文件只回答「还有什么要做、卡在谁那里」，不记经过、不记结果。
+    </p>
+    <table>
+      <thead><tr><th style="width:18%">状态</th><th style="width:12%">框</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>未开始</td><td><span class="task"><span class="box"></span></span></td><td>登记了，还没有人动</td></tr>
+        <tr><td>进行中</td><td><span class="task doing"><span class="box"></span></span></td><td>有人在做；子项里 ✓ 的是已完成的步骤</td></tr>
+        <tr><td>已完成</td><td><span class="task done"><span class="box"></span></span></td><td>做完，并且开发日志里有对应条目（标签写编号）；留在清单上直到用户清理</td></tr>
+        <tr><td>已取消</td><td><span class="task dropped"><span class="box"></span></span></td><td>用户决定不做；留一行原因，免得下次再提</td></tr>
+        <tr><td>等拍板</td><td>—</td><td>可叠加在任何状态上的标签：AI 给了方案与代价，等用户决定</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>待办</h2>
+    <!-- 下面四条是示例，四种状态各一条作对照；新项目把它们整段替换掉 -->
+
+    <div class="task">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">示例 · 导出大文件时内存占用过高</span><span class="tag">未开始</span><span class="tag gray">等拍板</span></div>
+        <div class="meta">登记 <b>2026-09-14 09:12:03</b></div>
+        <div class="note">现象：导出 10 万行数据时内存涨到 2 GB 并卡死。AI 给了两个方案，等用户选一个再开工。</div>
+        <ul>
+          <li>方案 A：边算边写成流式输出 —— 改 1 个文件，导出接口的签名要动</li>
+          <li>方案 B：分批写临时文件最后合并 —— 不动接口，代价是多一次磁盘占用</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="task doing">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">示例 · 断网重试会在恢复后重复提交</span><span class="tag">进行中</span></div>
+        <div class="meta">登记 <b>2026-09-13 21:02:11</b><span class="sep">·</span>更新 <b>2026-09-14 14:20:35</b></div>
+        <div class="note">取证已完成：超时重试没有幂等键，恢复后同一请求被提交了两次。改成提交前写幂等键、重复请求直接返回上次结果。</div>
+        <ul>
+          <li class="ok">取证：重复提交只出现在「超时 + 恢复」路径（2026-09-13 22:40:18）</li>
+          <li class="ok">改法拍板：提交前写幂等键，重复请求返回上次结果（2026-09-14 10:05:12）</li>
+          <li>环境验证 —— 需要用户跑一遍测试清单 T3</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="task done">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">示例 · 修复导出 CSV 的中文列名乱码</span><span class="tag">已完成</span><span class="tag gray">开发日志 #01</span></div>
+        <div class="meta">登记 <b>2026-09-12 11:30:44</b><span class="sep">·</span>完成 <b>2026-09-14 11:02:47</b></div>
+        <div class="note">一行改动（写文件时显式指定 UTF-8），已实测通过（测试清单 T1）。留在这里直到用户清理。</div>
+      </div>
+    </div>
+
+    <div class="task dropped">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">示例 · 给所有列表加过渡动画</span><span class="tag gray">已取消</span></div>
+        <div class="meta">登记 <b>2026-09-12 15:48:20</b><span class="sep">·</span>取消 <b>2026-09-12 20:17:57</b></div>
+        <div class="note">用户拍板：先保性能与稳定，不做动画。以后别再提。</div>
+      </div>
+    </div>
+
+    <div class="task doing">
+      <span class="box"></span>
+      <div class="body">
+        <div class="title"><span class="t">P4 收尾：命令 / Reload / 登录事件 / 旧内联数据转存</span><span class="tag">进行中</span></div>
+        <div class="meta">登记 <b>2026-09-30 16:05:00</b><span class="sep">·</span>更新 <b>2026-09-30 19:20:00</b></div>
+        <div class="note">P3 网络与放置引擎已完成（开发日志 e08～e15），服务端只剩这几块。部署前 bump mod_version（SBN-012 新增了协议包）。</div>
+        <ul>
+          <li class="ok">SBN-013：SBCommands（含 /sb undo）+ C2S_ReloadConfigMessage（开发日志 e16，2026-09-30 19:20:00）</li>
+          <li>SBN-014：主类登录登出事件（传送权限 / 存档身份 / 孤儿次元袋提示；配置同步已由放置引擎下发，别重复）+ ForagersInsightCompat（作物收获经验补丁）+ 旧物品内联 blueprintData 转存为蓝图文件</li>
+          <li>部署前 bump mod_version（D4：协议版本 = mod 版本）</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 新条目插在此行之上。只有用户、或拿到用户授权的 AI 才能改这一段；改完更新头部 chips 与 footer 的时间 -->
+  </section>
+
+  <footer>
+    Spatial_Blueprint_NeoForge_1.21.1<span class="sep">·</span>维护：用户（AI 提出，用户授权）<span class="sep">·</span>更新：2026-09-30 19:20:00
+  </footer>
+
+</div>
+</body>
+</html>

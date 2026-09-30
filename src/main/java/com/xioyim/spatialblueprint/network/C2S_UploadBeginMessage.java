@@ -1,14 +1,17 @@
 package com.xioyim.spatialblueprint.network;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.server.UploadStagingRegistry;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * C2S 上传分片开始声明（SB-013）。
@@ -19,7 +22,14 @@ import java.util.function.Supplier;
  * （创造-create、槽位上限），真正的上传限流与全部重量级校验
  * 留在组包完成后的 {@code handleAssembled} 里统一执行。</p>
  */
-public class C2S_UploadBeginMessage {
+public class C2S_UploadBeginMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_UploadBeginMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_upload_begin_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_UploadBeginMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_UploadBeginMessage::encode, C2S_UploadBeginMessage::decode);
 
     /** 单包上限：压缩字节 ≤ 此值走旧单包消息，超过走分片。留 2KB 余量给消息头。 */
     public static final int SINGLE_PACKET_LIMIT = 30000;
@@ -45,6 +55,11 @@ public class C2S_UploadBeginMessage {
         this.forceRequested = forceRequested;
     }
 
+    @Override
+    public CustomPacketPayload.Type<C2S_UploadBeginMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(C2S_UploadBeginMessage msg, FriendlyByteBuf buf) {
         buf.writeUUID(msg.uploadId);
         buf.writeVarInt(msg.totalChunks);
@@ -58,33 +73,35 @@ public class C2S_UploadBeginMessage {
                 buf.readUtf(16), buf.readBoolean());
     }
 
-    public static void handle(C2S_UploadBeginMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_UploadBeginMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            // 前置轻校验：非法参数直接拒绝（不占用上传限流配额）。
-            if (msg.totalChunks < 2 || msg.totalChunks > MAX_CHUNKS || msg.totalBytes <= 0) {
-                fail(player, "spatial_blueprint.upload.staging_rejected");
-                return;
-            }
-            long maxBytes = safeMaxBytes();
-            if (msg.totalBytes > maxBytes) {
-                fail(player, "spatial_blueprint.error.upload_too_large");
-                return;
-            }
-            if ("create".equals(msg.category) && !player.isCreative()) {
-                fail(player, "spatial_blueprint.error.creative_only");
-                return;
-            }
-            // 注：真正的槽位判断仍在 handleAssembled 全流程里。Begin 阶段不读盘，
-            // 避免客户端用 Begin 探测刷盘。
-            if (!UploadStagingRegistry.begin(msg.uploadId, player.getUUID(), msg.totalChunks,
-                    msg.totalBytes, msg.category, msg.forceRequested)) {
-                fail(player, "spatial_blueprint.upload.staging_rejected");
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handleServer(C2S_UploadBeginMessage msg, ServerPlayer player) {
+        if (player == null) return;
+
+        // 前置轻校验：非法参数直接拒绝（不占用上传限流配额）。
+        if (msg.totalChunks < 2 || msg.totalChunks > MAX_CHUNKS || msg.totalBytes <= 0) {
+            fail(player, "spatial_blueprint.upload.staging_rejected");
+            return;
+        }
+        long maxBytes = safeMaxBytes();
+        if (msg.totalBytes > maxBytes) {
+            fail(player, "spatial_blueprint.error.upload_too_large");
+            return;
+        }
+        if ("create".equals(msg.category) && !player.isCreative()) {
+            fail(player, "spatial_blueprint.error.creative_only");
+            return;
+        }
+        // 注：真正的槽位判断仍在 handleAssembled 全流程里。Begin 阶段不读盘，
+        // 避免客户端用 Begin 探测刷盘。
+        if (!UploadStagingRegistry.begin(msg.uploadId, player.getUUID(), msg.totalChunks,
+                msg.totalBytes, msg.category, msg.forceRequested)) {
+            fail(player, "spatial_blueprint.upload.staging_rejected");
+        }
     }
 
     /** MAX_UPLOAD_FILE_BYTES 本身就是字节数（与旧单包 01 检测同一口径）。 */
@@ -97,9 +114,7 @@ public class C2S_UploadBeginMessage {
     }
 
     private static void fail(ServerPlayer player, String key) {
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-                S2C_OperationResult.failure(key));
+        BlueprintNetwork.sendToPlayer(player, S2C_OperationResult.failure(key));
     }
 
     private static String normalize(String category) {

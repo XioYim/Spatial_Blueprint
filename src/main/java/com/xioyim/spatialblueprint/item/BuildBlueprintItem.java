@@ -3,7 +3,7 @@ package com.xioyim.spatialblueprint.item;
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.util.ItemSyncUtil;
 import net.minecraft.ChatFormatting;
-import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -16,19 +16,23 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.server.ServerLifecycleHooks;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
-@Mod.EventBusSubscriber(modid = SpatialBlueprintMod.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@EventBusSubscriber(modid = SpatialBlueprintMod.MODID)
 public class BuildBlueprintItem extends Item {
 
     public BuildBlueprintItem(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public void verifyComponentsAfterLoad(ItemStack stack) {
+        LegacyItemMigration.migrate(stack);
     }
 
     @Override
@@ -54,8 +58,9 @@ public class BuildBlueprintItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         long completionTime = getCompletionTime(stack);
+        Level level = context.level();
         if (completionTime > 0 && level != null) {
             long remaining = completionTime - level.getGameTime();
             if (remaining > 0) {
@@ -69,19 +74,18 @@ public class BuildBlueprintItem extends Item {
         }
     }
 
-    // --- NBT helpers ---
+    // --- 组件辅助 ---
 
     public static long getCompletionTime(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getLong("completionTime") : 0L;
+        return stack.getOrDefault(SpatialBlueprintComponents.COMPLETION_TIME.get(), 0L);
     }
 
     public static void setCompletionTime(ItemStack stack, long time) {
-        stack.getOrCreateTag().putLong("completionTime", time);
+        stack.set(SpatialBlueprintComponents.COMPLETION_TIME.get(), time);
     }
 
     public static String getBlueprintName(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("blueprintName")
-                ? stack.getTag().getString("blueprintName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), "");
     }
 
     // --- Server tick: replace expired build blueprints with spatial blueprints ---
@@ -91,8 +95,7 @@ public class BuildBlueprintItem extends Item {
     private static final int TICK_INTERVAL = 20; // once per second
 
     @SubscribeEvent
-    public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
+    public static void onServerTick(ServerTickEvent.Post event) {
         if (++tickCounter % TICK_INTERVAL != 0) return;
         var server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) return;
@@ -107,47 +110,56 @@ public class BuildBlueprintItem extends Item {
                 long completionTime = getCompletionTime(stack);
                 if (completionTime <= 0 || gameTime < completionTime) continue;
 
-                // 根据 sourceType 恢复为正确类型
-                String sourceType = stack.hasTag() ? stack.getTag().getString("sourceType") : "";
-                net.minecraft.world.item.Item restoredItem = switch (sourceType) {
-                    case "project"          -> SpatialBlueprintItems.PROJECTION_BLUEPRINT.get();
-                    case "engineering"      -> SpatialBlueprintItems.ENGINEERING_BLUEPRINT.get();
-                    case "dimensional"      -> SpatialBlueprintItems.DIMENSIONAL_BLUEPRINT.get();
-                    case "void_dimensional" -> SpatialBlueprintItems.VOID_DIMENSIONAL_BLUEPRINT.get();
-                    case "blank"            -> SpatialBlueprintItems.BLANK_BLUEPRINT.get();
-                    default                 -> SpatialBlueprintItems.SPATIAL_BLUEPRINT.get();
-                };
-                ItemStack restored = new ItemStack(restoredItem);
-                // 空白蓝图 / 工程蓝图：不携带蓝图数据，返回空白物品
-                // void_dimensional：只拷贝坐标和名称；其他类型：完整拷贝
-                if ("void_dimensional".equals(sourceType) && stack.hasTag()) {
-                    CompoundTag src = stack.getTag();
-                    CompoundTag nbt = new CompoundTag();
-                    if (src.contains("blueprintName")) nbt.putString("blueprintName", src.getString("blueprintName"));
-                    if (src.contains("saveMode"))      nbt.putInt("saveMode", src.getInt("saveMode"));
-                    // 保留蓝图文件引用：「重新储存」要靠它覆盖写回原文件并清除已放置标记
-                    if (src.contains("blueprintId"))   nbt.putString("blueprintId", src.getString("blueprintId"));
-                    if (src.contains("captureMin"))    nbt.put("captureMin", src.getCompound("captureMin").copy());
-                    if (src.contains("captureMax"))    nbt.put("captureMax", src.getCompound("captureMax").copy());
-                    if (src.contains("tpX"))           nbt.putDouble("tpX", src.getDouble("tpX"));
-                    if (src.contains("tpY"))           nbt.putDouble("tpY", src.getDouble("tpY"));
-                    if (src.contains("tpZ"))           nbt.putDouble("tpZ", src.getDouble("tpZ"));
-                    if (src.contains("tpDimension"))   nbt.putString("tpDimension", src.getString("tpDimension"));
-                    if (src.contains("creatorName"))   nbt.putString("creatorName", src.getString("creatorName"));
-                    if (src.contains("worldUuid"))     nbt.putString("worldUuid", src.getString("worldUuid"));
-                    if (src.contains("worldName"))     nbt.putString("worldName", src.getString("worldName"));
-                    restored.setTag(nbt);
-                } else if (!"blank".equals(sourceType) && !"engineering".equals(sourceType) && stack.hasTag()) {
-                    CompoundTag nbt = stack.getTag().copy();
-                    nbt.remove("completionTime");
-                    nbt.remove("forceCancelled");
-                    nbt.remove("sourceType");
-                    restored.setTag(nbt);
-                }
-                // "blank" / "engineering": no NBT → 返回空白物品
-                inv.setItem(i, restored);
+                inv.setItem(i, restore(stack));
                 ItemSyncUtil.syncSlot(player, i);
             }
+        }
+    }
+
+    /**
+     * 把一枚到期的建造蓝图恢复为它原来的物品（{@code source_type} 决定类型）。
+     *
+     * <p>空白蓝图 / 工程蓝图：不带任何数据，返回空白物品；
+     * void_dimensional：只带 12 个原样组件（源有才带）；
+     * 其余类型：整份组件带过去，删掉 completion_time / source_type。</p>
+     */
+    public static ItemStack restore(ItemStack stack) {
+        String sourceType = stack.getOrDefault(SpatialBlueprintComponents.SOURCE_TYPE.get(), "");
+        Item restoredItem = switch (sourceType) {
+            case "project"          -> SpatialBlueprintItems.PROJECTION_BLUEPRINT.get();
+            case "engineering"      -> SpatialBlueprintItems.ENGINEERING_BLUEPRINT.get();
+            case "dimensional"      -> SpatialBlueprintItems.DIMENSIONAL_BLUEPRINT.get();
+            case "void_dimensional" -> SpatialBlueprintItems.VOID_DIMENSIONAL_BLUEPRINT.get();
+            case "blank"            -> SpatialBlueprintItems.BLANK_BLUEPRINT.get();
+            default                 -> SpatialBlueprintItems.SPATIAL_BLUEPRINT.get();
+        };
+        ItemStack restored = new ItemStack(restoredItem);
+        if ("void_dimensional".equals(sourceType)) {
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.BLUEPRINT_NAME.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.SAVE_MODE.get());
+            // 保留蓝图文件引用：「重新储存」要靠它覆盖写回原文件并清除已放置标记
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.BLUEPRINT_ID.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.CAPTURE_MIN.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.CAPTURE_MAX.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.TP_X.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.TP_Y.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.TP_Z.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.TP_DIMENSION.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.CREATOR_NAME.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.WORLD_UUID.get());
+            copyIfPresent(stack, restored, SpatialBlueprintComponents.WORLD_NAME.get());
+        } else if (!"blank".equals(sourceType) && !"engineering".equals(sourceType)) {
+            restored = stack.transmuteCopy(restoredItem);
+            restored.remove(SpatialBlueprintComponents.COMPLETION_TIME.get());
+            restored.remove(SpatialBlueprintComponents.SOURCE_TYPE.get());
+        }
+        // "blank" / "engineering": 不带组件 → 返回空白物品
+        return restored;
+    }
+
+    private static <T> void copyIfPresent(ItemStack from, ItemStack to, DataComponentType<T> type) {
+        if (from.has(type)) {
+            to.set(type, from.get(type));
         }
     }
 

@@ -1,17 +1,19 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.server.BlueprintValidator;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.MaterialSpace;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * C2S: creative-mode client requests deleting a server-side blueprint.
@@ -31,12 +33,24 @@ import java.util.function.Supplier;
  * <p>After deletion the server pushes a fresh {@link S2C_LibrarySyncMessage}
  * so the client list stays in sync.</p>
  */
-public class C2S_DeleteBlueprintMessage {
+public class C2S_DeleteBlueprintMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_DeleteBlueprintMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_delete_blueprint_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_DeleteBlueprintMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_DeleteBlueprintMessage::encode, C2S_DeleteBlueprintMessage::decode);
 
     private final String blueprintId;
 
     public C2S_DeleteBlueprintMessage(String blueprintId) {
         this.blueprintId = blueprintId;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<C2S_DeleteBlueprintMessage> type() {
+        return TYPE;
     }
 
     public static void encode(C2S_DeleteBlueprintMessage msg, FriendlyByteBuf buf) {
@@ -47,81 +61,81 @@ public class C2S_DeleteBlueprintMessage {
         return new C2S_DeleteBlueprintMessage(buf.readUtf(64));
     }
 
-    public static void handle(C2S_DeleteBlueprintMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
-            if (msg.blueprintId.isEmpty()) return;
+    public static void handle(C2S_DeleteBlueprintMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            BlueprintData data = BlueprintStorage.load(msg.blueprintId);
-            boolean isDimensional = data != null && "dimensional".equals(data.category);
+    public static void handleServer(C2S_DeleteBlueprintMessage msg, ServerPlayer player) {
+        if (player == null) return;
+        if (msg.blueprintId.isEmpty()) return;
 
-            // 蓝图库管理本来就是创造侧的事，非次元蓝图沿用创造模式限制。
-            // 次元蓝图不能卡这一条 —— 它本来就是给生存玩家用的，主人删自己已放置的那份、
-            // OP 归档别人的，都跟游戏模式无关；卡了等于主人永远删不掉自己的蓝图。
-            if (!isDimensional && !player.isCreative()) return;
+        BlueprintData data = BlueprintStorage.load(msg.blueprintId);
+        boolean isDimensional = data != null && "dimensional".equals(data.category);
 
-            if (isDimensional) {
-                boolean isOwner = data.isOwnedBy(player.getUUID());
+        // 蓝图库管理本来就是创造侧的事，非次元蓝图沿用创造模式限制。
+        // 次元蓝图不能卡这一条 —— 它本来就是给生存玩家用的，主人删自己已放置的那份、
+        // OP 归档别人的，都跟游戏模式无关；卡了等于主人永远删不掉自己的蓝图。
+        if (!isDimensional && !player.isCreative()) return;
 
-                // ① 未放置 —— 任何人都不能删，OP 也不能归档。
-                //    材料还锁在主人的次元袋里，文件一消失结构与材料就一起蒸发了。
-                //    真要清理只能停服后手动进服务器目录删（提示文案里已写明）。
-                if (!data.placed) {
-                    sendResult(player, false,
-                            "spatial_blueprint.error.dimensional_unplaced_no_delete");
-                    return;
-                }
+        if (isDimensional) {
+            boolean isOwner = data.isOwnedBy(player.getUUID());
 
-                // ② 已放置 · 主人 —— 真正删除。结构已经在世界里了，删的只是云端槽位。
-                if (isOwner) {
-                    BlueprintStorage.delete(msg.blueprintId);
-                    MaterialSpace.get(player.serverLevel()).removeBagEverywhere(msg.blueprintId);
-                }
-                // ③ 已放置 · OP（非主人）—— 归档为 .bak，不真正删除，并留下操作记录
-                else if (player.hasPermissions(2)) {
-                    String bakName = BlueprintStorage.renameToBak(msg.blueprintId);
-                    if (bakName == null) {
-                        sendResult(player, false, "spatial_blueprint.error.blueprint_archive_failed");
-                        return;
-                    }
-                    MaterialSpace.get(player.serverLevel()).removeBagEverywhere(msg.blueprintId);
-                    com.xioyim.spatialblueprint.log.BlueprintFileLogger.archiveDimensional(
-                            player, msg.blueprintId, data.name,
-                            data.creatorName, data.ownerUuid, bakName);
-                    // 用横幅明确告知：文件只是改名了，没有被删除
-                    sendResult(player, false, "spatial_blueprint.message.blueprint_archived");
-                }
-                // ④ 已放置 · 既不是主人也不是 OP —— 拒绝
-                else {
-                    sendResult(player, false, "spatial_blueprint.message.void_blueprint.not_owner");
-                    return;
-                }
-            } else {
-                // ── 归属校验：主人或 OP 才能删 ────────────────────────────
-                // 上面的 isCreative() 只说明「这是蓝图库管理场景」，不代表有权删这一份。
-                // 少了这道校验，开放创造的服上任何人都能删掉别人的空间 / 投影 / 工程蓝图，
-                // 且非次元蓝图是真删（不像次元那样归档成 .bak），删掉就找不回来了。
-                if (!BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
-                    sendResult(player, false, "spatial_blueprint.error.blueprint_not_owner");
-                    return;
-                }
-                BlueprintStorage.delete(msg.blueprintId);
+            // ① 未放置 —— 任何人都不能删，OP 也不能归档。
+            //    材料还锁在主人的次元袋里，文件一消失结构与材料就一起蒸发了。
+            //    真要清理只能停服后手动进服务器目录删（提示文案里已写明）。
+            if (!data.placed) {
+                sendResult(player, false,
+                        "spatial_blueprint.error.dimensional_unplaced_no_delete");
+                return;
             }
 
-            // Push the updated list back so the client refreshes immediately.
-            // H2：按下发口径过滤后再推，避免删一次就把全量列表泄一次。
-            List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
-            BlueprintNetwork.CHANNEL.send(
-                    PacketDistributor.PLAYER.with(() -> player),
-                    new S2C_LibrarySyncMessage(updated));
-        });
-        ctx.get().setPacketHandled(true);
+            // ② 已放置 · 主人 —— 真正删除。结构已经在世界里了，删的只是云端槽位。
+            if (isOwner) {
+                BlueprintStorage.delete(msg.blueprintId);
+                MaterialSpace.get(player.serverLevel()).removeBagEverywhere(msg.blueprintId);
+            }
+            // ③ 已放置 · OP（非主人）—— 归档为 .bak，不真正删除，并留下操作记录
+            else if (player.hasPermissions(2)) {
+                String bakName = BlueprintStorage.renameToBak(msg.blueprintId);
+                if (bakName == null) {
+                    sendResult(player, false, "spatial_blueprint.error.blueprint_archive_failed");
+                    return;
+                }
+                MaterialSpace.get(player.serverLevel()).removeBagEverywhere(msg.blueprintId);
+                com.xioyim.spatialblueprint.log.BlueprintFileLogger.archiveDimensional(
+                        player, msg.blueprintId, data.name,
+                        data.creatorName, data.ownerUuid, bakName);
+                // 用横幅明确告知：文件只是改名了，没有被删除
+                sendResult(player, false, "spatial_blueprint.message.blueprint_archived");
+            }
+            // ④ 已放置 · 既不是主人也不是 OP —— 拒绝
+            else {
+                sendResult(player, false, "spatial_blueprint.message.void_blueprint.not_owner");
+                return;
+            }
+        } else {
+            // ── 归属校验：主人或 OP 才能删 ────────────────────────────
+            // 上面的 isCreative() 只说明「这是蓝图库管理场景」，不代表有权删这一份。
+            // 少了这道校验，开放创造的服上任何人都能删掉别人的空间 / 投影 / 工程蓝图，
+            // 且非次元蓝图是真删（不像次元那样归档成 .bak），删掉就找不回来了。
+            if (!BlueprintValidator.canManageBlueprint(player, msg.blueprintId)) {
+                sendResult(player, false, "spatial_blueprint.error.blueprint_not_owner");
+                return;
+            }
+            BlueprintStorage.delete(msg.blueprintId);
+        }
+
+        // Push the updated list back so the client refreshes immediately.
+        // H2：按下发口径过滤后再推，避免删一次就把全量列表泄一次。
+        List<BlueprintStorage.BlueprintSummary> updated = C2S_RequestLibraryMessage.buildFilteredSummaries(player);
+        BlueprintNetwork.sendToPlayer(player,
+                new S2C_LibrarySyncMessage(updated));
     }
 
     private static void sendResult(ServerPlayer player, boolean success, String messageKey) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 new S2C_OperationResult(success, messageKey));
     }
 }

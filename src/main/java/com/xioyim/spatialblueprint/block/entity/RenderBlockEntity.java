@@ -4,6 +4,7 @@ import com.xioyim.spatialblueprint.BlueprintConfig;
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.SpatialBlueprintRegistry;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
@@ -60,7 +61,7 @@ public class RenderBlockEntity extends BlockEntity {
             BlockEntity newBE = level.getBlockEntity(this.getBlockPos());
             if (newBE != null) {
                 try {
-                    newBE.load(blockEntityData);
+                    newBE.loadWithComponents(blockEntityData, level.registryAccess());
                     newBE.setChanged();
                 } catch (Exception e) {
                     SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Failed to restore tile data at {}: {}",
@@ -121,8 +122,8 @@ public class RenderBlockEntity extends BlockEntity {
     }
 
     @Override
-    public void load(CompoundTag tag) {
-        super.load(tag);
+    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.loadAdditional(tag, registries);
         this.renderBlock = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), tag.getCompound("renderBlock"));
         this.targetBlock = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), tag.getCompound("targetBlock"));
         this.shrinking = tag.getBoolean("shrinking");
@@ -135,8 +136,8 @@ public class RenderBlockEntity extends BlockEntity {
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag) {
-        super.saveAdditional(tag);
+    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.saveAdditional(tag, registries);
         if (this.renderBlock != null) {
             tag.put("renderBlock", NbtUtils.writeBlockState(this.renderBlock));
         }
@@ -158,20 +159,20 @@ public class RenderBlockEntity extends BlockEntity {
     }
 
     @Override
-    public void handleUpdateTag(CompoundTag tag) {
-        this.load(tag);
+    public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider registries) {
+        this.loadAdditional(tag, registries);
     }
 
     @Override
-    public CompoundTag getUpdateTag() {
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag tag = new CompoundTag();
-        saveAdditional(tag);
+        saveAdditional(tag, registries);
         return tag;
     }
 
     @Override
-    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt) {
+    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider registries) {
         if (pkt.getTag() == null) return;
-        this.load(pkt.getTag());
+        this.loadAdditional(pkt.getTag(), registries);
     }
 }

@@ -1,6 +1,8 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -41,9 +43,10 @@ public class MaterialSpace extends SavedData {
     private static final String SAVE_KEY = "sb_material_space";
 
     /** 玩家 UUID → (复合键 → 数量)。 */
-    private final Map<UUID, Map<String, Integer>> pools = new HashMap<>();
+    // 写成 ListTag 的三张表用 LinkedHashMap：HashMap 扩容不缩容，读回副本遍历顺序不同，存盘不确定（SBN-013 验收，t09）
+    private final Map<UUID, Map<String, Integer>> pools = new LinkedHashMap<>();
     /** 玩家 UUID → (蓝图 ID → (复合键 → 数量))。 */
-    private final Map<UUID, Map<String, Map<String, Integer>>> bags = new HashMap<>();
+    private final Map<UUID, Map<String, Map<String, Integer>>> bags = new LinkedHashMap<>();
     /**
      * 蓝图 ID → 名字快照。蓝图 ID 全局唯一，因此不按玩家分表。
      *
@@ -52,14 +55,14 @@ public class MaterialSpace extends SavedData {
      */
     private final Map<String, String> bagNames = new HashMap<>();
     /** 玩家 UUID → 已放置并消耗材料的次元蓝图 ID。用于材料空间继续显示已放置条目。 */
-    private final Map<UUID, Set<String>> consumedBagIds = new HashMap<>();
+    private final Map<UUID, Set<String>> consumedBagIds = new LinkedHashMap<>();
     /** 复合键 → 规范化 tag。仅带 NBT 的键有条目。 */
     private final Map<String, CompoundTag> tagRegistry = new HashMap<>();
 
     public static MaterialSpace get(ServerLevel level) {
         return level.getServer().overworld()
                 .getDataStorage()
-                .computeIfAbsent(MaterialSpace::load, MaterialSpace::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(MaterialSpace::new, MaterialSpace::load, null), SAVE_KEY);
     }
 
     private MaterialSpace() {}
@@ -177,7 +180,7 @@ public class MaterialSpace extends SavedData {
                            int amount, @Nullable CompoundTag tag) {
         if (amount <= 0) return;
         clearConsumedBagId(player, blueprintId);
-        bags.computeIfAbsent(player, k -> new HashMap<>())
+        bags.computeIfAbsent(player, k -> new LinkedHashMap<>())
             .computeIfAbsent(blueprintId, k -> new LinkedHashMap<>())
             .merge(materialKey, amount, Integer::sum);
         registerTag(materialKey, tag);
@@ -301,8 +304,8 @@ public class MaterialSpace extends SavedData {
     }
 
     /** 构建用于 GUI 显示的 ItemStack（含 NBT，附魔光效与完整 tooltip 可用）。 */
-    public ItemStack displayStack(String materialKey) {
-        return MaterialList.buildDisplayStack(materialKey, tagFor(materialKey));
+    public ItemStack displayStack(String materialKey, HolderLookup.Provider provider) {
+        return MaterialList.buildDisplayStack(materialKey, tagFor(materialKey), provider);
     }
 
     private void registerTag(String materialKey, @Nullable CompoundTag tag) {
@@ -313,8 +316,13 @@ public class MaterialSpace extends SavedData {
 
     // ── NBT 持久化 ────────────────────────────────────────────────────────
 
-    public static MaterialSpace load(CompoundTag tag) {
+    public static MaterialSpace load(CompoundTag tag, HolderLookup.Provider provider) {
         MaterialSpace data = new MaterialSpace();
+        // D2（SBN-011）：读不到版本字段视为 1.20.1 存档，按旧材料键迁移
+        int from = LegacyDataFixer.effectiveFrom(
+                tag.contains("DataVersion", Tag.TAG_INT) ? tag.getInt("DataVersion") : 0);
+        boolean fix = LegacyDataFixer.needsFix(from);
+        int unupgraded = 0;
 
         ListTag poolList = tag.getList("pools", Tag.TAG_COMPOUND);
         for (int i = 0; i < poolList.size(); i++) {
@@ -329,7 +337,7 @@ public class MaterialSpace extends SavedData {
             CompoundTag e = bagList.getCompound(i);
             UUID id = parseUuid(e.getString("player"));
             if (id == null) continue;
-            Map<String, Map<String, Integer>> byBp = new HashMap<>();
+            Map<String, Map<String, Integer>> byBp = new LinkedHashMap<>();
             ListTag perBp = e.getList("blueprints", Tag.TAG_COMPOUND);
             for (int j = 0; j < perBp.size(); j++) {
                 CompoundTag b = perBp.getCompound(j);
@@ -363,11 +371,80 @@ public class MaterialSpace extends SavedData {
         for (String key : names.getAllKeys()) {
             data.bagNames.put(key, names.getString(key));
         }
+
+        if (fix) {
+            unupgraded = data.migrateLegacyKeys(from);
+            data.setDirty();
+            if (unupgraded > 0) {
+                SpatialBlueprintMod.LOGGER.warn(
+                        "[MaterialSpace] {} material keys could not be upgraded from dataVersion {}",
+                        unupgraded, from);
+            }
+        }
         return data;
     }
 
+    /**
+     * D2 旧键迁移：先由 tagRegistry（旧键 → 旧 tag）算出旧键 → 新键映射，
+     * 再把 pool / 次元袋里的键按映射重写（同一新键合并数量），tagRegistry 换键并换成新 components。
+     * registry 里没有对应 tag 的键（纯 ID 键、或缺 tag 的摘要键）只做物品改名（grass → short_grass）。
+     *
+     * @return 未能升级条目数
+     */
+    private int migrateLegacyKeys(int from) {
+        int unupgraded = 0;
+        Map<String, String> keyMap = new LinkedHashMap<>();
+        Map<String, CompoundTag> newRegistry = new LinkedHashMap<>();
+        java.util.Set<String> bareKeys = new java.util.LinkedHashSet<>();
+        for (Map<String, Integer> pool : pools.values()) bareKeys.addAll(pool.keySet());
+        for (Map<String, Map<String, Integer>> byBp : bags.values()) {
+            for (Map<String, Integer> bag : byBp.values()) bareKeys.addAll(bag.keySet());
+        }
+        bareKeys.removeAll(tagRegistry.keySet());
+        for (String key : bareKeys) {
+            String renamed = LegacyDataFixer.migrateMaterialKey(key, null, from).key();
+            if (!renamed.equals(key)) keyMap.put(key, renamed);
+        }
+        for (Map.Entry<String, CompoundTag> e : tagRegistry.entrySet()) {
+            LegacyDataFixer.MigratedKey m =
+                    LegacyDataFixer.migrateMaterialKey(e.getKey(), e.getValue(), from);
+            if (!m.ok()) {
+                unupgraded++;
+                newRegistry.putIfAbsent(e.getKey(), e.getValue());
+            } else {
+                keyMap.put(e.getKey(), m.key());
+                if (m.components() != null) newRegistry.putIfAbsent(m.key(), m.components());
+            }
+        }
+        if (!keyMap.isEmpty()) {
+            for (Map<String, Integer> pool : pools.values()) {
+                remapKeys(pool, keyMap);
+            }
+            for (Map<String, Map<String, Integer>> byBp : bags.values()) {
+                for (Map<String, Integer> bag : byBp.values()) {
+                    remapKeys(bag, keyMap);
+                }
+            }
+        }
+        tagRegistry.clear();
+        tagRegistry.putAll(newRegistry);
+        return unupgraded;
+    }
+
+    /** 按映射重写计数表的键（命中映射的才动，同一新键合并数量）。 */
+    private static void remapKeys(Map<String, Integer> map, Map<String, String> keyMap) {
+        if (map.isEmpty()) return;
+        Map<String, Integer> merged = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : map.entrySet()) {
+            merged.merge(keyMap.getOrDefault(e.getKey(), e.getKey()), e.getValue(), Integer::sum);
+        }
+        map.clear();
+        map.putAll(merged);
+    }
+
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
+        tag.putInt("DataVersion", LegacyDataFixer.current());
         ListTag poolList = new ListTag();
         for (Map.Entry<UUID, Map<String, Integer>> e : pools.entrySet()) {
             if (e.getValue().isEmpty()) continue;

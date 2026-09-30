@@ -3,11 +3,6 @@ package com.xioyim.spatialblueprint.client;
 import com.xioyim.spatialblueprint.network.BlueprintNetwork;
 import com.xioyim.spatialblueprint.network.C2S_RequestProjectListMessage;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ProjectListMessage;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -21,8 +16,6 @@ import java.util.Map;
  * 这里挡住的是正常点击，那边挡住的是刷包）；冷却内切 tab 直接显示缓存。
  * 界面跟随 {@link #version()} 重建；登出时整份清空（T4）。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientProjectListCache {
 
     private ClientProjectListCache() {}
@@ -51,7 +44,7 @@ public final class ClientProjectListCache {
         if (last != null && now - last < COOLDOWN_MS) return false;
         lastRequestAt.put(tab, now);
         loading.put(tab, Boolean.TRUE);
-        BlueprintNetwork.CHANNEL.sendToServer(new C2S_RequestProjectListMessage(tab));
+        BlueprintNetwork.sendToServer(new C2S_RequestProjectListMessage(tab));
         return true;
     }
 
@@ -79,8 +72,7 @@ public final class ClientProjectListCache {
     }
 
     /** 换服后不能带着上个服的清单；冷却时刻一并清，否则新服头两秒点 tab 会被自己挡住。 */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    public static void clear() {
         cached.clear();
         lastRequestAt.clear();
         loading.clear();

@@ -1,0 +1,18 @@
+SBN-011 专服冒烟证据（A3，必做，K16 口径）
+时间：2026-09-30 12:54:54
+方式：run\ 预置 eula.txt + server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询重定向 stdout 到 Done，
+再用 RCON（Source 协议，rcon_stop.ps1）发 stop，等待 java 进程消失。未强杀进程树。
+关键日志（sbn011_runserver_stdout.log 摘录）：
+  [12:54:54] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.433s)! For help, type "help"
+  [12:54:54] [Server thread/INFO] [minecraft/RconThread]: RCON running on 0.0.0.0:25585
+  rcon response: Stopping the server
+  [12:58:32] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+  [12:58:32] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+  BUILD SUCCESSFUL in 3m 58s（gradle runServer 任务）
+  随后 java 进程全部消失。
+ERROR 统计：0 条（全文 grep [ERROR] 为空）。
+本 mod WARN：0 条（WARN 行中无 co.xi.sp / SpatialBlueprint）。
+[BlueprintFileLogger] Log directory 行存在，logs 目录按 init 建出（沿 SBN-008 口径）。
+正常退出三条（K16）：RCON stop 已发 + java 消失 + gradle BUILD SUCCESSFUL，齐备。
+取证后 run\ 整目录删除（沿 SBN-008 做法，dev 产物可再生）。

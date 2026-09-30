@@ -1,0 +1,33 @@
+SBN-008 验收
+验收：2026-09-30 02:40:00（云端主会话）
+对象：task/SBN-008 @ 043e24c（内容主提交 4487793）
+结论：有修正 PASS → 云端补一处修正（C2S_SubmitProjectChangesMessage 解码按客户端计数预分配）后合并进 neoforge-1.21.1
+
+V1 改动清单：ae2f65d..043e24c 的 16 个 .java（12 消息 + SubProjectClaimHandler + NotifySound + BlueprintNetwork + 测试）与任务书第二节两向一致 —— 通过。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 65 进 65 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR）；A4 云端自跑 grep：network\、server\、log\、util\ 无客户端 / gui / net.minecraftforge 引用；
+   注释里无 SB-TODO(（K10）—— 通过。
+V3 14 个搬迁文件 decode 上限 / 权限判定（hasPermissions、isOwnedBy、isCreative、isCanceled、MAX_ORDER 等）逐文件计数与 1.20.1 全部相等 —— 通过。
+V4 65 条注册（42 C2S / 23 S2C）逐条与 1.20.1 c2s / s2c 归类比对，0 处不一致 —— 通过。
+V5 SB-TODO( 实数 45 = 44 + 1（NotifySound 客户端半边 P5）—— 通过。
+V6 变异复核（K7）：
+   C2S_CreateProjectMessage:69 OP 判定短路 → t04 失败；
+   C2S_ApplyBlueprintMessage:97 次元蓝图主人判定短路 → t05 失败；
+   C2S_RequestIllegalBlocksMessage:113 evt.isCanceled() 分支短路 → t09 失败；三处均已还原 —— 通过。
+
+报告「任务书出入」1～4 接受。
+
+【云端修正】C2S_SubmitProjectChangesMessage 解码按客户端计数预分配（1.20.1 同样存在）
+报告出入 1 指出本批 C2S 列表计数在 1.20.1 无守卫、照原样搬迁；云端复查其中 decode 的分配行为：
+  C2S_SubmitProjectChangesMessage.decode 以客户端给的 orderCount / deleteCount 直接 new ArrayList<>(Math.max(0, count))。
+  decode 在服务端网络线程、权限判定（OP）之前执行 —— 任意在线玩家发一个 5 字节 VarInt（Integer.MAX_VALUE）即可让服务端
+  尝试分配 20 亿元素数组（OutOfMemoryError），较小的大数则真实吃掉数百 MB 内存。C2S 单包最多 32767 字节，合法包的计数不可能超过剩余字节数。
+  同批其余 C2S：SubmitProjectOrder 先判 MAX_ORDER 再分配、ApplyConfig 用 Math.min(…, 65536) 夹住、SaveMaterialList / 其余循环不预分配（读到包尾即解码失败）—— 不受影响。
+  复现：新增 t10_submitChangesCountGuard（手写恶意包：orderCount = Integer.MAX_VALUE、deleteCount = Integer.MAX_VALUE、orderCount = -5），
+        修正前失败「huge orderCount rejected with DecoderException」（1/66）。
+  修正：两处计数改走 S2C_OperationResult.checkedCount(buf, buf.readableBytes(), …)（越界抛 DecoderException、整包拒收，SBN-005 已有口径），
+        注释写明原因；合法包行为不变（t02 编码往返仍过）。
+  修正后：compileJava --rerun 0 警告；runGameTestServer 66 进 66 出；SB-TODO( 仍 45。
+1.20.1 线同一代码（C2S_SubmitProjectChangesMessage.java:99 / :102），功能联动手册登记「要跟」。
+
+报告「建议记入」2 需修订：SubmitProjectChanges 的计数在 1.21.1 已加守卫（本修正）；SaveMaterialList 仍无守卫但不预分配。

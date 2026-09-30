@@ -1,26 +1,33 @@
 package com.xioyim.spatialblueprint.network;
 
-import com.xioyim.spatialblueprint.client.ClientLibraryCache;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C: server pushes the blueprint library summary list to the requesting client.
  *
  * <p>Sent in response to {@link C2S_RequestLibraryMessage} and after successful
  * rename / delete operations to keep the client list fresh.  On receipt the client
- * stores the list in {@link ClientLibraryCache}.</p>
+ * stores the list in {@code ClientLibraryCache}.</p>
  */
-public class S2C_LibrarySyncMessage {
+public class S2C_LibrarySyncMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_LibrarySyncMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_library_sync_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_LibrarySyncMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_LibrarySyncMessage::encode, S2C_LibrarySyncMessage::decode);
 
     private final List<BlueprintStorage.BlueprintSummary> summaries;
 
@@ -30,6 +37,11 @@ public class S2C_LibrarySyncMessage {
 
     public List<BlueprintStorage.BlueprintSummary> getSummaries() {
         return summaries;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_LibrarySyncMessage> type() {
+        return TYPE;
     }
 
     // ── Encode / Decode ───────────────────────────────────────────────────
@@ -136,12 +148,7 @@ public class S2C_LibrarySyncMessage {
 
     // ── Handler ───────────────────────────────────────────────────────────
 
-    public static void handle(S2C_LibrarySyncMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                ClientLibraryCache.onReceive(msg.summaries);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(S2C_LibrarySyncMessage msg, IPayloadContext ctx) {
+        com.xioyim.spatialblueprint.client.ClientLibraryCache.onReceive(msg.summaries);
     }
 }

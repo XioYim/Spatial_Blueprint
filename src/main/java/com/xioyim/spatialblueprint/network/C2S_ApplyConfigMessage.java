@@ -5,15 +5,16 @@ import com.xioyim.spatialblueprint.config.ConfigRegistry;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ConfigValuesMessage;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * C2S：配置界面点「保存」后，把改动过的项提交给服务端写入。
@@ -26,14 +27,21 @@ import java.util.function.Supplier;
  *   <li>操作者必须是 OP</li>
  *   <li>id 必须在 {@link ConfigRegistry} 登记过 —— 没登记的直接忽略</li>
  *   <li>值必须通过该项自己的 spec（{@code defineInRange} 的上下界）——
- *       写进一个越界值会让 ForgeConfigSpec 下次校验时把<b>整个配置文件重置为默认</b>，
+ *       写进一个越界值会让 ModConfigSpec 下次校验时把<b>整个配置文件重置为默认</b>，
  *       一个伪造的包就能抹掉服主的全部配置</li>
  * </ol>
  *
  * <p>写完立刻热重载并回推一份新快照，界面上看到的就是真正落盘的值
  * （被夹过范围的项会自己变回去，玩家能看出来）。</p>
  */
-public class C2S_ApplyConfigMessage {
+public class C2S_ApplyConfigMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_ApplyConfigMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_apply_config_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_ApplyConfigMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_ApplyConfigMessage::encode, C2S_ApplyConfigMessage::decode);
 
     private final Map<String, Integer>      ints;
     private final Map<String, Boolean>      bools;
@@ -90,68 +98,74 @@ public class C2S_ApplyConfigMessage {
     /** 一个包里最多接受多少项 —— 登记表本来也就几十项，多出来的必然是伪造包。 */
     private static final int MAX_ENTRIES = 256;
 
-    public static void handle(C2S_ApplyConfigMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
-            if (!player.hasPermissions(2)) {
-                sendResult(player, "spatial_blueprint.config.error.no_permission");
-                return;
-            }
+    @Override
+    public CustomPacketPayload.Type<C2S_ApplyConfigMessage> type() {
+        return TYPE;
+    }
 
-            int applied = 0, rejected = 0;
-            boolean modifiedBlueprint = false, modifiedSubstitutions = false;
-            for (Map.Entry<String, Integer> e : msg.ints.entrySet()) {
-                Integer result = ConfigRegistry.applyInt(e.getKey(), e.getValue());
-                if (result == null) { rejected++; continue; }
-                if (!result.equals(e.getValue())) rejected++; else { applied++; modifiedBlueprint = true; }
-            }
-            for (Map.Entry<String, Boolean> e : msg.bools.entrySet()) {
-                Boolean result = ConfigRegistry.applyBool(e.getKey(), e.getValue());
-                if (result == null) rejected++; else { applied++; modifiedBlueprint = true; }
-            }
-            for (Map.Entry<String, List<String>> e : msg.lists.entrySet()) {
-                List<String> result = ConfigRegistry.applyList(e.getKey(), e.getValue());
-                if (result == null) { rejected++; continue; }
-                applied++;
-                // 判断归属哪个 spec（路径前缀区分）
-                String id = e.getKey();
-                if (id.startsWith("blockSubstitutions") || id.startsWith("bulkConversions")
-                        || id.startsWith("generated")) {
-                    modifiedSubstitutions = true;
-                } else {
-                    modifiedBlueprint = true;
-                }
-            }
+    public static void handle(C2S_ApplyConfigMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            if (modifiedBlueprint) {
-                com.xioyim.spatialblueprint.BlueprintConfig.MAX_VOLUME_SPATIAL.save();
-                com.xioyim.spatialblueprint.BlueprintConfig.clearCache();
-                com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                        PacketDistributor.ALL.noArg(),
-                        com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage.fromConfig());
-            }
-            if (modifiedSubstitutions) {
-                com.xioyim.spatialblueprint.GeneratedSubstitutionsConfig.BLOCK_SUBSTITUTIONS.save();
-                com.xioyim.spatialblueprint.GeneratedSubstitutionsConfig.invalidateCache();
-            }
+    public static void handleServer(C2S_ApplyConfigMessage msg, ServerPlayer player) {
+        if (player == null) return;
+        if (!player.hasPermissions(2)) {
+            sendResult(player, "spatial_blueprint.config.error.no_permission");
+            return;
+        }
 
-            SpatialBlueprintMod.LOGGER.info(
-                    "[Config] {} 通过 /sb config 修改配置：写入 {} 项，拒绝 {} 项",
-                    player.getScoreboardName(), applied, rejected);
+        int applied = 0, rejected = 0;
+        boolean modifiedBlueprint = false, modifiedSubstitutions = false;
+        for (Map.Entry<String, Integer> e : msg.ints.entrySet()) {
+            Integer result = ConfigRegistry.applyInt(e.getKey(), e.getValue());
+            if (result == null) { rejected++; continue; }
+            if (!result.equals(e.getValue())) rejected++; else { applied++; modifiedBlueprint = true; }
+        }
+        for (Map.Entry<String, Boolean> e : msg.bools.entrySet()) {
+            Boolean result = ConfigRegistry.applyBool(e.getKey(), e.getValue());
+            if (result == null) rejected++; else { applied++; modifiedBlueprint = true; }
+        }
+        for (Map.Entry<String, List<String>> e : msg.lists.entrySet()) {
+            List<String> result = ConfigRegistry.applyList(e.getKey(), e.getValue());
+            if (result == null) { rejected++; continue; }
+            applied++;
+            // 判断归属哪个 spec（路径前缀区分）
+            String id = e.getKey();
+            if (id.startsWith("blockSubstitutions") || id.startsWith("bulkConversions")
+                    || id.startsWith("generated")) {
+                modifiedSubstitutions = true;
+            } else {
+                modifiedBlueprint = true;
+            }
+        }
 
-            // 回推真正落盘的值：被夹过范围的项会在界面上自己变回去
-            S2C_ConfigValuesMessage.sendTo(player);
-            sendResult(player, rejected > 0
-                    ? "spatial_blueprint.config.saved_partial"
-                    : "spatial_blueprint.config.saved");
-        });
-        ctx.get().setPacketHandled(true);
+        if (modifiedBlueprint) {
+            com.xioyim.spatialblueprint.BlueprintConfig.MAX_VOLUME_SPATIAL.save();
+            com.xioyim.spatialblueprint.BlueprintConfig.clearCache();
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToAllPlayers(
+                    com.xioyim.spatialblueprint.network.s2c.S2C_ConfigSyncMessage.fromConfig());
+        }
+        if (modifiedSubstitutions) {
+            com.xioyim.spatialblueprint.GeneratedSubstitutionsConfig.BLOCK_SUBSTITUTIONS.save();
+            com.xioyim.spatialblueprint.GeneratedSubstitutionsConfig.invalidateCache();
+        }
+
+        SpatialBlueprintMod.LOGGER.info(
+                "[Config] {} 通过 /sb config 修改配置：写入 {} 项，拒绝 {} 项",
+                player.getScoreboardName(), applied, rejected);
+
+        // 回推真正落盘的值：被夹过范围的项会在界面上自己变回去
+        S2C_ConfigValuesMessage.sendTo(player);
+        sendResult(player, rejected > 0
+                ? "spatial_blueprint.config.saved_partial"
+                : "spatial_blueprint.config.saved");
     }
 
     private static void sendResult(ServerPlayer player, String key) {
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(
+                player,
                 new S2C_OperationResult(false, key));
     }
 }

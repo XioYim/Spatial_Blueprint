@@ -1,14 +1,7 @@
 package com.xioyim.spatialblueprint.client;
 
-import com.xioyim.spatialblueprint.gui.MaterialSpaceScreen;
 import com.xioyim.spatialblueprint.network.S2C_MaterialSpaceSyncMessage;
-import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
@@ -21,8 +14,6 @@ import java.util.Map;
  * （旧实现依赖 {@code ItemSyncUtil.syncHand} 自动携带，迁移后那条链路已断开）。
  * 服务端在每次存入 / 消耗后通过 {@link S2C_MaterialSpaceSyncMessage} 推送增量。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public class ClientMaterialSpaceCache {
 
     private static final Map<String, Integer>     counts = new LinkedHashMap<>();
@@ -70,10 +61,7 @@ public class ClientMaterialSpaceCache {
         version++;
 
         if (msg.isOpenScreen()) {
-            Minecraft.getInstance().setScreen(
-                    new MaterialSpaceScreen(msg.getTargetName(), msg.getTargetUuid(),
-                            msg.getCounts(), msg.getTags(),
-                            msg.getTotal(), msg.getCapacity()));
+            // SB-TODO(P6): 打开材料空间查看界面（原 MaterialSpaceScreen：Minecraft.getInstance().setScreen(...)）
         }
     }
 
@@ -83,12 +71,6 @@ public class ClientMaterialSpaceCache {
      * <p>材料空间是按玩家存在服务端世界数据里的，换服 / 换档后数字完全不同。
      * 不清的话界面会拿上一个服的已存入量去算「还差多少」，显示成负数或直接显示够了。</p>
      */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clear();
-    }
-
-    /** 断线 / 退出世界时清空。 */
     public static void clear() {
         counts.clear();
         tags.clear();

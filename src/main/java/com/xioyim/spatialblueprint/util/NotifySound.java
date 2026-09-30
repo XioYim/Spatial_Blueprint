@@ -5,18 +5,16 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
 /**
  * 播放通知音效。
  *
  * <ul>
  *   <li>{@link #server(Player)}      — 服务端，成功/中性音效（pling 高音）</li>
- *   <li>{@link #client()}            — 客户端，成功/中性音效（pling 高音）</li>
  *   <li>{@link #serverError(Player)} — 服务端，错误音效（pling 低音）</li>
- *   <li>{@link #clientError()}       — 客户端，错误音效（pling 低音）</li>
  * </ul>
+ *
+ * <p>客户端两个（client / clientError）在 {@link com.xioyim.spatialblueprint.client.ClientNotifySound}。</p>
  */
 public class NotifySound {
 
@@ -48,36 +46,6 @@ public class NotifySound {
                 sp.getX(), sp.getY(), sp.getZ(),
                 VOLUME, PITCH_ERROR,
                 sp.getRandom().nextLong()));
-    }
-
-    /**
-     * 客户端：在本地玩家位置播放成功/中性音效。
-     */
-    @OnlyIn(Dist.CLIENT)
-    public static void client() {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.level != null && mc.player != null) {
-            mc.level.playLocalSound(
-                    mc.player.getX(), mc.player.getY(), mc.player.getZ(),
-                    SoundEvents.NOTE_BLOCK_PLING.value(),  // unwrap Holder → SoundEvent
-                    SoundSource.PLAYERS,
-                    VOLUME, PITCH, false);
-        }
-    }
-
-    /**
-     * 客户端：在本地玩家位置播放错误音效。
-     */
-    @OnlyIn(Dist.CLIENT)
-    public static void clientError() {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.level != null && mc.player != null) {
-            mc.level.playLocalSound(
-                    mc.player.getX(), mc.player.getY(), mc.player.getZ(),
-                    SoundEvents.NOTE_BLOCK_PLING.value(),
-                    SoundSource.PLAYERS,
-                    VOLUME, PITCH_ERROR, false);
-        }
     }
 
     private NotifySound() {}

@@ -1,0 +1,173 @@
+SBN-011 · D2 数据升级（DataFixer）：蓝图文件 / 材料键 / 材料空间 / 撤销快照
+派发：2026-09-30 13:00:00（云端主会话）
+分支：task/SBN-011（从 neoforge-1.21.1 @ cbb246e 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-011 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2；本机取 git 输出按 K15。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K8、K10、K15、K16、C2、C5、C8、C10、C11、C12、C13；
+迁移计划书第五节 D2、D8 拍板记录与 P3c 段（「捕获 → DataFixer → 放置」）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+D2（用户拍板）：1.20.1 蓝图文件与玩家手上的旧蓝图物品都要能读，按 DataVersion 走原版 DataFixer 升级方块状态 / 方块实体 / 实体 / 容器物品。
+物品那半边 SBN-004 已做（LegacyItemMigration）；本任务做**数据那半边**，放在放置引擎（SBN-012）之前，让放置拿到的永远是 1.21 格式。
+
+云端已查的数据入口：
+  a. 蓝图文件 —— 所有读取（BlueprintStorage.load、ProjectStorage、上传 handleAssembled、蓝图材料请求）都经过 BlueprintData.deserialize；
+     那里已留 SB-TODO(P4) 桩。1.20.1 的 serialize 固定写 MinecraftDataVersion = 3465；1.21.1 写当前版本（SBN-001）。
+     文件是 litematic 结构：Regions.<名>.BlockStatePalette（方块状态 NBT {Name, Properties}）、TileEntities（完整方块实体 NBT，含 id）、Entities（完整实体 NBT，含 id）。
+  b. 材料键（D8 遗留）—— 蓝图文件里 SpatialBlueprintData.materialList 的键与 keyTags：1.20.1 按旧物品 tag 算摘要（键形如 id#摘要，keyTags 存旧 tag）；
+     MaterialList.buildDisplayStack 旧格式分支已留 SB-TODO(P4) 桩。
+  c. 世界存档里的 MaterialSpace（SavedData）—— 同样的旧键 + tagRegistry 旧 tag；1.20.1 世界升级上来原版 DataFixer 不碰 mod 的 SavedData。
+  d. 世界存档里的 SBUndoData（SavedData）—— 撤销快照里的方块状态 / 方块实体 NBT / 实体 NBT 是写入时的格式（SBN-003 报告已列）。
+
+本任务结束时：1.20.1 格式的上述四类数据载入即升级为 1.21 格式；1.21 格式的数据原样不动。放置引擎在 SBN-012。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  util/LegacyDataFixer.java                                                 ← 1.21.1 独有（三.1）
+  改  util/BlueprintData.java                                                   ← 只改 deserialize（三.2）
+  改  util/MaterialList.java                                                    ← deserialize 加版本参数重载 + 旧键迁移；buildDisplayStack 旧格式分支的桩（三.3）
+  改  util/MaterialSpace.java                                                   ← load / save 加版本标记 + 旧键迁移（三.4）
+  改  util/SBUndoData.java                                                      ← load / save 加版本标记 + 快照升级（三.5）
+  新  gametest/SBN011Tests.java
+
+交接件（规程允许范围）：SBN-011_报告.txt、SBN-011_证据\（含 证据/样本.txt：本任务手写的 1.20.1 格式样本原文 + 升级后的 NBT，按 K5 用 prettyPrint）、
+开发日志.md 文末「## SBN-011 执行记录」、测试清单.txt 正文末尾追加「十一、SBN-011 数据升级」、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（含 MaterialKey、LegacyItemMigration、存储层文件格式本身、物品类、网络）。
+
+========================================================
+三、已定方案
+========================================================
+
+1. util/LegacyDataFixer（纯函数、服务端 / 客户端都可调，不读配置不读文件）
+   a. 版本口径：public static final int LEGACY_DEFAULT = 3465（1.20.1）；public static int current() = SharedConstants.getCurrentVersion().getDataVersion().getVersion()。
+      public static int effectiveFrom(int readVersion)：readVersion <= 0 → LEGACY_DEFAULT（缺键视为 1.20.1：本 mod 只有 1.20.1 一条旧线）；其余原值。
+      public static boolean needsFix(int from)：from < current()。**from ≥ current 一律不动**（不降级；比当前还新的数据原样保留）。
+   b. 四个升级函数，签名形如 CompoundTag fixBlockState(CompoundTag tag, int from) / fixBlockEntity / fixEntity / fixItemStack：
+      DataFixers.getDataFixer().update(References.BLOCK_STATE / BLOCK_ENTITY / ENTITY / ITEM_STACK, new Dynamic<>(NbtOps.INSTANCE, tag), from, current())
+      （DataFixTypes 没有这四种的包装，直接用 DataFixer.update，J44；SBN-004 t04 已用同一写法升级 ITEM_STACK）。
+      结果不是 CompoundTag 或抛异常 → **返回原 tag**（copy），调用方计数；不抛到调用方外（一个坏条目不能让整份蓝图读不出来）。
+      方块实体 / 实体 NBT 没有 id 字段时不调 DataFixer（它靠 id 选修复器），原样返回并计数。
+   c. 材料键迁移：public static String migrateMaterialKey(String key, @Nullable CompoundTag legacyTag, int from)：
+      键不带 '#'（MaterialKey.hasTag 为 false）或 legacyTag 为 null → 原样返回；
+      否则组 {id: MaterialKey.idOf(key), Count: 1b, tag: legacyTag}（1.20.1 物品格式，C8 / K8 口径）→ fixItemStack → 取结果的 components（缺则 null）
+      → MaterialKey.make(id, components) 作为新键。附带返回新键对应的「规范化后的新 components」给调用方写 keyTags / tagRegistry
+      （形态自定：返回 record，或拆两个方法；报告写明）。
+   d. 调用方累计的「未能升级条目数」在 deserialize / load 结束时若 > 0，记一条 WARN（带蓝图名 / 存档数据名与条数），不逐条刷日志。
+
+2. BlueprintData.deserialize（删掉 SB-TODO(P4) 那条桩）
+   data.dataVersion 仍记文件里读到的原值（字段语义不变）；int from = LegacyDataFixer.effectiveFrom(data.dataVersion)；
+   needsFix(from) 时：BlockStatePalette 每项先 fixBlockState 再 readPaletteEntry；TileEntities 每项 fixBlockEntity 后再进 tileMap
+   （litematic 的 TE 坐标 x / y / z 是相对坐标，升级前后保持；升级后按原逻辑覆盖成世界坐标）；Entities 每项 fixEntity 后再建 EntityEntry；
+   materialList 走三.3 的带版本重载。needsFix 为 false 时逻辑与现在逐字相同。
+   serialize 不改（仍写当前版本）—— 升级后的蓝图一旦被写回，就是 1.21 格式文件。
+
+3. MaterialList
+   a. 新增 public static MaterialList deserialize(CompoundTag tag, int from)；原 deserialize(CompoundTag) 保留，等价于 from = current()（不迁移），其余调用方不动。
+   b. needsFix(from) 时对每个键调 migrateMaterialKey：新键计数合并（两个旧键映射到同一新键 → 数量相加）、keyTags 换成新 components；无 tag 的键原样。
+   c. buildDisplayStack 里「解析失败（旧格式 tag）→ 普通栈」的分支保留（防御），删掉那条 SB-TODO(P4)，注释改成「旧键已在载入时迁移（SBN-011），这里只兜底」。
+
+4. MaterialSpace
+   save 写一个 int 字段 dataVersion = current()；load 时读不到该字段 → from = LEGACY_DEFAULT，needsFix 时把 pool / 次元袋 / consumed 等所有按材料键索引的表
+   与 tagRegistry 一起迁移（同一新键合并数量），迁移发生过就 setDirty()。有字段且 ≥ current → 原样。字段名与已有键不冲突（报告写明）。
+
+5. SBUndoData
+   同 4 的版本标记口径；旧数据载入时快照里的方块状态 NBT → fixBlockState、方块实体 NBT → fixBlockEntity、实体 NBT → fixEntity；迁移发生过就 setDirty()。
+   撤销 / 冷却规则不改。
+
+6. 不在本任务：放置引擎（SBN-012）；导入器（litematic / schem / schematic 的客户端转换在 P5 / P6，转换结果经上传进 deserialize，天然被本任务覆盖）；
+   ProjectData 的非蓝图字段（无物品 / 方块实体数据）。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged / datafixerupper）
+========================================================
+
+  J44 com.mojang.datafixers.DataFixer#update(DSL.TypeReference, Dynamic<T>, int, int)；DataFixers.getDataFixer()；
+      References.BLOCK_STATE / BLOCK_ENTITY / ENTITY / ITEM_STACK 均为 public static final；
+      net.minecraft.util.datafix.DataFixTypes 只有 LEVEL / PLAYER / CHUNK / STRUCTURE / ENTITY_CHUNK / SAVED_DATA_* 等，**没有**这四种的包装；
+      NbtUtils#getDataVersion(CompoundTag, int) / addDataVersion / addCurrentDataVersion（可选用来读写 4 / 5 的版本字段，报告写明用没用）；
+      SharedConstants.getCurrentVersion().getDataVersion().getVersion()
+  1.20.1 源：BlueprintData.serialize 固定 root.putInt("MinecraftDataVersion", 3465)。
+
+========================================================
+五、测试（本任务的 1.20.1 格式样本是唯一允许手写处 —— 它就是旧存档 / 旧文件的格式；1.21 格式数据一律由真实对象产生）
+========================================================
+
+样本写法照 SBN-004 t04 与 K8：物品 {id, Count:1b, tag:{…}}、附魔 Enchantments:[{id:"minecraft:sharpness", lvl:3s}]、名字 display.Name 为 JSON 字符串。
+全部样本原文与升级后结果用 NbtUtils.prettyPrint（K5）写进 证据/样本.txt。
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～010 的 84 条照旧全过。
+    t01_fixerUnits           fixBlockState：{Name:"minecraft:grass"}（1.20.3 起改名 short_grass）from 3465 → Name 变 "minecraft:short_grass"；
+                             fixItemStack：旧附魔剑 → components 里有 minecraft:enchantments（sharpness 3）；
+                             from = current 或更大 → 原样返回；无 id 的方块实体 / 实体 → 原样返回；构造一个会让修复器抛异常 / 返回非 compound 的输入（手写）→ 返回原 tag 不抛。
+    t02_blueprintFile        手写一份完整 1.20.1 格式蓝图 NBT（Version 7、MinecraftDataVersion 3465、Regions 一个区域：
+                             调色板含 grass、一个箱子方块实体 Items:[{Slot:0b, id:"minecraft:diamond_sword", Count:1b, tag:{Enchantments:[…], display:{Name:…}}}]、
+                             一个物品展示框实体 Item:{id, Count, tag}）→ BlueprintData.deserialize：
+                             草的方块状态是 short_grass；箱子 NBT 用 loadWithComponents(tag, provider) 读进真实箱子后第 0 格是带锋利 III 且有自定义名字的钻石剑；
+                             展示框 NBT 经 EntityType.create 还原出的展示框里的物品同样正确；data.dataVersion 仍是 3465。
+    t03_currentUntouched     真实捕获路径得到的 1.21 数据（或用真实方块 / 实体造的 BlueprintData）serialize → deserialize：与未走修复逻辑前逐字相等（needsFix 为 false 的路径零改动）；
+                             MinecraftDataVersion 缺键的文件按 3465 处理（用 t02 样本去掉该键再跑一次，结果与 t02 相同）。
+    t04_materialKeys         手写旧 materialList：键 "minecraft:diamond_sword#legacyA"（keyTags 为旧附魔 tag）数量 2、键 "minecraft:diamond_sword#legacyB"（同样附魔的另一种旧 tag 写法，
+                             如附魔顺序不同）数量 3、键 "minecraft:stone" 数量 5 → deserialize(tag, 3465)：
+                             新键 == MaterialKey.of(真实带锋利 III 的钻石剑, provider)，数量 5（合并）；stone 原样；keyTags 里是新 components。
+    t05_materialSpace        手写一份无 dataVersion 字段的 MaterialSpace 存档（pool / 袋里都有 t04 的旧键）→ MaterialSpace.load：键已迁移、数量合并、tagRegistry 为新 components、
+                             isDirty() 为 true；save 后有 dataVersion 字段；再 load 一次不再迁移（isDirty 为 false）。
+    t06_undoSnapshot         手写一份无 dataVersion 字段的 SBUndoData 存档，快照里有 t02 的箱子方块实体 NBT 与 grass 方块状态 → load：快照里的方块状态是 short_grass、
+                             方块实体 NBT 读进真实箱子后物品正确；isDirty() 为 true。
+    t07_storageRoundTrip     把 t02 样本写成真实文件放进 BlueprintStorage 目录（SafeNbtIo / NbtIo.writeCompressed）→ BlueprintStorage.load → 结果同 t02；
+                             再 BlueprintStorage.save 写回 → 文件里 MinecraftDataVersion 为当前版本 → 再 load 不走修复（needsFix 为 false）且内容相同。测试文件 finally 删除。
+    测试 finally 删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR（K16 口径）。
+A4  grep 门禁（必做）：util\ 下新改文件无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 引用；注释里无 SB-TODO(（K10）。
+
+【手测】无（旧存档实机升级留到有用户旧文件时，测试清单正文「旧文件读取基线」继续跟踪）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  BlueprintData / MaterialList / MaterialSpace / SBUndoData 相对当前集成分支只改三.2～三.5 点名处；needsFix 为 false 的路径与原逻辑逐字相同（t03 证明）。
+V4  样本全部手写成 1.20.1 格式并进证据；1.21 数据全部来自真实对象。
+V5  SB-TODO 实数 = 46 − 2（BlueprintData、MaterialList 两条 P4）+ 本任务新桩，逐条列出。
+V6  变异复核（云端验收时做）：BlueprintData.deserialize 里的 needsFix 分支整体跳过 → t02 转红；MaterialList 的键迁移跳过 → t04 转红；
+    MaterialSpace.load 的迁移跳过 → t05 转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-011 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改动点：每个文件改了哪些方法 · file:line；LegacyDataFixer 的公开方法清单
+三、实测：四种修复各自的真实效果（证据/样本.txt 摘录：grass → short_grass、旧附魔 → components、旧键 → 新键）；版本字段名与写法
+四、测试覆盖：A1～A4；t01～t07；@GameTest 实数
+五、迁移桩清单（删 2 条 + 新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（升级只在服务端读盘时发生；客户端收到的蓝图数据是服务端升级后序列化的 1.21 格式 —— 确认 S2C 蓝图数据路径没有旁路）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-011』」。

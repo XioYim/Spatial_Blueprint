@@ -17,7 +17,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.client.model.data.ModelData;
+import net.neoforged.neoforge.client.model.data.ModelData;
 
 public class RenderBlockRenderer implements BlockEntityRenderer<RenderBlockEntity> {
     public RenderBlockRenderer(BlockEntityRendererProvider.Context context) {

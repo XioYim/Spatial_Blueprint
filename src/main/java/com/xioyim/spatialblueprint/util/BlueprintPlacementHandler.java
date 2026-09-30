@@ -16,9 +16,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.common.util.BlockSnapshot;
-import net.minecraftforge.event.level.BlockEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import com.xioyim.spatialblueprint.block.RenderBlock;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
@@ -33,17 +33,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.level.LevelEvent;
-import net.minecraftforge.event.server.ServerStoppingEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 
 import javax.annotation.Nullable;
 import java.util.*;
 
-@Mod.EventBusSubscriber
+@EventBusSubscriber(modid = SpatialBlueprintMod.MODID)
 public class BlueprintPlacementHandler {
     private static final List<PendingPlacement> pendingPlacements = new ArrayList<>();
 
@@ -338,11 +338,8 @@ public class BlueprintPlacementHandler {
     }
 
     private static void sendPlacementFailure(ServerPlayer player, String messageKey) {
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-                S2C_OperationResult.failure(messageKey));
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player, S2C_OperationResult.failure(messageKey));
+        BlueprintNetwork.sendToPlayer(player,
                 new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(-1f));
     }
 
@@ -427,14 +424,14 @@ public class BlueprintPlacementHandler {
                     transformX(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                     transformY(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                     transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation));
-            BlockState state = applyTransform(entry.state, rotation);
+            BlockState state = applyTransform(level, worldPos, entry.state, rotation);
             if (state.isAir()) continue;
 
             level.setBlock(worldPos, state, 3);
             if (entry.nbt != null && !entry.nbt.isEmpty()) {
                 BlockEntity be = level.getBlockEntity(worldPos);
                 if (be != null) {
-                    try { be.load(entry.nbt); be.setChanged(); }
+                    try { be.loadWithComponents(entry.nbt, level.registryAccess()); be.setChanged(); }
                     catch (Exception e) { SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] BE load failed at {}: {}", worldPos, e.getMessage()); }
                 }
             }
@@ -448,14 +445,14 @@ public class BlueprintPlacementHandler {
                     transformX(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                     transformY(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                     transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation));
-            BlockState state = applyTransform(entry.state, rotation);
+            BlockState state = applyTransform(level, worldPos, entry.state, rotation);
             if (state.isAir()) continue;
 
             level.setBlock(worldPos, state, 3);
             if (entry.nbt != null && !entry.nbt.isEmpty()) {
                 BlockEntity be = level.getBlockEntity(worldPos);
                 if (be != null) {
-                    try { be.load(entry.nbt); be.setChanged(); }
+                    try { be.loadWithComponents(entry.nbt, level.registryAccess()); be.setChanged(); }
                     catch (Exception e) { SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Dependent BE load failed at {}: {}", worldPos, e.getMessage()); }
                 }
             }
@@ -477,7 +474,7 @@ public class BlueprintPlacementHandler {
             int tileWorldY = origin.getY() + transformY(entry.tileX, entry.tileY, entry.tileZ, size, rotation);
             int tileWorldZ = origin.getZ() + transformZ(entry.tileX, entry.tileY, entry.tileZ, size, rotation);
 
-            if (!level.hasChunkAt(new BlockPos(tileWorldX, tileWorldY, tileWorldZ))) continue;
+            if (!level.hasChunk(tileWorldX >> 4, tileWorldZ >> 4)) continue;
 
             CompoundTag nbt = entry.nbt.copy();
             nbt.putInt("TileX", tileWorldX);
@@ -522,14 +519,14 @@ public class BlueprintPlacementHandler {
                         transformX(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                         transformY(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation),
                         transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), size, rotation));
-                BlockState state = applyTransform(entry.state, rotation);
+                BlockState state = applyTransform(level, worldPos, entry.state, rotation);
                 if (state.isAir()) continue;
 
                 level.setBlock(worldPos, state, 3);
                 if (entry.nbt != null && !entry.nbt.isEmpty()) {
                     BlockEntity be = level.getBlockEntity(worldPos);
                     if (be != null) {
-                        try { be.load(entry.nbt); be.setChanged(); }
+                        try { be.loadWithComponents(entry.nbt, level.registryAccess()); be.setChanged(); }
                         catch (Exception e) { SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Late BE load failed at {}: {}", worldPos, e.getMessage()); }
                     }
                 }
@@ -549,9 +546,7 @@ public class BlueprintPlacementHandler {
     }
 
     @SubscribeEvent
-    public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
-
+    public static void onServerTick(ServerTickEvent.Post event) {
         applyGlowingToSelectionEntities(event.getServer());
         processPendingGlowTasks(event.getServer());
 
@@ -630,9 +625,15 @@ public class BlueprintPlacementHandler {
     @SubscribeEvent
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
-        BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
-                S2C_ConfigSyncMessage.fromConfig());
+        try {
+            BlueprintNetwork.sendToPlayer(sp, S2C_ConfigSyncMessage.fromConfig());
+        } catch (UnsupportedOperationException e) {
+            // 半成品连接走不到发包：GameTest 自建的 mock 玩家（placeNewPlayer 直调）在配置阶段就触发
+            // 登录事件，NeoForge 相位检查拒绝 play 包；真玩家此时已是 play 阶段，不受影响。
+            // 只接这一种（云端验收收窄），其它异常照常抛出，不静默吞掉
+            SpatialBlueprintMod.LOGGER.debug("[SpatialBlueprint] Config sync skipped for {}: {}",
+                    sp.getGameProfile().getName(), e.getMessage());
+        }
     }
 
     // render_block 只允许空手瞬间破坏
@@ -668,7 +669,7 @@ public class BlueprintPlacementHandler {
                 transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), placement.size, placement.rotation)
         );
 
-        BlockState state = applyTransform(entry.state, placement.rotation);
+        BlockState state = applyTransform(placement.level, targetPos, entry.state, placement.rotation);
         if (state.isAir()) return;
 
         placement.level.setBlockAndUpdate(targetPos, SpatialBlueprintRegistry.RENDER_BLOCK.get().defaultBlockState());
@@ -696,7 +697,7 @@ public class BlueprintPlacementHandler {
             // tickServer 动画结束后已自替换，跳过
             if (!(placement.level.getBlockState(targetPos).getBlock() instanceof RenderBlock)) continue;
 
-            BlockState state = applyTransform(entry.state, placement.rotation);
+            BlockState state = applyTransform(placement.level, targetPos, entry.state, placement.rotation);
             if (state.isAir()) {
                 placement.level.removeBlock(targetPos, false);
                 continue;
@@ -712,7 +713,7 @@ public class BlueprintPlacementHandler {
                 BlockEntity be = placement.level.getBlockEntity(targetPos);
                 if (be != null) {
                     try {
-                        be.load(entry.nbt);
+                        be.loadWithComponents(entry.nbt, placement.level.registryAccess());
                         be.setChanged();
                     } catch (Exception e) {
                         SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Failed to restore block entity data at {}: {}",
@@ -733,7 +734,7 @@ public class BlueprintPlacementHandler {
                     transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), placement.size, placement.rotation)
             );
 
-            BlockState state = applyTransform(entry.state, placement.rotation);
+            BlockState state = applyTransform(placement.level, targetPos, entry.state, placement.rotation);
             if (state.isAir()) continue;
 
             placement.level.setBlock(targetPos, state, 3);
@@ -742,7 +743,7 @@ public class BlueprintPlacementHandler {
                 BlockEntity be = placement.level.getBlockEntity(targetPos);
                 if (be != null) {
                     try {
-                        be.load(entry.nbt);
+                        be.loadWithComponents(entry.nbt, placement.level.registryAccess());
                         be.setChanged();
                     } catch (Exception e) {
                         SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Failed to restore dependent block entity data at {}: {}",
@@ -771,7 +772,7 @@ public class BlueprintPlacementHandler {
             int tileWorldY = placement.origin.getY() + transformY(entry.tileX, entry.tileY, entry.tileZ, placement.size, placement.rotation);
             int tileWorldZ = placement.origin.getZ() + transformZ(entry.tileX, entry.tileY, entry.tileZ, placement.size, placement.rotation);
 
-            if (!placement.level.hasChunkAt(new BlockPos(tileWorldX, tileWorldY, tileWorldZ))) continue;
+            if (!placement.level.hasChunk(tileWorldX >> 4, tileWorldZ >> 4)) continue;
 
             CompoundTag nbt = entry.nbt.copy();
             nbt.putInt("TileX", tileWorldX);
@@ -829,7 +830,7 @@ public class BlueprintPlacementHandler {
                         transformZ(relPos.getX(), relPos.getY(), relPos.getZ(), placement.size, placement.rotation)
                 );
 
-                BlockState state = applyTransform(entry.state, placement.rotation);
+                BlockState state = applyTransform(placement.level, targetPos, entry.state, placement.rotation);
                 if (state.isAir()) continue;
 
                 placement.level.setBlock(targetPos, state, 3);
@@ -838,7 +839,7 @@ public class BlueprintPlacementHandler {
                     BlockEntity be = placement.level.getBlockEntity(targetPos);
                     if (be != null) {
                         try {
-                            be.load(entry.nbt);
+                            be.loadWithComponents(entry.nbt, placement.level.registryAccess());
                             be.setChanged();
                         } catch (Exception e) {
                             SpatialBlueprintMod.LOGGER.warn("[SpatialBlueprint] Late BE load failed at {}: {}",
@@ -867,8 +868,7 @@ public class BlueprintPlacementHandler {
     private static void sendPlacementProgress(PendingPlacement placement, float progress) {
         if (placement.player == null) return;
         try {
-            com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> placement.player),
+            com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(placement.player,
                     new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(progress));
         } catch (Exception ignored) {}
     }
@@ -1005,7 +1005,7 @@ public class BlueprintPlacementHandler {
         BlockSnapshot snapshot = BlockSnapshot.create(level.dimension(), level, pos);
         BlockEvent.EntityPlaceEvent event = new BlockEvent.EntityPlaceEvent(
                 snapshot, Blocks.DIRT.defaultBlockState(), player);
-        MinecraftForge.EVENT_BUS.post(event);
+        NeoForge.EVENT_BUS.post(event);
         return !event.isCanceled();
     }
 
@@ -1019,12 +1019,12 @@ public class BlueprintPlacementHandler {
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) return true;
         BlockEvent.BreakEvent event = new BlockEvent.BreakEvent(level, pos, state, player);
-        MinecraftForge.EVENT_BUS.post(event);
+        NeoForge.EVENT_BUS.post(event);
         return !event.isCanceled();
     }
 
-    private static BlockState applyTransform(BlockState state, Rotation rotation) {
-        if (rotation != Rotation.NONE) state = state.rotate(rotation);
+    private static BlockState applyTransform(ServerLevel level, BlockPos pos, BlockState state, Rotation rotation) {
+        if (rotation != Rotation.NONE) state = state.rotate(level, pos, rotation);
         return state;
     }
 
@@ -1087,7 +1087,7 @@ public class BlueprintPlacementHandler {
         double loY = Math.min(fy, ty), hiY = Math.max(fy, ty);
         double loZ = Math.min(fz, tz), hiZ = Math.max(fz, tz);
 
-        if (!level.hasChunkAt(new BlockPos((int) Math.floor(loX), (int) Math.floor(loY), (int) Math.floor(loZ)))) {
+        if (!level.hasChunk((int) Math.floor(loX) >> 4, (int) Math.floor(loZ) >> 4)) {
             return false;
         }
 
@@ -1182,7 +1182,7 @@ public class BlueprintPlacementHandler {
                     CompoundTag beNbt = null;
                     BlockEntity be = level.getBlockEntity(pos);
                     if (be != null) {
-                        try { beNbt = be.saveWithFullMetadata(); }
+                        try { beNbt = be.saveWithFullMetadata(level.registryAccess()); }
                         catch (Exception e) {
                             SpatialBlueprintMod.LOGGER.warn("[SBUndo] BE save failed at {}: {}", pos, e.getMessage());
                         }
@@ -1266,7 +1266,7 @@ public class BlueprintPlacementHandler {
             if (sb.beNbt() != null) {
                 BlockEntity be = level.getBlockEntity(sb.pos());
                 if (be != null) {
-                    try { be.load(sb.beNbt()); be.setChanged(); }
+                    try { be.loadWithComponents(sb.beNbt(), level.registryAccess()); be.setChanged(); }
                     catch (Exception e) {
                         SpatialBlueprintMod.LOGGER.warn("[SBUndo] BE restore failed at {}: {}", sb.pos(), e.getMessage());
                     }
@@ -1281,7 +1281,7 @@ public class BlueprintPlacementHandler {
             if (sb.beNbt() != null) {
                 BlockEntity be = level.getBlockEntity(sb.pos());
                 if (be != null) {
-                    try { be.load(sb.beNbt()); be.setChanged(); }
+                    try { be.loadWithComponents(sb.beNbt(), level.registryAccess()); be.setChanged(); }
                     catch (Exception e) {
                         SpatialBlueprintMod.LOGGER.warn("[SBUndo] Dependent BE restore failed at {}: {}", sb.pos(), e.getMessage());
                     }

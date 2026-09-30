@@ -122,9 +122,11 @@ public class MaterialList {
     private static void mergeItemCount(MaterialList ml, CompoundTag item) {
         String id = item.getString("id");
         if (id.isBlank()) return;
-        int count = item.contains("Count") ? item.getByte("Count") : 1;
-        // 复合键：同 ID 不同附魔/耐久的物品各自独立成条
-        CompoundTag rawTag = item.contains("tag", 10) ? item.getCompound("tag") : null;
+        int count = item.contains("count") ? item.getInt("count")
+                : (item.contains("Count") ? item.getByte("Count") : 1);
+        // 复合键：同 ID 不同组件的物品各自独立成条（1.21 components；旧格式 tag 兜底）
+        CompoundTag rawTag = item.contains("components", 10) ? item.getCompound("components")
+                : (item.contains("tag", 10) ? item.getCompound("tag") : null);
         CompoundTag norm   = MaterialKey.normalize(rawTag);
         String key         = MaterialKey.make(id, rawTag);
         ml.blockCounts.merge(key, Math.max(1, count), Integer::sum);
@@ -141,15 +143,19 @@ public class MaterialList {
      * 构建用于 GUI 显示的 ItemStack（含 {@link #keyTags} 中的 tag，若有）。
      * 附魔物品会显示附魔光效和完整 tooltip；普通物品返回普通 ItemStack；物品不存在时返回 EMPTY。
      */
-    public ItemStack getDisplayStack(String materialKey) {
-        return buildDisplayStack(materialKey, keyTags.get(materialKey));
+    public ItemStack getDisplayStack(String materialKey, net.minecraft.core.HolderLookup.Provider provider) {
+        return buildDisplayStack(materialKey, keyTags.get(materialKey), provider);
     }
 
     /**
      * 由复合键 + tag 构建显示用 ItemStack。供 {@link MaterialSpace} 复用 —— 材料空间保存的是
      * 复合键与 tag，不持有 MaterialList 实例。
+     *
+     * <p>tag 是组件补丁 NBT（与 {@code ItemStack.save} 的 components 子标签同编码），
+     * 按 {@link net.minecraft.core.component.DataComponentPatch#CODEC} 解析后应用。</p>
      */
-    public static ItemStack buildDisplayStack(String materialKey, @javax.annotation.Nullable CompoundTag tag) {
+    public static ItemStack buildDisplayStack(String materialKey, @javax.annotation.Nullable CompoundTag tag,
+                                              net.minecraft.core.HolderLookup.Provider provider) {
         ResourceLocation rl = ResourceLocation.tryParse(MaterialKey.idOf(materialKey));
         if (rl == null) return ItemStack.EMPTY;
         Optional<Item> itemOpt = BuiltInRegistries.ITEM.getOptional(rl);
@@ -164,7 +170,15 @@ public class MaterialList {
             if (item == Items.AIR) return ItemStack.EMPTY;
         }
         ItemStack stack = new ItemStack(item);
-        if (tag != null) stack.setTag(tag.copy());
+        if (tag != null) {
+            var parsed = net.minecraft.core.component.DataComponentPatch.CODEC.parse(
+                    provider.createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), tag);
+            if (parsed.result().isPresent()) {
+                stack.applyComponents(parsed.result().get());
+            } else {
+                // 旧键已在载入时迁移（SBN-011），这里只兜底：解析失败就返回无组件的普通栈
+            }
+        }
         return stack;
     }
 
@@ -237,25 +251,74 @@ public class MaterialList {
     }
 
     public static MaterialList deserialize(CompoundTag tag) {
+        return deserialize(tag, LegacyDataFixer.current(), null);
+    }
+
+    /**
+     * 带数据版本的反序列化（D2，SBN-011）：旧版本时把按旧物品 tag 算摘要的键
+     * 迁移为按新 components 算的键（同一新键合并数量，keyTags 换成新 components）；
+     * 无 tag 的键原样。from 为当前版本时与 {@link #deserialize(CompoundTag)} 逐字相同。
+     *
+     * @param unupgraded 为 null 不计数，否则累计未能升级条目数（由调用方记 WARN）
+     */
+    public static MaterialList deserialize(CompoundTag tag, int from, @javax.annotation.Nullable int[] unupgraded) {
         MaterialList ml = new MaterialList();
         ml.blueprintName = tag.getString("name");
-        if (tag.contains("entries")) {
-            ListTag entries = tag.getList("entries", 10); // 10 = CompoundTag
-            for (int i = 0; i < entries.size(); i++) {
-                CompoundTag e = entries.getCompound(i);
-                ml.blockCounts.put(e.getString("block"), e.getInt("count"));
+        if (!LegacyDataFixer.needsFix(from)) {
+            if (tag.contains("entries")) {
+                ListTag entries = tag.getList("entries", 10); // 10 = CompoundTag
+                for (int i = 0; i < entries.size(); i++) {
+                    CompoundTag e = entries.getCompound(i);
+                    ml.blockCounts.put(e.getString("block"), e.getInt("count"));
+                }
             }
+            if (tag.contains("keyTags", 9)) {
+                ListTag samples = tag.getList("keyTags", 10);
+                for (int i = 0; i < samples.size(); i++) {
+                    CompoundTag s = samples.getCompound(i);
+                    String key = s.getString("id");
+                    if (!key.isBlank() && s.contains("tag", 10)) {
+                        ml.keyTags.put(key, s.getCompound("tag").copy());
+                    }
+                }
+            }
+            return ml;
         }
+        java.util.LinkedHashMap<String, CompoundTag> tags = new java.util.LinkedHashMap<>();
         if (tag.contains("keyTags", 9)) {
             ListTag samples = tag.getList("keyTags", 10);
             for (int i = 0; i < samples.size(); i++) {
                 CompoundTag s = samples.getCompound(i);
                 String key = s.getString("id");
                 if (!key.isBlank() && s.contains("tag", 10)) {
-                    ml.keyTags.put(key, s.getCompound("tag").copy());
+                    tags.put(key, s.getCompound("tag").copy());
+                }
+            }
+        }
+        if (tag.contains("entries")) {
+            ListTag entries = tag.getList("entries", 10); // 10 = CompoundTag
+            for (int i = 0; i < entries.size(); i++) {
+                CompoundTag e = entries.getCompound(i);
+                String oldKey = e.getString("block");
+                LegacyDataFixer.MigratedKey m =
+                        LegacyDataFixer.migrateMaterialKey(oldKey, tags.get(oldKey), from);
+                if (!m.ok()) {
+                    // 迁移失败：保留原键与原 tag（与迁移前行为一致），计数
+                    if (unupgraded != null) unupgraded[0]++;
+                    ml.blockCounts.merge(oldKey, e.getInt("count"), Integer::sum);
+                    CompoundTag oldTag = tags.get(oldKey);
+                    if (oldTag != null) ml.keyTags.putIfAbsent(oldKey, oldTag);
+                } else {
+                    // 同一新键合并数量；新 components 进 keyTags
+                    ml.blockCounts.merge(m.key(), e.getInt("count"), Integer::sum);
+                    if (m.components() != null) ml.keyTags.putIfAbsent(m.key(), m.components());
                 }
             }
         }
         return ml;
+    }
+
+    public static MaterialList deserialize(CompoundTag tag, int from) {
+        return deserialize(tag, from, null);
     }
 }

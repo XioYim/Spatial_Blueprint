@@ -4,8 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -19,7 +17,6 @@ import java.util.Set;
  * Persistent client-side settings for the blueprint preview feature.
  * Saved to {@code .minecraft/config/spatial_blueprint_preview.json}.
  */
-@OnlyIn(Dist.CLIENT)
 public class ClientPreviewSettings {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

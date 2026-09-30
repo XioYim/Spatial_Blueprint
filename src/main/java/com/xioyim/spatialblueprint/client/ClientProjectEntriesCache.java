@@ -3,11 +3,6 @@ package com.xioyim.spatialblueprint.client;
 import com.xioyim.spatialblueprint.network.BlueprintNetwork;
 import com.xioyim.spatialblueprint.network.C2S_RequestProjectEntriesMessage;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ProjectEntriesMessage;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 
@@ -18,8 +13,6 @@ import javax.annotation.Nullable;
  * <p>用法：打开子工程页时 {@link #requestFor}，随后界面跟随 {@link #version()}
  * 重建（与 {@link ClientLibraryCache} 同一套模式）；断开连接时清空。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientProjectEntriesCache {
 
     private ClientProjectEntriesCache() {}
@@ -36,7 +29,7 @@ public final class ClientProjectEntriesCache {
 
     /** 向服务端请求某项目的最新条目清单。 */
     public static void requestFor(String projectId) {
-        BlueprintNetwork.CHANNEL.sendToServer(new C2S_RequestProjectEntriesMessage(projectId));
+        BlueprintNetwork.sendToServer(new C2S_RequestProjectEntriesMessage(projectId));
     }
 
     /**
@@ -55,8 +48,7 @@ public final class ClientProjectEntriesCache {
     }
 
     /** 断开连接时清掉，免得把 A 服的项目条目带到 B 服的界面里。 */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    public static void clear() {
         cached = null;
     }
 }

@@ -1,17 +1,27 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * 服务端 → 客户端：选区内的非法方块 / 危险 NBT 方块 / 特殊实体列表（供检测报告展示）。
- * 客户端缓存到静态字段，由 {@code BlueprintReportScreen} 读取渲染。
+ * 客户端缓存到静态字段，由报告界面读取渲染。
  */
-public class S2C_IllegalBlocksListMessage {
+public class S2C_IllegalBlocksListMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_IllegalBlocksListMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_illegal_blocks_list_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_IllegalBlocksListMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_IllegalBlocksListMessage::encode, S2C_IllegalBlocksListMessage::decode);
 
     /** 单个方块条目：世界坐标 + 方块/实体注册 ID + 展示框内嵌物品 ID（非展示框为空串）。 */
     public record IllegalBlock(int x, int y, int z, String blockId, String itemId) {}
@@ -96,7 +106,7 @@ public class S2C_IllegalBlocksListMessage {
         this(illegalBlocks, dangerousBlocks, specialEntities, conversions, freeBlocks, List.of());
     }
 
-    /** 六参：无领地区块（保持 TASK-009 的调用形态可用）。 */
+    /** 六参：无领地区块（保持既有调用形态可用）。 */
     public S2C_IllegalBlocksListMessage(List<IllegalBlock> illegalBlocks, List<IllegalBlock> dangerousBlocks,
                                         List<SpecialEntity> specialEntities,
                                         List<ConversionEntry> conversions, List<String> freeBlocks,
@@ -124,6 +134,11 @@ public class S2C_IllegalBlocksListMessage {
         this.boxEntities = boxEntities;
         this.protectedChunks = protectedChunks;
         this.totalBlocks = totalBlocks;
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_IllegalBlocksListMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_IllegalBlocksListMessage msg, FriendlyByteBuf buf) {
@@ -282,18 +297,19 @@ public class S2C_IllegalBlocksListMessage {
         return list;
     }
 
-    public static void handle(S2C_IllegalBlocksListMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            clientIllegalBlocks = msg.illegalBlocks;
-            clientDangerousBlocks = msg.dangerousBlocks;
-            clientSpecialEntities = msg.specialEntities;
-            clientConversions = msg.conversions;
-            clientFreeBlocks = msg.freeBlocks;
-            clientBoxEntities = msg.boxEntities;
-            clientProtectedChunks = msg.protectedChunks;
-            clientTotalBlocks = msg.totalBlocks;
-            clientReceiveTime = System.currentTimeMillis();
-        });
-        ctx.get().setPacketHandled(true);
+    /**
+     * 只把字段写进本类的 static volatile 缓存 —— 不碰任何客户端类，因此不需要打桩
+     * （与其它 S2C 消息不同，专服加载本类没有类加载风险）。
+     */
+    public static void handle(S2C_IllegalBlocksListMessage msg, IPayloadContext ctx) {
+        clientIllegalBlocks = msg.illegalBlocks;
+        clientDangerousBlocks = msg.dangerousBlocks;
+        clientSpecialEntities = msg.specialEntities;
+        clientConversions = msg.conversions;
+        clientFreeBlocks = msg.freeBlocks;
+        clientBoxEntities = msg.boxEntities;
+        clientProtectedChunks = msg.protectedChunks;
+        clientTotalBlocks = msg.totalBlocks;
+        clientReceiveTime = System.currentTimeMillis();
     }
 }

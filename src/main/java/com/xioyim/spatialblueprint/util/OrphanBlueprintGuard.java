@@ -3,12 +3,9 @@ package com.xioyim.spatialblueprint.util;
 import com.xioyim.spatialblueprint.item.AbstractBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItems;
-import com.xioyim.spatialblueprint.network.BlueprintNetwork;
-import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.PacketDistributor;
 
 /**
  * 孤儿蓝图回收：蓝图物品指向的 {@code .litematic} 文件已经不在了。
@@ -38,9 +35,9 @@ public final class OrphanBlueprintGuard {
 
         player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
         ItemSyncUtil.syncHand(player, hand);
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
-                new S2C_OperationResult(false, "spatial_blueprint.error.blueprint_file_missing"));
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
+                new com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult(
+                        false, "spatial_blueprint.error.blueprint_file_missing"));
         return true;
     }
 

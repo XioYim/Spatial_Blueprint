@@ -3,17 +3,10 @@ package com.xioyim.spatialblueprint.client;
 import com.xioyim.spatialblueprint.network.BlueprintNetwork;
 import com.xioyim.spatialblueprint.network.C2S_RequestProjectStatusMessage;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 
 /** 客户端缓存：当前主手项目蓝图的实时条目状态。 */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientProjectStatusCache {
 
     private ClientProjectStatusCache() {}
@@ -25,7 +18,7 @@ public final class ClientProjectStatusCache {
     public static void request() {
         cached = null;
         receivedAtMillis = 0L;
-        BlueprintNetwork.CHANNEL.sendToServer(new C2S_RequestProjectStatusMessage());
+        BlueprintNetwork.sendToServer(new C2S_RequestProjectStatusMessage());
     }
 
     @Nullable
@@ -45,14 +38,12 @@ public final class ClientProjectStatusCache {
         cached = msg;
         receivedAtMillis = System.currentTimeMillis();
         version++;
-        ClientProjectPreview.onStatus(msg);
-        ClientSubProjectPreview.onStatus(msg);
+        // SB-TODO(P5): 预览渲染接线（ClientProjectPreview.onStatus / ClientSubProjectPreview.onStatus，SBN-016 / 017）
     }
 
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    public static void clear() {
         cached = null;
         receivedAtMillis = 0L;
-        ClientSubProjectPreview.clear();
+        // SB-TODO(P5): ClientSubProjectPreview.clear()（预览渲染，SBN-017）
     }
 }

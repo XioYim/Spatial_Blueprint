@@ -3,75 +3,75 @@ package com.xioyim.spatialblueprint;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.fml.event.config.ModConfigEvent;
+import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.fml.event.config.ModConfigEvent;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class BlueprintConfig {
-    public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
-    public static final ForgeConfigSpec SPEC;
+    public static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    public static final ModConfigSpec SPEC;
 
-    public static final ForgeConfigSpec.ConfigValue<List<String>> EXCLUDED_BLOCKS;
+    public static final ModConfigSpec.ConfigValue<List<String>> EXCLUDED_BLOCKS;
     /**
      * 不允许出现在容器（及任何 NBT 层级）里的<b>物品</b> ID。
      *
      * <p>与 {@link #EXCLUDED_BLOCKS} 互补：那份列表只覆盖有方块形式的物品，
      * 刷怪蛋、命令方块矿车这类<b>纯物品</b>不在方块注册表里，只能靠本列表拦。</p>
      */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> EXCLUDED_ITEMS;
+    public static final ModConfigSpec.ConfigValue<List<String>> EXCLUDED_ITEMS;
     public static final java.util.List<String> DEFAULT_BLOCK_SUBSTITUTIONS;
     /** 材料空间（非次元分区）总件数上限。0 = 自动取 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME} 的 1.2 倍。 */
-    public static final ForgeConfigSpec.IntValue MATERIAL_SPACE_MAX_COUNT;
+    public static final ModConfigSpec.IntValue MATERIAL_SPACE_MAX_COUNT;
     /** 构建材料复合键时忽略的顶层 NBT 字段。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> MATERIAL_SPACE_IGNORED_NBT_KEYS;
-    public static final ForgeConfigSpec.IntValue ANIMATION_SPEED;
-    public static final ForgeConfigSpec.IntValue ANIMATION_DURATION_MIN;
-    public static final ForgeConfigSpec.IntValue ANIMATION_DURATION_MAX;
+    public static final ModConfigSpec.ConfigValue<List<String>> MATERIAL_SPACE_IGNORED_NBT_KEYS;
+    public static final ModConfigSpec.IntValue ANIMATION_SPEED;
+    public static final ModConfigSpec.IntValue ANIMATION_DURATION_MIN;
+    public static final ModConfigSpec.IntValue ANIMATION_DURATION_MAX;
     // ── 构建时间自动分档（6档）────────────────────────────────────────────
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER1_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER1_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER2_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER2_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER3_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER3_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER4_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER4_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER5_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER5_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER6_MAX_BLOCKS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER6_SECONDS;
-    public static final ForgeConfigSpec.IntValue BUILD_TIME_TIER7_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER1_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER1_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER2_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER2_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER3_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER3_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER4_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER4_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER5_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER5_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER6_MAX_BLOCKS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER6_SECONDS;
+    public static final ModConfigSpec.IntValue BUILD_TIME_TIER7_SECONDS;
     // ── 捕获体积上限：按【蓝图类型】而非游戏模式 ────────────────────────────
     // 生存 / 创造不再影响上限 —— 一个结构该多大是由它要存成哪种蓝图决定的，
     // 与玩家当时处于什么模式无关。OP 一律豁免（上限 = ABSOLUTE_MAX_CAPTURE_VOLUME）。
     /** 空间蓝图体积上限。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_SPATIAL;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_SPATIAL;
     /** 投影蓝图体积上限。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_PROJECTION;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_PROJECTION;
     /** 次元蓝图体积上限。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_DIMENSIONAL;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_DIMENSIONAL;
     /** 工程蓝图体积上限。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_ENGINEERING;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_ENGINEERING;
     /** 投影模板体积上限。0 = 不额外限制（仍受 {@link #ABSOLUTE_MAX_CAPTURE_VOLUME} 硬底线约束）。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_TEMPLATE;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_TEMPLATE;
     /** 项目蓝图选区体积上限。0 = 不额外限制（仍受 ABSOLUTE_MAX_CAPTURE_VOLUME 约束）。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_PROJECTSET;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_PROJECTSET;
     /** 子工程方块数上限。与独立工程蓝图分开配置。 */
-    public static final ForgeConfigSpec.IntValue MAX_VOLUME_SUBPROJECT;
+    public static final ModConfigSpec.IntValue MAX_VOLUME_SUBPROJECT;
 
     // ── 磁盘日志保留天数（0 = 永久保留）────────────────────────────────────
-    public static final ForgeConfigSpec.IntValue LOG_RETENTION_DAYS_PLACEMENT;
-    public static final ForgeConfigSpec.IntValue LOG_RETENTION_DAYS_ADMIN;
+    public static final ModConfigSpec.IntValue LOG_RETENTION_DAYS_PLACEMENT;
+    public static final ModConfigSpec.IntValue LOG_RETENTION_DAYS_ADMIN;
 
     // ── 每玩家槽位上限（0 = 不限）──────────────────────────────────────────
     // 按 ownerUuid + category 统计；无主的旧蓝图不计入任何人，归档为 .bak 的天然不计。
-    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_SPATIAL;
-    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_PROJECTION;
-    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_DIMENSIONAL;
-    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_ENGINEERING;
-    public static final ForgeConfigSpec.IntValue SLOT_LIMIT_TEMPLATE;
+    public static final ModConfigSpec.IntValue SLOT_LIMIT_SPATIAL;
+    public static final ModConfigSpec.IntValue SLOT_LIMIT_PROJECTION;
+    public static final ModConfigSpec.IntValue SLOT_LIMIT_DIMENSIONAL;
+    public static final ModConfigSpec.IntValue SLOT_LIMIT_ENGINEERING;
+    public static final ModConfigSpec.IntValue SLOT_LIMIT_TEMPLATE;
     /**
      * Hard upper bound for capture volume regardless of config values.
      * To raise this limit, change the value here and rebuild the mod:
@@ -86,38 +86,38 @@ public class BlueprintConfig {
      * at this scale before raising further.</p>
      */
     public static final int ABSOLUTE_MAX_CAPTURE_VOLUME = 1_600_000;
-    public static final ForgeConfigSpec.IntValue PREVIEW_DISTANCE;
-    public static final ForgeConfigSpec.IntValue RENDER_CANCEL_MARGIN;
-    public static final ForgeConfigSpec.IntValue PREVIEW_BROADCAST_RADIUS;
-    public static final ForgeConfigSpec.IntValue PREVIEW_BROADCAST_INTERVAL;
-    public static final ForgeConfigSpec.IntValue EXTRA_COOLDOWN_SECONDS;
+    public static final ModConfigSpec.IntValue PREVIEW_DISTANCE;
+    public static final ModConfigSpec.IntValue RENDER_CANCEL_MARGIN;
+    public static final ModConfigSpec.IntValue PREVIEW_BROADCAST_RADIUS;
+    public static final ModConfigSpec.IntValue PREVIEW_BROADCAST_INTERVAL;
+    public static final ModConfigSpec.IntValue EXTRA_COOLDOWN_SECONDS;
     /** 子工程领取冷却（秒）。每个玩家的每个子工程单独计时。 */
-    public static final ForgeConfigSpec.IntValue SUBPROJECT_CLAIM_COOLDOWN;
-    public static final ForgeConfigSpec.IntValue MAX_UNDO_HISTORY;
-    public static final ForgeConfigSpec.BooleanValue LARGE_BLUEPRINT_BROADCAST_ENABLED;
-    public static final ForgeConfigSpec.IntValue LARGE_BLUEPRINT_BROADCAST_THRESHOLD;
-    public static final ForgeConfigSpec.ConfigValue<List<String>> LATE_PLACE_BLOCKS;
-    public static final ForgeConfigSpec.ConfigValue<List<String>> HIDDEN_PREVIEW_BLOCKS;
+    public static final ModConfigSpec.IntValue SUBPROJECT_CLAIM_COOLDOWN;
+    public static final ModConfigSpec.IntValue MAX_UNDO_HISTORY;
+    public static final ModConfigSpec.BooleanValue LARGE_BLUEPRINT_BROADCAST_ENABLED;
+    public static final ModConfigSpec.IntValue LARGE_BLUEPRINT_BROADCAST_THRESHOLD;
+    public static final ModConfigSpec.ConfigValue<List<String>> LATE_PLACE_BLOCKS;
+    public static final ModConfigSpec.ConfigValue<List<String>> HIDDEN_PREVIEW_BLOCKS;
     /** 是否对创造模式玩家也执行领地保护检测（BUG-01 修复开关）。默认 false（保持原行为）。 */
-    public static final ForgeConfigSpec.BooleanValue DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA;
+    public static final ModConfigSpec.BooleanValue DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA;
     // ── 上传安全检测 ────────────────────────────────────────────────────────
-    public static final ForgeConfigSpec.IntValue MAX_UPLOAD_FILE_BYTES;
-    public static final ForgeConfigSpec.IntValue MAX_NBT_DEPTH;
+    public static final ModConfigSpec.IntValue MAX_UPLOAD_FILE_BYTES;
+    public static final ModConfigSpec.IntValue MAX_NBT_DEPTH;
 
     /** 上传文件中单个方块实体 NBT 的字节预算，超出即拒收整个文件。 */
-    public static final ForgeConfigSpec.IntValue MAX_BLOCK_ENTITY_NBT_BYTES;
+    public static final ModConfigSpec.IntValue MAX_BLOCK_ENTITY_NBT_BYTES;
 
     /** 上传文件中所有方块实体 NBT 的字节总预算，超出即拒收整个文件。 */
-    public static final ForgeConfigSpec.IntValue MAX_TOTAL_NBT_BYTES;
-    public static final ForgeConfigSpec.IntValue MAX_BOUNDING_VOLUME;
-    public static final ForgeConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS;
-    public static final ForgeConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS_OP;
-    public static final ForgeConfigSpec.IntValue UPLOAD_MAX_PER_MINUTE;
+    public static final ModConfigSpec.IntValue MAX_TOTAL_NBT_BYTES;
+    public static final ModConfigSpec.IntValue MAX_BOUNDING_VOLUME;
+    public static final ModConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS;
+    public static final ModConfigSpec.IntValue UPLOAD_COOLDOWN_SECONDS_OP;
+    public static final ModConfigSpec.IntValue UPLOAD_MAX_PER_MINUTE;
     /** 特殊掉落物处理：放置完成发光时，列表中的物品设为永不自动消失。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> SPECIAL_DROP_ITEMS;
+    public static final ModConfigSpec.ConfigValue<List<String>> SPECIAL_DROP_ITEMS;
 
     /** 盒型实体：位置由 NBT 的 From/To 角点描述，而不是 Pos / TileXYZ。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> BOX_ENTITIES;
+    public static final ModConfigSpec.ConfigValue<List<String>> BOX_ENTITIES;
 
     static {
         BUILDER.push("general");
@@ -138,7 +138,9 @@ public class BlueprintConfig {
                         "minecraft:barrier",
                         "minecraft:nether_portal",
                         "minecraft:end_gateway",
-                        "minecraft:moving_piston"
+                        "minecraft:moving_piston",
+                        "minecraft:trial_spawner",
+                        "minecraft:vault"
                 ));
 
         EXCLUDED_ITEMS = BUILDER
@@ -161,7 +163,9 @@ public class BlueprintConfig {
                         "minecraft:chain_command_block",
                         "minecraft:end_portal_frame",
                         "minecraft:debug_stick",
-                        "minecraft:knowledge_book"
+                        "minecraft:knowledge_book",
+                        "minecraft:trial_spawner",
+                        "minecraft:vault"
                 ));
 
         BUILDER.comment("Capture volume limits per BLUEPRINT TYPE (non-air block count).",
@@ -463,7 +467,7 @@ public class BlueprintConfig {
                         + "Default: RepairCost — otherwise the same enchanted gear with a different\n"
                         + "anvil repair cost counts as a separate material and cannot be deposited.")
                 .define("materialSpaceIgnoredNbtKeys",
-                        (List<String>) new ArrayList<>(List.of("RepairCost")));
+                        (List<String>) new ArrayList<>(List.of("RepairCost", "minecraft:repair_cost")));
 
         BUILDER.pop();
         BUILDER.push("animation");

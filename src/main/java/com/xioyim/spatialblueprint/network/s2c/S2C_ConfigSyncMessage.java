@@ -1,10 +1,12 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * 服务端 → 客户端：玩家登录时同步捕捉体积上限与槽位上限。
@@ -14,7 +16,14 @@ import java.util.function.Supplier;
  *
  * <p>上限按<b>蓝图类型</b>划分，与游戏模式无关 —— 结构能有多大取决于它要存成哪种蓝图。</p>
  */
-public class S2C_ConfigSyncMessage {
+public class S2C_ConfigSyncMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_ConfigSyncMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_config_sync_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_ConfigSyncMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_ConfigSyncMessage::encode, S2C_ConfigSyncMessage::decode);
 
     /**
      * 客户端缓存 — 登录时由服务端写入；默认值与配置文件默认值一致，
@@ -102,9 +111,13 @@ public class S2C_ConfigSyncMessage {
         return new S2C_ConfigSyncMessage(vols, slots);
     }
 
-    public static void handle(S2C_ConfigSyncMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
+    @Override
+    public CustomPacketPayload.Type<S2C_ConfigSyncMessage> type() {
+        return TYPE;
+    }
+
+    public static void handle(S2C_ConfigSyncMessage msg, IPayloadContext ctx) {
+        handleClient(msg);
     }
 
     private static void handleClient(S2C_ConfigSyncMessage msg) {

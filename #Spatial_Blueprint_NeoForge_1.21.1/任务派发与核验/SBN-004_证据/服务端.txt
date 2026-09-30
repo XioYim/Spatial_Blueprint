@@ -1,0 +1,22 @@
+SBN-004 专服冒烟证据（A3，必做）
+方式：run\ 预置 eula.txt 与 server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询日志到 Done，
+再用 RCON（TcpClient 手写协议）发 `stop`，等待进程正常退出。未强杀进程树。
+
+关键日志（run/server-run.log 摘录，全文随 run/ 删除）：
+  [20:23:46] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: Spatial Blueprint mod loaded!
+  [20:23:46] [modloading-sync-worker/INFO] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] Generated 106 block substitution candidates -> block_substitutions.toml
+  [20:23:47] [main/INFO] [minecraft/RecipeManager]: Loaded 1291 recipes        ← blank_blueprint 配方解析错误已消失（P2 遗留问题随物品注册解决）
+  [20:23:53] [Server thread/INFO] [minecraft/DedicatedServer]: Done (4.876s)! For help, type "help"
+  [20:24:00] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+  [20:24:01] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+  BUILD SUCCESSFUL in 34s
+
+ERROR 统计：0 条（排除 Gradle 依赖扫描里 jar 路径含 error 字样的 DEBUG 行）。
+WARN 统计：18 条，全部为既有/无害项：
+  7 条 ModConfigSpec correction WARN（C1：与 1.20.1 行为一致，文件未手改时值不变）
+  5 条 Commands 参数歧义（原版）
+  4 条 DedicatedServer offline mode 提示（测试用 server.properties 设了 online-mode=false）
+  2 条 VanillaPackResourcesBuilder assets URL schema（开发环境原版）
+本 mod 相关 ERROR / 注册失败 / 缺失资源：无。
+run/ 已在取证后整目录删除。

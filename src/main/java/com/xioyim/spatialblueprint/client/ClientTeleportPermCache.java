@@ -1,11 +1,6 @@
 package com.xioyim.spatialblueprint.client;
 
 import net.minecraft.network.chat.Component;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 /**
  * 客户端缓存：本玩家能否使用蓝图传送。
@@ -13,8 +8,6 @@ import net.minecraftforge.fml.common.Mod;
  * <p>由 {@code S2C_TeleportPermMessage} 在登录、权限变更、切换游戏模式时推送。
  * 界面只用它决定按钮置灰与 tooltip 文案；真正的拦截在服务端，改包也没用。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientTeleportPermCache {
 
     /**
@@ -65,11 +58,6 @@ public final class ClientTeleportPermCache {
      *
      * <p>不复位的话，换服后传送按钮仍是亮的，点下去要等服务端拒绝才知道没权限。</p>
      */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clear();
-    }
-
     public static void clear() {
         allowed = false;
         cooldownUntil = 0L;

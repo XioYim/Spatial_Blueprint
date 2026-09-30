@@ -3,11 +3,6 @@ package com.xioyim.spatialblueprint.client;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.SafeNbtIo;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import java.io.ByteArrayInputStream;
 import java.util.Map;
@@ -25,8 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Lifecycle: populated when {@link com.xioyim.spatialblueprint.network.S2C_BlueprintDataMessage}
  * arrives; invalidated when the player cancels placement or is auto-cancelled by distance.</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public class ClientBlueprintCache {
 
     /**
@@ -202,19 +195,6 @@ public class ClientBlueprintCache {
         int received = 0;
         for (byte[] slot : slots) if (slot != null) received++;
         return received * 100 / slots.length;
-    }
-
-    /**
-     * 断线 / 退出世界时清空整份缓存。
-     *
-     * <p>缓存键是 blueprintId（UUID），跨存档不会串味，但内容是上一个服的结构数据，
-     * 留着既白占内存，也会让换服后打开的界面直接拿旧数据渲染出一份并不存在于本服的预览。
-     * 未完成的分片下载状态（DOWNLOADING / PENDING_CHUNKS）更是必须清 ——
-     * 连接已断，那些下载永远等不到回包，却会一直挡着重新发起请求。</p>
-     */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clearAll();
     }
 
     /** Clears ALL cached blueprint data (used by /sbp clearcache). */

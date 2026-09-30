@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.item.AbstractBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
 import com.xioyim.spatialblueprint.util.BlueprintData;
@@ -7,12 +8,13 @@ import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.ItemSyncUtil;
 import com.xioyim.spatialblueprint.util.WorldIdentity;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * C2S：客户端右键到一枚<b>不属于本存档</b>的工程 / 次元蓝图，请求服务端销毁它。
@@ -28,7 +30,19 @@ import java.util.function.Supplier;
  * <p>服务端会<b>重新校验</b> {@code worldUuid} 才销毁，不信任客户端的判断 ——
  * 否则伪造的包能把玩家自己手上正常的蓝图洗掉。</p>
  */
-public class C2S_DiscardForeignBlueprintMessage {
+public class C2S_DiscardForeignBlueprintMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_DiscardForeignBlueprintMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_discard_foreign_blueprint_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_DiscardForeignBlueprintMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_DiscardForeignBlueprintMessage::encode, C2S_DiscardForeignBlueprintMessage::decode);
+
+    @Override
+    public CustomPacketPayload.Type<C2S_DiscardForeignBlueprintMessage> type() {
+        return TYPE;
+    }
 
     public static void encode(C2S_DiscardForeignBlueprintMessage msg, FriendlyByteBuf buf) {}
 
@@ -36,25 +50,27 @@ public class C2S_DiscardForeignBlueprintMessage {
         return new C2S_DiscardForeignBlueprintMessage();
     }
 
-    public static void handle(C2S_DiscardForeignBlueprintMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(C2S_DiscardForeignBlueprintMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            for (InteractionHand hand : InteractionHand.values()) {
-                ItemStack stack = player.getItemInHand(hand);
-                String bpId = blueprintIdOf(stack);
-                if (bpId == null || bpId.isEmpty()) continue;
+    public static void handleServer(C2S_DiscardForeignBlueprintMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-                BlueprintData data = BlueprintStorage.load(bpId);
-                if (!isForeign(data)) continue;   // 服务端校验：确实是外档蓝图才销毁
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack stack = player.getItemInHand(hand);
+            String bpId = blueprintIdOf(stack);
+            if (bpId == null || bpId.isEmpty()) continue;
 
-                player.setItemInHand(hand, ItemStack.EMPTY);
-                ItemSyncUtil.syncHand(player, hand);
-                return;
-            }
-        });
-        ctx.get().setPacketHandled(true);
+            BlueprintData data = BlueprintStorage.load(bpId);
+            if (!isForeign(data)) continue;   // 服务端校验：确实是外档蓝图才销毁
+
+            player.setItemInHand(hand, ItemStack.EMPTY);
+            ItemSyncUtil.syncHand(player, hand);
+            return;
+        }
     }
 
     /**

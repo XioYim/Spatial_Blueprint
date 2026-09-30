@@ -1,0 +1,15 @@
+SBN-014 A1 编译证据
+时间：2026-09-30 19:57:20（第二次编译，与代码最终状态一致）
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat compileJava --rerun --offline
+输出（原样）：
+  To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to
+   https://docs.gradle.org/9.2.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+  Daemon will be stopped at the end of the build
+  Reusing configuration cache.
+  > Task :createMinecraftArtifacts UP-TO-DATE
+  > Task :compileJava
+  BUILD SUCCESSFUL in 9s
+  2 actionable tasks: 1 executed, 1 up-to-date
+  Configuration cache entry reused.
+警告计数：0（无「源文件:行号:」形态的警告行）。

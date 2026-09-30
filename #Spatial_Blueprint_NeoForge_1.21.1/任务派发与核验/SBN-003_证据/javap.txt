@@ -1,0 +1,32 @@
+SBN-003 javap 取证（J17～J20）
+merged.jar：build/moddev/artifacts/neoforge-21.1.252-merged.jar
+每条一行：类#成员 签名。
+
+J17 net.neoforged.neoforge.server.ServerLifecycleHooks#getCurrentServer() → MinecraftServer（static）
+    → WorldIdentity.refresh() 原样可用。
+
+J18 net.minecraft.world.level.saveddata.SavedData：
+  public abstract CompoundTag save(CompoundTag, HolderLookup$Provider)
+  SavedData$Factory 构造器：
+    Factory(Supplier<T>, BiFunction<CompoundTag, HolderLookup$Provider, T>)
+    Factory(Supplier<T>, BiFunction<CompoundTag, HolderLookup$Provider, T>, DataFixTypes)
+  访问器：constructor() / deserializer() / type()
+  net.minecraft.world.level.storage.DimensionDataStorage：
+    public <T extends SavedData> T computeIfAbsent(SavedData$Factory<T>, String)
+    public void save()
+    → 7 个类统一改 new SavedData.Factory<>(X::new, X::load, null)（第三参 DataFixTypes 传 null，与 HD 一致）；
+      WorldIdentity 的 setDirty + getDataStorage().save() 段照搬（save() 仍在）。
+
+J19 net.minecraft.core.component.DataComponentPatch：
+  public static final DataComponentPatch EMPTY
+  public static final Codec<DataComponentPatch> CODEC
+  public boolean isEmpty()
+  源码（DataComponentPatch.java）：CODEC = dispatchedMap(PatchKey.CODEC, PatchKey::valueCodec)；
+  PatchKey 编码：普通项 "minecraft:xxx" + 组件值；移除项 "!minecraft:xxx" + Codec.EMPTY（NBT 上为空 compound）。
+  ItemStack#getComponentsPatch() → DataComponentPatch；applyComponents(DataComponentPatch) 存在（SBN-002 J 系列已核）。
+  HolderLookup$Provider#createSerializationContext(DynamicOps) → RegistryOps（default 方法）。
+
+J20 ItemStack.CODEC（源码 ItemStack.java）：
+  DataComponentPatch.CODEC.optionalFieldOf("components", DataComponentPatch.EMPTY)
+  → 与 J19 是同一个 Codec；MaterialKey.of 用 DataComponentPatch.CODEC + provider 的序列化上下文编码
+    补丁，与 ItemStack.save 写出的 components 子标签同编码（t02 实测成立）。

@@ -1,26 +1,40 @@
 package com.xioyim.spatialblueprint.network;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.item.ProjectBlueprintItem;
 import com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage;
 import com.xioyim.spatialblueprint.util.ProjectData;
 import com.xioyim.spatialblueprint.util.ProjectProgressData;
 import com.xioyim.spatialblueprint.util.ProjectStorage;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /** C2S：查询玩家主手项目蓝图的实时条目状态。请求本身不携带任何项目标识。 */
-public class C2S_RequestProjectStatusMessage {
+public class C2S_RequestProjectStatusMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_RequestProjectStatusMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_request_project_status_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_RequestProjectStatusMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_RequestProjectStatusMessage::encode, C2S_RequestProjectStatusMessage::decode);
 
     public C2S_RequestProjectStatusMessage() {}
+
+    @Override
+    public CustomPacketPayload.Type<C2S_RequestProjectStatusMessage> type() {
+        return TYPE;
+    }
 
     public static void encode(C2S_RequestProjectStatusMessage msg, FriendlyByteBuf buf) {}
 
@@ -28,13 +42,14 @@ public class C2S_RequestProjectStatusMessage {
         return new C2S_RequestProjectStatusMessage();
     }
 
-    public static void handle(C2S_RequestProjectStatusMessage msg,
-                              Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player != null) sendStatus(player);
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(C2S_RequestProjectStatusMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
+
+    public static void handleServer(C2S_RequestProjectStatusMessage msg, ServerPlayer player) {
+        if (player != null) sendStatus(player);
     }
 
     /** 把主手（或副手）项目蓝图的最新状态推给玩家；领取成功后也调用这一入口。 */
@@ -225,7 +240,6 @@ public class C2S_RequestProjectStatusMessage {
     }
 
     private static void send(ServerPlayer player, S2C_ProjectStatusMessage message) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player), message);
+        BlueprintNetwork.sendToPlayer(player, message);
     }
 }

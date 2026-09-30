@@ -1,0 +1,38 @@
+SBN-015 A2 GameTest 证据（客户端缓存纯逻辑层 + 分边门禁）
+时间：2026-09-30 21:21:05 ～ 21:21:24（第一轮 21:20:4x 已跑过一轮，本文件为证据轮 = 第二轮的完整 stdout）
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat runGameTestServer --offline
+
+批次结果：
+  [21:21:24] [Server thread/INFO] [minecraft/GameTestServer]: ========= 126 GAME TESTS COMPLETE IN 5.361 s ======================
+  [21:21:24] [Server thread/INFO] [minecraft/GameTestServer]: All 126 required tests passed :)
+  BUILD SUCCESSFUL in 28s（gradle 任务尾部）
+
+@GameTest 注解实数（C2，grep 统计）：126 = SBN001～014 既有 119 + SBN015Tests 新增 7
+  （t01_blueprintCache / t02_otherDownload / t03_projectCaches / t04_smallCaches / t05_configAccess /
+    t06_itemClientRead / t07_logoutClears）→ 与批次 126 一致。
+
+t01 要点：真实 BlueprintData → NbtIo.writeCompressed → BlueprintNetwork.splitIntoChunks（服务端同一逻辑）→
+  倒序喂入 receiveChunk → 重组后 serialize() 与原件逐字相等；同份字节切 2 块乱序重组相等；
+  缺块不挂缓存（进度 50%）；超块数（MAX_TOTAL_CHUNKS+1）/ 越界下标（5、-1）丢弃；
+  markFailed / clearFailed；clearAll 全空。
+  （分块消息的私有字段在测试里用反射读取；无 getter、生产类未加。）
+t02：他人预览条目 + OtherPlayerDownloadListener.register → ClientBlueprintCache.put → 条目挂上 fullData；
+  未登记 id 不挂；origin=null 广播移除条目。
+t03：由 C2S handleServer 真实产出 S2C_ProjectList / ProjectEntries / ProjectStatus（fakePlayerSink 截获）→
+  喂三个缓存 → 字段逐项相等（列表含本项目、条目 found=true、状态 authorSize 与项目一致）；clear()。
+t04：WorldIdentity（set/belongsToCurrentWorld/clear）、TeleportPerm（set/冷却/clear）、CaptureCooldown
+  （start(1) 冷却中、remainingSeconds=1、start(0) 立即到期）、ConfigMirror（真实 S2C_ConfigValuesMessage 经
+  OP 请求截获 → onReceive → snapshotVersion=1、按稳定 ID 读到本地盘值）。
+t05：ConfigAccess 按完整路径（C16）读写 —— 无快照回退本地值、pending 优先、快照到达后快照优先且不写本地 spec、
+  defaultValue 与 ConfigRegistry 一致；越界值 ConfigRegistry.applyInt 拒绝并保留原值（ModConfigSpec ValueSpec.test）。
+t06：投影蓝图带 id + 缓存有 → 返回缓存实例；无 id + 内联 → 内联升级数据（short_grass）且只读（组件前后逐字相等）；
+  空间蓝图无缓存 → null；ProjectBlueprintItem 三处（isProjectMissing / knownProjectDimension / canEnterQuickPlan）
+  在缓存无 / found=false / found=true+作者盒状态下逐一断言。
+t07：12 个缓存逐个填数据 → SpatialBlueprintClient.clearAllCaches()（入口监听实际调用的方法）→ 全部清空。
+
+分边门禁（A3 的一半，两份日志都算）：
+  本 GameTest stdout 里 invalid dist = 0、Attempted to load class = 0、NoClassDefFoundError = 0、
+  ClassNotFoundException = 0；本 mod ERROR = 0。
+  说明：P5 起 client 包类由专用服务端路径「按需加载」——S2C 的 handle 体、物品 *Client 读法只在客户端执行；
+  本机 runGameTestServer 的类路径含客户端类，不构成分边证明的全部（另一半靠 runServer，见 服务端.txt）。

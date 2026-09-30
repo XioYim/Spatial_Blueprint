@@ -1,0 +1,12 @@
+SBN-009 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-30 10:14 左右（BUILD SUCCESSFUL in 13s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务无编译失败记录（首跑即 0 警告；测试文件里一处多余的内部容器类在跑测试前清理，不影响编译）。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 13s
+2 actionable tasks: 1 executed, 1 up-to-date

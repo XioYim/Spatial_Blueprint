@@ -1,0 +1,22 @@
+SBN-007 专服冒烟证据（A3，必做）
+方式：run\ 预置 eula.txt 与 server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询日志到 Done，
+再用 RCON（Source 协议，PowerShell TcpClient 手写）发 `stop`，等待进程正常退出。未强杀进程树。
+
+关键日志（run/server-run.log 摘录，全文随 run/ 删除）：
+  [23:59:43] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: [BlueprintFileLogger] Log directory: D:\...\run\config\spatial_blueprint\logs
+  [23:59:43] [modloading-worker-0/INFO] [co.xi.sp.SpatialBlueprintMod/]: Spatial Blueprint mod loaded!
+  [23:59:46] [Server thread/INFO] [minecraft/DedicatedServer]: Preparing level "world"
+  [23:59:46] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.646s)! For help, type "help"
+  [23:59:46] [Server thread/INFO] [minecraft/DedicatedServer]: Starting remote control listener
+  [23:59:46] [Server thread/INFO] [minecraft/RconThread]: RCON running on 0.0.0.0:25585
+  [00:00:00] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+  [00:00:00] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+  [00:00:00] [Server thread/INFO] [minecraft/GenericThread]: Thread RCON Listener stopped
+
+BlueprintFileLogger：init 按 1.20.1 建出 config/spatial_blueprint/logs 目录（日志行见上；目录只在
+实际写日志时才落文件，本次冒烟无操作故目录为空，属既有行为）。
+
+ERROR 统计：0 条。
+WARN 统计：19 条，全部为既有/无害项（命令歧义 5、配置 correction 8、assets URL 2、offline 提示 4）。
+run/ 已在取证后整目录删除。

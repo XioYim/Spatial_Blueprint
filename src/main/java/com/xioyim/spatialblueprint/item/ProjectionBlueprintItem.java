@@ -1,7 +1,5 @@
 package com.xioyim.spatialblueprint.item;
 
-import com.xioyim.spatialblueprint.gui.PlacementScreen;
-import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.MaterialList;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -9,27 +7,20 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
  * 投影蓝图：记录区域内所有方块的完整数据及材料清单，不执行放置操作。
  *
- * <p>NBT 结构：
- * <ul>
- *   <li>{@code blueprintName}  — 蓝图显示名称</li>
- *   <li>{@code blueprintId}    — 蓝图文件 UUID（{@code <uuid>.litematic}）</li>
- *   <li>{@code blueprintData}  — 内联蓝图数据（用于多人客户端无法访问服务端文件的情况）</li>
- * </ul>
+ * <p>数据存法：{@code blueprint_id} 组件只存文件引用（D1），
  * 材料清单内嵌于 {@code BlueprintData.materialList}，随蓝图文件一起序列化，
- * 无需额外 NBT key，也没有单独的材料清单文件。</p>
+ * 没有单独的材料清单文件。</p>
  */
 public class ProjectionBlueprintItem extends AbstractBlueprintItem {
 
@@ -84,19 +75,14 @@ public class ProjectionBlueprintItem extends AbstractBlueprintItem {
         return InteractionResult.SUCCESS;
     }
 
-    @OnlyIn(Dist.CLIENT)
     private static void openPlacementScreen(Player player, ItemStack stack) {
-        BlueprintData data = getBlueprintDataClient(stack);
-        // 强制捕获(FORCE)的蓝图：仅 OP 创造模式可用
-        if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard.intercept(player, stack, data)) return;
-        // data==null 时也允许进入界面，PlacementScreen 内部会显示下载按钮并请求服务端数据
-        net.minecraft.client.Minecraft.getInstance().setScreen(new PlacementScreen(player, stack, data));
+        // SB-TODO(P6): 客户端打开放置界面（ForceBlueprintGuard 拦截、PlacementScreen）
     }
 
     // ── Tooltip ───────────────────────────────────────────────────────────
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level,
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltip, TooltipFlag flag) {
         // 材料数量（内嵌于 BlueprintData.materialList）
         MaterialList ml = getMaterialListForTooltip(stack);
@@ -109,10 +95,10 @@ public class ProjectionBlueprintItem extends AbstractBlueprintItem {
         }
     }
 
-    // ── NBT 辅助（共用方法继承自 AbstractBlueprintItem）────────────────────
+    // ── 组件辅助（共用方法继承自 AbstractBlueprintItem）────────────────────
     // getBlueprintName / setBlueprintName / getBlueprintId / setBlueprintId /
-    // getBlueprintData / getMaterialList / getDepositedMaterials / getDepositedCount /
-    // setDepositedCount / clearDepositedMaterials / hasSufficientMaterials
+    // getBlueprintDataServer / getMaterialListServer / getMaterialListClient /
+    // getMaterialListForTooltip
 
 
 }

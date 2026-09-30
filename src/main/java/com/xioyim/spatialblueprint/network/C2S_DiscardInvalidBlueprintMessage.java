@@ -1,17 +1,19 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItem;
 import com.xioyim.spatialblueprint.item.SpatialBlueprintItems;
 import com.xioyim.spatialblueprint.util.BlueprintData;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import com.xioyim.spatialblueprint.util.ItemSyncUtil;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * C2S：客户端右键到一枚指向<b>已放置</b>结构的废蓝图，请求服务端把它换成空白蓝图。
@@ -23,7 +25,14 @@ import java.util.function.Supplier;
  * <p>服务端会<b>重新校验</b> {@code placed} 才替换，不信任客户端的判断 ——
  * 否则伪造的包能把玩家自己手上正常的蓝图洗掉。</p>
  */
-public class C2S_DiscardInvalidBlueprintMessage {
+public class C2S_DiscardInvalidBlueprintMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<C2S_DiscardInvalidBlueprintMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "c2s_discard_invalid_blueprint_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, C2S_DiscardInvalidBlueprintMessage> STREAM_CODEC =
+            StreamCodec.ofMember(C2S_DiscardInvalidBlueprintMessage::encode, C2S_DiscardInvalidBlueprintMessage::decode);
 
     public static void encode(C2S_DiscardInvalidBlueprintMessage msg, FriendlyByteBuf buf) {}
 
@@ -31,26 +40,33 @@ public class C2S_DiscardInvalidBlueprintMessage {
         return new C2S_DiscardInvalidBlueprintMessage();
     }
 
-    public static void handle(C2S_DiscardInvalidBlueprintMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    @Override
+    public CustomPacketPayload.Type<C2S_DiscardInvalidBlueprintMessage> type() {
+        return TYPE;
+    }
 
-            for (InteractionHand hand : InteractionHand.values()) {
-                ItemStack stack = player.getItemInHand(hand);
-                if (!(stack.getItem() instanceof SpatialBlueprintItem)) continue;
+    public static void handle(C2S_DiscardInvalidBlueprintMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-                String bpId = SpatialBlueprintItem.getBlueprintId(stack);
-                if (bpId == null || bpId.isEmpty()) continue;
+    public static void handleServer(C2S_DiscardInvalidBlueprintMessage msg, ServerPlayer player) {
+        if (player == null) return;
 
-                BlueprintData data = BlueprintStorage.load(bpId);
-                if (data == null || !data.placed) continue;  // 服务端校验：确实已放置才回收
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack stack = player.getItemInHand(hand);
+            if (!(stack.getItem() instanceof SpatialBlueprintItem)) continue;
 
-                player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
-                ItemSyncUtil.syncHand(player, hand);
-                return;
-            }
-        });
-        ctx.get().setPacketHandled(true);
+            String bpId = SpatialBlueprintItem.getBlueprintId(stack);
+            if (bpId == null || bpId.isEmpty()) continue;
+
+            BlueprintData data = BlueprintStorage.load(bpId);
+            if (data == null || !data.placed) continue;  // 服务端校验：确实已放置才回收
+
+            player.setItemInHand(hand, new ItemStack(SpatialBlueprintItems.BLANK_BLUEPRINT.get()));
+            ItemSyncUtil.syncHand(player, hand);
+            return;
+        }
     }
 }

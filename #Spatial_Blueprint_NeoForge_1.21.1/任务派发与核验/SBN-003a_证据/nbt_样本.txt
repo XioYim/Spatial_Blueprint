@@ -1,0 +1,56 @@
+﻿SBN-003a 真实 NBT 样本（证据）：开关型组件的补丁编码
+采集：2026-09-29 19:12（GameTest 服务器内，临时 t99 用例；采集后已从 SBN003Tests.java 删除）
+来源：全部由真实 ItemStack + set(DataComponents.XXX, …) 后 ItemStack.save(provider) 得到。
+格式：NbtUtils.prettyPrint 输出的 SNBT 文本。
+样本与测试对应：
+  unbreakable-default-components   钻石镐 + Unbreakable(true)：编码 {"minecraft:unbreakable": {}}（空 compound）
+  unbreakable-default-normalized   normalize 后仍保留（SBN-003a 修复点；修复前会被整条剔除）
+  unbreakable-hidden-components    钻石镐 + Unbreakable(false)：{"minecraft:unbreakable": {"show_in_tooltip": 0b}}，与默认编码不同
+  hide-tooltip-stick-components    木棍 + HIDE_TOOLTIP（Unit 组件）：{"minecraft:hide_tooltip": {}}（空 compound）
+  hide-tooltip-stick-normalized    normalize 后仍保留
+（Unbreakable(true) 的 {} 来自 DFU optionalFieldOf：值等于默认时省略字段，见 datafixerupper 8.0.16 源码。）
+
+### unbreakable-default-components
+ { "minecraft:unbreakable": {
+    }
+}
+### unbreakable-default-normalized
+ { "minecraft:unbreakable": {
+    }
+}
+### unbreakable-hidden-components
+ { "minecraft:unbreakable": {
+    "show_in_tooltip": 0b
+  }
+}
+### hide-tooltip-stick-components
+ { "minecraft:hide_tooltip": {
+    }
+}
+### hide-tooltip-stick-normalized
+ { "minecraft:hide_tooltip": {
+    }
+}
+[19:12:32] [Server thread/DEBUG] [ne.ne.ne.co.ModConfigSpec/CORE]: Range value 0.0 is not within its bounds 1.0-1600000.0
+[19:12:32] [Server thread/INFO] [minecraft/GameTestServer]: [+++++++++++++++++++++++++++]
+[19:12:32] [Server thread/INFO] [minecraft/GameTestServer]: [+++++++++++++++++++++++++++]
+[19:12:32] [Server thread/INFO] [minecraft/GameTestServer]: ========= 27 GAME TESTS COMPLETE IN 691.5 ms ======================
+[19:12:32] [Server thread/INFO] [minecraft/GameTestServer]: All 27 required tests passed :)
+[19:12:32] [Server thread/INFO] [minecraft/GameTestServer]: ====================================================
+[19:12:32] [Server thread/INFO] [minecraft/MinecraftServer]: Stopping server
+[19:12:32] [Server thread/INFO] [minecraft/MinecraftServer]: Saving players
+[19:12:32] [Server thread/INFO] [minecraft/MinecraftServer]: Saving worlds
+[19:12:33] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:overworld
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_end
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: Saving chunks for level 'ServerLevel[Test Level]'/minecraft:the_nether
+[19:12:34] [Server thread/DEBUG] [ne.ne.ne.co.CommonHooks/WP]: Gathered mod list to write to world save Test Level
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (world): All chunks are saved
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM1): All chunks are saved
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage (DIM-1): All chunks are saved
+[19:12:34] [Server thread/INFO] [minecraft/MinecraftServer]: ThreadedAnvilChunkStorage: All dimensions are saved
+[19:12:34] [Server thread/DEBUG] [ne.ne.fm.co.ConfigTracker/CONFIG]: Unloading configs type SERVER
+[19:12:34] [Server thread/INFO] [minecraft/GameTestServer]: Game test server shutting down
+
+BUILD SUCCESSFUL in 23s
+8 actionable tasks: 2 executed, 6 up-to-date
+Configuration cache entry reused.

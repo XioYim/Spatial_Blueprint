@@ -1,0 +1,19 @@
+SBN-006 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 22:05 左右
+日志关键行：
+  Running test batch 'defaultBatch:0' (48 tests)...
+  [++++++++++++++++++++++++++++++++++++++++++++++++]
+  ========= 48 GAME TESTS COMPLETE IN 2.080 s ======================
+  All 48 required tests passed :)
+用例数核对（C2）：SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 = 48。
+SBN001～005 的 41 条照旧全过。
+t01 32 个 payload ID 命名 + 互不重复（24 新 + 8 旧）；
+t02 24 个消息编码往返字节逐字相等（LibrarySync 用真实摘要、MaterialSpaceSync 带真实 CompoundTag）；
+t03 上限：6 组（ConfigValues/LibrarySync/MaterialSpaceSync/VoidBagSync 超限抛 DecoderException；
+    ApplyConfig 300→256、BlueprintMaterials 400→300 截断）；
+t04 物品状态 handler（SetPoint/ClearPoints/SetName 组件变化 + 非法 index 负例 + UpdateOffset/UpdateSettings 有意不写 + 非 OP 范围点负例）；
+t05 ApplyConfig（非 OP 拒绝；OP 合法值生效 + ConfigValues + saved；越界值 saved_partial 且值保持）；
+t06 蓝图库归属（B 改名/删除被拒且文件不变；A 改名/删除成功）；
+t07 材料存入（石头 3 个与附魔剑 1 把入库、背包减少、回推 sync；请求材料空间回 sync）。
+run/ 已整目录删除。

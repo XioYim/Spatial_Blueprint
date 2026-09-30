@@ -1,0 +1,22 @@
+SBN-006 编译证据（A1）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat compileJava --rerun
+最终通过：2026-09-29 22:05（BUILD SUCCESSFUL in 13s）
+警告计数：0 条（对构建输出全文按「源文件:行号:」统计，命中 0 行）。
+
+本任务期间的构建失败与处理（均已修复）：
+1. 首编译 1 错：C2S_MaterialDepositMessage 的 `template.getItem().getMaxStackSize()` —— 1.21 上限在栈上，
+   改 `template.getMaxStackSize()`（迁移计划书 API 表口径）。
+2. SBN006Tests 首编译 3 错：ApplyConfig / BlueprintMaterials 的字段私有（截断断言改从再编码字节读回计数）。
+3. 运行时 3 次失败与修复：
+   t07 首版直接存石头 —— 存入要求「手持带材料清单的蓝图 + 清单含该键 + 非创造」，
+   改为真实保存一份带 materialList 的投影蓝图并手持后通过；
+   t05 配置 id 写错（漏 general. 前缀）→ 改用 ConfigRegistry.idOf(MAX_VOLUME_SPATIAL) 计算；
+   t05 的 OP 权限：GameTest 服 op-permission-level = 0，PlayerList.op() 条目 level 也是 0、
+   hasPermissions(2) 仍 false → 测试直接写 ServerOpListEntry(profile, 4, false)。
+   以上诊断过程（SBN-DIAG 打印）已随修复删除。
+
+最终输出尾部：
+> Task :createMinecraftArtifacts UP-TO-DATE
+> Task :compileJava
+BUILD SUCCESSFUL in 13s
+2 actionable tasks: 1 executed, 1 up-to-date

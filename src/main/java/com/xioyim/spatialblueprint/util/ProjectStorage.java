@@ -3,7 +3,7 @@ package com.xioyim.spatialblueprint.util;
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraftforge.fml.loading.FMLPaths;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -195,7 +195,7 @@ public class ProjectStorage {
     private static void writeAtomic(CompoundTag tag, Path target) throws IOException {
         Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
         try {
-            NbtIo.writeCompressed(tag, tmp.toFile());
+            NbtIo.writeCompressed(tag, tmp);
             try {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException ex) {

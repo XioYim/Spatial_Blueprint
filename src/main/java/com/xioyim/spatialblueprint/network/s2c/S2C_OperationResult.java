@@ -1,15 +1,20 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.gui.ErrorToastSupport;
-import com.xioyim.spatialblueprint.util.NotifySound;
-import net.minecraft.client.Minecraft;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.chat.Component;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+public class S2C_OperationResult implements CustomPacketPayload {
 
-public class S2C_OperationResult {
+    public static final CustomPacketPayload.Type<S2C_OperationResult> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_operation_result"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_OperationResult> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_OperationResult::encode, S2C_OperationResult::decode);
 
     public final boolean success;
     public final String messageKey;
@@ -59,6 +64,11 @@ public class S2C_OperationResult {
         return new S2C_OperationResult(false, messageKey, detail);
     }
 
+    @Override
+    public CustomPacketPayload.Type<S2C_OperationResult> type() {
+        return TYPE;
+    }
+
     public static void encode(S2C_OperationResult msg, FriendlyByteBuf buf) {
         buf.writeBoolean(msg.success);
         buf.writeUtf(msg.messageKey, 256);
@@ -82,151 +92,7 @@ public class S2C_OperationResult {
         return new S2C_OperationResult(success, messageKey, detail, detailArgs);
     }
 
-    public static void handle(S2C_OperationResult msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    // 必须标 @OnlyIn：本方法体里读 mc.screen（类型是 Screen）、构造 ErrorToastScreen，
-    // 不剥离的话专用服务端加载本类、验证方法时就会去加载 Screen 而崩溃。
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
-    private static void handleClient(S2C_OperationResult msg) {
-        Minecraft mc = Minecraft.getInstance();
-
-        if (!msg.messageKey.isEmpty() && mc.player != null) {
-            // 上传成功走横幅（不再聊天）；其余成功保持聊天
-            boolean uploadBanner = msg.messageKey.startsWith("spatial_blueprint.message.upload_success");
-
-            Component text;
-            if (msg.success) {
-                text = msg.detail.isEmpty()
-                        ? Component.translatable(msg.messageKey).copy()
-                                .withStyle(net.minecraft.ChatFormatting.GREEN, net.minecraft.ChatFormatting.BOLD)
-                        : Component.translatable(msg.messageKey).copy()
-                                .withStyle(net.minecraft.ChatFormatting.GREEN, net.minecraft.ChatFormatting.BOLD)
-                                .append(Component.literal("\n"))
-                                .append(successDetail(msg));
-            } else if (msg.detail.isEmpty()) {
-                text = Component.translatable(msg.messageKey).copy()
-                        .withStyle(net.minecraft.ChatFormatting.RED, net.minecraft.ChatFormatting.BOLD);
-            } else {
-                text = Component.translatable(msg.messageKey).copy()
-                        .withStyle(net.minecraft.ChatFormatting.RED, net.minecraft.ChatFormatting.BOLD)
-                        .append(Component.literal("\n"))
-                        .append(buildDetail(msg));
-            }
-
-            if (msg.success) {
-                NotifySound.client();
-                // 成功消息：关闭特定界面
-                if (mc.screen instanceof com.xioyim.spatialblueprint.gui.PointSelectionScreen
-                        || mc.screen instanceof com.xioyim.spatialblueprint.gui.PlacementScreen) {
-                    mc.setScreen(null);
-                }
-                if (uploadBanner) {
-                    com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(text);
-                } else {
-                    mc.player.displayClientMessage(text, false);
-                }
-            } else {
-                // 失败消息一律走横幅。
-                // 不支持 ErrorToastSupport 的界面（以及没有任何界面时，例如玩家在世界中
-                // 直接触发的服务端报错）由 ErrorToastScreen 顶上，关闭后回到原界面/游戏。
-                // 上传被拒且当前停在「上传中…」报告页时，先退回上传页 —— 那份扫描不会再有
-                // 结果，一直停在 loading 只会卡死页面。
-                if (mc.screen instanceof com.xioyim.spatialblueprint.gui.UploadReportScreen urs
-                        && urs.isLoading()) {
-                    mc.setScreen(urs.getParentScreen());
-                }
-                if (mc.screen instanceof com.xioyim.spatialblueprint.gui.PointSelectionScreen
-                        || mc.screen instanceof com.xioyim.spatialblueprint.gui.PlacementScreen) {
-                    // 这两个界面在失败后本就该关掉（原有行为），关掉后横幅直接盖在游戏上
-                    if (!(mc.screen instanceof ErrorToastSupport)) mc.setScreen(null);
-                }
-                NotifySound.clientError();
-                com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(text);
-            }
-        }
-    }
-
-    /** 给一段文本上色。 */
-    private static Component col(Object value, net.minecraft.ChatFormatting fmt) {
-        return Component.literal(String.valueOf(value)).withStyle(fmt);
-    }
-
-    /** 成功 detail 的精细着色：槽位行「当前xx的槽位状态（已用黄/上限绿）」。 */
-    private static Component successDetail(S2C_OperationResult msg) {
-        Object[] a = msg.detailArgs;
-        if (a.length >= 2) {
-            String preKey = null, postKey = null;
-            switch (msg.detail) {
-                case "spatial_blueprint.message.upload_success.slots.create":
-                    preKey = "spatial_blueprint.message.upload_success.slots.create.pre";
-                    postKey = "spatial_blueprint.message.upload_success.slots.create.post";
-                    break;
-                case "spatial_blueprint.message.upload_success.slots.project":
-                    preKey = "spatial_blueprint.message.upload_success.slots.project.pre";
-                    postKey = "spatial_blueprint.message.upload_success.slots.project.post";
-                    break;
-                case "spatial_blueprint.message.upload_success.slots.template":
-                    preKey = "spatial_blueprint.message.upload_success.slots.template.pre";
-                    postKey = "spatial_blueprint.message.upload_success.slots.template.post";
-                    break;
-                default:
-                    break;
-            }
-            if (preKey != null) {
-                return Component.translatable(preKey)
-                        .append(col(a[0], net.minecraft.ChatFormatting.YELLOW))
-                        .append(Component.literal("/"))
-                        .append(col(a[1], net.minecraft.ChatFormatting.GREEN))
-                        .append(Component.translatable(postKey));
-            }
-        }
-        return Component.translatable(msg.detail, (Object[]) msg.detailArgs);
-    }
-
-    /**
-     * detail 行的精细着色：服务端把「当前值 / 上限」等以参数形式传入，translatable 无法给
-     * 单个参数上色（塞 Component 会打出 toString），因此对已知模板手工分段：当前值→黄、
-     * 上限→绿；维度等次要信息保持默认白。未知模板整段浅青回退。
-     */
-    private static Component buildDetail(S2C_OperationResult msg) {
-        Object[] a = msg.detailArgs;
-        switch (msg.detail) {
-            case "spatial_blueprint.error.detail.file_size":
-                if (a.length >= 2) {
-                    return Component.translatable("spatial_blueprint.error.detail.file.pre")
-                            .append(col(a[0], net.minecraft.ChatFormatting.YELLOW))
-                            .append(Component.translatable("spatial_blueprint.error.detail.file.sep"))
-                            .append(col(a[1], net.minecraft.ChatFormatting.GREEN));
-                }
-                break;
-            case "spatial_blueprint.error.detail.bounding_volume":
-                if (a.length >= 5) {
-                    return Component.translatable("spatial_blueprint.error.detail.bbox.pre")
-                            .append(col(a[0], net.minecraft.ChatFormatting.YELLOW))
-                            .append(Component.translatable("spatial_blueprint.error.detail.bbox.open"))
-                            .append(Component.literal(a[1] + "×" + a[2] + "×" + a[3]))
-                            .append(Component.translatable("spatial_blueprint.error.detail.bbox.close"))
-                            .append(col(a[4], net.minecraft.ChatFormatting.GREEN))
-                            .append(Component.translatable("spatial_blueprint.error.detail.bbox.suffix"));
-                }
-                break;
-            case "spatial_blueprint.error.detail.block_count":
-                if (a.length >= 2) {
-                    return Component.translatable("spatial_blueprint.error.detail.block.pre")
-                            .append(col(a[0], net.minecraft.ChatFormatting.YELLOW))
-                            .append(Component.translatable("spatial_blueprint.error.detail.block.mid"))
-                            .append(col(a[1], net.minecraft.ChatFormatting.GREEN))
-                            .append(Component.translatable("spatial_blueprint.error.detail.block.suffix"));
-                }
-                break;
-            default:
-                break;
-        }
-        // 未知模板回退：整段浅青
-        return Component.translatable(msg.detail, (Object[]) msg.detailArgs)
-                .copy().withStyle(net.minecraft.ChatFormatting.AQUA);
+    public static void handle(S2C_OperationResult msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端横幅 / 聊天提示（成功绿色、失败 ErrorToastScreen，含 detail 精细着色与界面关闭）
     }
 }

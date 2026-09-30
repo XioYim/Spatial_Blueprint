@@ -1,0 +1,20 @@
+SBN-005 验收
+验收：2026-09-29 23:10:00（云端主会话）
+对象：task/SBN-005 @ 0becf29（内容主提交 21c35c1）
+结论：PASS → 合并进 neoforge-1.21.1
+
+V1 改动清单：f9e6a16..0becf29 的 14 个 .java 与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 41 进 41 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR）；A4 云端自跑 grep：network\ 与 server\ 只在 BlueprintNetwork 类注释里出现「OnlyIn」字样，
+   无任何 net.minecraft.client / 本 mod client / gui 引用 —— 通过。
+V3 7 个新搬消息 + BlueprintValidator 与 1.20.1 源 diff -w：残差只有 TYPE / STREAM_CODEC / type()、handle → handleServer 拆分、
+   CHANNEL.send → sendToPlayer、S2C 客户端体打桩；decode 上限校验逐个计数对上（Chunk 3/3、Data 2/2、OperationResult 3/3、IllegalBlocksList 1/1）；
+   C2S_RequestBlueprintDataMessage 的空 id 判定、500 ms 限流、canManageBlueprint、三种失败回包原样；BlueprintValidator 零残差 —— 通过。
+   BlueprintNetwork：event.registrar(protocolVersion())、splitIntoChunks / chunkCount 抽取后 sendBlueprintTo 行为不变、fakePlayerSink 注释写明理由 —— 通过。
+V4 8 条注册方向全部正确（2 条 playToServer、6 条 playToClient）；A4 为空 —— 通过。
+V5 SB-TODO( 实数 29 = 31 − 1 − 5 − 1 + 5（Chunk / Data / DataFail / OperationResult / OpenVoidScreen 的 P5 客户端体）—— 通过。
+   拆桩的 5 处发送用的翻译键与 1.20.1 逐字一致。
+V6 变异复核（K7）：C2S_RequestBlueprintDataMessage 的 canManageBlueprint 判定临时加 false && → t05 失败「expected S2C_BlueprintDataFailMessage」（1/41）；已还原 —— 通过。
+
+报告「任务书出入」1～2 接受（StreamCodec.unit 的 encode 要求同一实例，空消息改 ofMember；BlueprintValidator 零残差）。
+遗留（不阻塞）：S2C 客户端处理全部打桩，P5 前双端联机时 S2C 包静默忽略；联机握手与协议版本不一致的实测留到 P5。

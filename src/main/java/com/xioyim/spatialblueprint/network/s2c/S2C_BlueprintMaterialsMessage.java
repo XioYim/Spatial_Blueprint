@@ -1,19 +1,27 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
-import com.xioyim.spatialblueprint.gui.MaterialsViewScreen;
-import net.minecraft.client.Minecraft;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C：某蓝图的材料清单条目（category + key + count），响应
  * {@code C2S_RequestBlueprintMaterialsMessage}。客户端据此打开「查看材料清单」只读页。
  */
-public class S2C_BlueprintMaterialsMessage {
+public class S2C_BlueprintMaterialsMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_BlueprintMaterialsMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_blueprint_materials_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_BlueprintMaterialsMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_BlueprintMaterialsMessage::encode, S2C_BlueprintMaterialsMessage::decode);
 
     private final String blueprintId;
     /** 蓝图分类（create/dimensional 等），客户端据此决定是否显示「空间已有/需求」。 */
@@ -27,6 +35,11 @@ public class S2C_BlueprintMaterialsMessage {
         this.category = category == null ? "" : category;
         this.keys = keys != null ? keys : List.of();
         this.counts = counts != null ? counts : List.of();
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_BlueprintMaterialsMessage> type() {
+        return TYPE;
     }
 
     public static void encode(S2C_BlueprintMaterialsMessage msg, FriendlyByteBuf buf) {
@@ -53,14 +66,7 @@ public class S2C_BlueprintMaterialsMessage {
         return new S2C_BlueprintMaterialsMessage(id, category, keys, counts);
     }
 
-    public static void handle(S2C_BlueprintMaterialsMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
-    private static void handleClient(S2C_BlueprintMaterialsMessage msg) {
-        Minecraft mc = Minecraft.getInstance();
-        mc.setScreen(new MaterialsViewScreen(mc.screen, msg.category, msg.keys, msg.counts));
+    public static void handle(S2C_BlueprintMaterialsMessage msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端打开「查看材料清单」只读页（原 handleClient：Minecraft.setScreen(new MaterialsViewScreen(...))）
     }
 }

@@ -1,31 +1,24 @@
 package com.xioyim.spatialblueprint.item;
 
 import com.xioyim.spatialblueprint.util.MaterialList;
-import com.xioyim.spatialblueprint.util.NotifySound;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
  * 工程蓝图：由创造模式玩家从蓝图库导入内容，供生存玩家使用。
  *
- * <p>NBT 结构与 {@link ProjectionBlueprintItem} 相同：
- * <ul>
- *   <li>{@code blueprintName}  — 蓝图显示名称</li>
- *   <li>{@code blueprintId}    — {@link com.xioyim.spatialblueprint.util.BlueprintStorage} 文件 UUID</li>
- *   <li>{@code blueprintData}  — 内联蓝图数据（多人客户端回退）</li>
- *   <li>{@code depositedMaterials} — 已存入材料（blockId → count）</li>
- * </ul>
- * </p>
+ * <p>数据存法与投影蓝图相同（{@code blueprint_id} 引用 + 文件），
+ * 另有工程绑定字段（{@code eng_project_id} 等组件）。</p>
  */
 public class EngineeringBlueprintItem extends AbstractBlueprintItem {
 
@@ -46,24 +39,8 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
         return InteractionResultHolder.success(stack);
     }
 
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
     private static void openEngineeringScreen(Player player, ItemStack stack) {
-        // 生存模式：无 blueprintId（空白工程蓝图）才拒绝打开界面
-        // 有 blueprintId 但数据未缓存时仍允许打开（玩家可点击"下载数据"获取）
-        if (!player.isCreative() && getBlueprintDataClient(stack) == null && getBlueprintId(stack) == null) {
-            NotifySound.clientError();
-            com.xioyim.spatialblueprint.gui.ErrorToastScreen.show(
-                    Component.translatable("spatial_blueprint.message.no_data"));
-            return;
-        }
-        // 强制捕获(FORCE)的蓝图：仅 OP 创造模式可用
-        if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard.intercept(
-                player, stack, getBlueprintDataClient(stack))) return;
-        // 存档归属校验：不属于本档的工程蓝图直接销毁，OP 也不例外
-        if (com.xioyim.spatialblueprint.client.ForceBlueprintGuard.interceptForeignWorld(
-                player, stack, getBlueprintDataClient(stack))) return;
-        net.minecraft.client.Minecraft.getInstance().setScreen(
-                new com.xioyim.spatialblueprint.gui.EngineeringBlueprintScreen(player, stack));
+        // SB-TODO(P6): 客户端打开工程蓝图界面（无数据横幅、ForceBlueprintGuard 拦截、EngineeringBlueprintScreen）
     }
 
     // ── 物品名称 ──────────────────────────────────────────────────────────────
@@ -81,7 +58,7 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
     // ── Tooltip ───────────────────────────────────────────────────────────────
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level,
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltip, TooltipFlag flag) {
         MaterialList ml = getMaterialListForTooltip(stack);
         if (ml != null) {
@@ -106,51 +83,42 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
         }
     }
 
-    // ── 工程项目绑定 NBT ──────────────────────────────────────────────────────
+    // ── 工程项目绑定组件 ──────────────────────────────────────────────────────
 
     /** Returns true if this item has an engineering project binding. */
     public static boolean hasBoundProject(ItemStack stack) {
-        if (!stack.hasTag()) return false;
-        String id = stack.getTag().getString("engProjectId");
-        return !id.isEmpty();
+        return !getBoundProjectId(stack).isEmpty();
     }
 
     public static String getBoundProjectId(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("engProjectId") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.ENG_PROJECT_ID.get(), "");
     }
 
     public static String getBoundProjectName(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("engProjectName") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.ENG_PROJECT_NAME.get(), "");
     }
 
     public static String getBoundDimension(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getString("engDimension") : "";
+        return stack.getOrDefault(SpatialBlueprintComponents.ENG_DIMENSION.get(), "");
     }
 
     public static BlockPos getBoundStartPos(ItemStack stack) {
-        if (!stack.hasTag()) return BlockPos.ZERO;
-        net.minecraft.nbt.CompoundTag t = stack.getTag();
-        return new BlockPos(t.getInt("engStartX"), t.getInt("engStartY"), t.getInt("engStartZ"));
+        BlockPos pos = stack.get(SpatialBlueprintComponents.ENG_START.get());
+        return pos == null ? BlockPos.ZERO : pos;
     }
 
     public static BlockPos getBoundEndPos(ItemStack stack) {
-        if (!stack.hasTag()) return BlockPos.ZERO;
-        net.minecraft.nbt.CompoundTag t = stack.getTag();
-        return new BlockPos(t.getInt("engEndX"), t.getInt("engEndY"), t.getInt("engEndZ"));
+        BlockPos pos = stack.get(SpatialBlueprintComponents.ENG_END.get());
+        return pos == null ? BlockPos.ZERO : pos;
     }
 
     public static void setBoundProject(ItemStack stack, String projectId, String projectName,
                                        String dimension, BlockPos startPos, BlockPos endPos) {
-        net.minecraft.nbt.CompoundTag tag = stack.getOrCreateTag();
-        tag.putString("engProjectId",   projectId);
-        tag.putString("engProjectName", projectName);
-        tag.putString("engDimension",   dimension);
-        tag.putInt("engStartX", startPos.getX());
-        tag.putInt("engStartY", startPos.getY());
-        tag.putInt("engStartZ", startPos.getZ());
-        tag.putInt("engEndX",   endPos.getX());
-        tag.putInt("engEndY",   endPos.getY());
-        tag.putInt("engEndZ",   endPos.getZ());
+        stack.set(SpatialBlueprintComponents.ENG_PROJECT_ID.get(), projectId);
+        stack.set(SpatialBlueprintComponents.ENG_PROJECT_NAME.get(), projectName);
+        stack.set(SpatialBlueprintComponents.ENG_DIMENSION.get(), dimension);
+        stack.set(SpatialBlueprintComponents.ENG_START.get(), startPos.immutable());
+        stack.set(SpatialBlueprintComponents.ENG_END.get(), endPos.immutable());
     }
 
     /** Overload used by C2S_SaveEngineeringProjectMessage (name not yet in item before save). */
@@ -160,34 +128,31 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
     }
 
     public static void clearBoundProject(ItemStack stack) {
-        if (!stack.hasTag()) return;
-        net.minecraft.nbt.CompoundTag tag = stack.getTag();
-        tag.remove("engProjectId");
-        tag.remove("engProjectName");
-        tag.remove("engDimension");
-        tag.remove("engStartX"); tag.remove("engStartY"); tag.remove("engStartZ");
-        tag.remove("engEndX");   tag.remove("engEndY");   tag.remove("engEndZ");
+        stack.remove(SpatialBlueprintComponents.ENG_PROJECT_ID.get());
+        stack.remove(SpatialBlueprintComponents.ENG_PROJECT_NAME.get());
+        stack.remove(SpatialBlueprintComponents.ENG_DIMENSION.get());
+        stack.remove(SpatialBlueprintComponents.ENG_START.get());
+        stack.remove(SpatialBlueprintComponents.ENG_END.get());
     }
 
     /** 子工程所属任务集；普通独立工程蓝图没有该字段。 */
-    @Nullable
+    @javax.annotation.Nullable
     public static String getTaskSetId(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains("sbTaskSetId")) return null;
-        String taskSetId = stack.getTag().getString("sbTaskSetId");
+        String taskSetId = stack.getOrDefault(SpatialBlueprintComponents.SB_TASK_SET_ID.get(), "");
         return taskSetId.isEmpty() ? null : taskSetId;
     }
 
     public static void setTaskSetId(ItemStack stack, String taskSetId) {
-        stack.getOrCreateTag().putString("sbTaskSetId", taskSetId);
+        stack.set(SpatialBlueprintComponents.SB_TASK_SET_ID.get(), taskSetId);
     }
 
     /** 子工程在项目中的条目编号；普通独立工程蓝图返回 0。 */
     public static int getEntryIndex(ItemStack stack) {
-        return stack.hasTag() ? stack.getTag().getInt("sbEntryIndex") : 0;
+        return stack.getOrDefault(SpatialBlueprintComponents.SB_ENTRY_INDEX.get(), 0);
     }
 
     public static void setEntryIndex(ItemStack stack, int entryIndex) {
-        stack.getOrCreateTag().putInt("sbEntryIndex", entryIndex);
+        stack.set(SpatialBlueprintComponents.SB_ENTRY_INDEX.get(), entryIndex);
     }
 
     // ── 工程项目边界检查 ──────────────────────────────────────────────────────
@@ -211,9 +176,4 @@ public class EngineeringBlueprintItem extends AbstractBlueprintItem {
 
         return ProjectBoundsResult.OK;
     }
-
-    // ── NBT 辅助（共用方法继承自 AbstractBlueprintItem）──────────────────────
-    // getBlueprintName / setBlueprintName / getBlueprintId / setBlueprintId /
-    // getBlueprintData / getMaterialList / getDepositedMaterials / getDepositedCount /
-    // setDepositedCount / clearDepositedMaterials / hasSufficientMaterials
 }

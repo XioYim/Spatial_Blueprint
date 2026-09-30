@@ -1,11 +1,5 @@
 package com.xioyim.spatialblueprint.client;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-
 /**
  * 客户端侧的捕获冷却计时。
  *
@@ -13,8 +7,6 @@ import net.minecraftforge.fml.common.Mod;
  * {@code S2C_CaptureCooldownMessage}），客户端自己不再猜。取消创建、体积超限、
  * 槽位已满都收不到这个包，因此不会误进冷却；OP 服务端根本不发。</p>
  */
-@OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(value = Dist.CLIENT)
 public final class ClientCaptureCooldown {
 
     private ClientCaptureCooldown() {}
@@ -27,8 +19,7 @@ public final class ClientCaptureCooldown {
     }
 
     /** 断开连接时清掉，免得换服 / 换档之后还挂着上一局的冷却。 */
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    public static void clear() {
         endMs = 0L;
     }
 

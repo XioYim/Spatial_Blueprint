@@ -1,17 +1,17 @@
 package com.xioyim.spatialblueprint.network;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import com.xioyim.spatialblueprint.network.s2c.S2C_OperationResult;
 import com.xioyim.spatialblueprint.util.BlueprintStorage;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * S2C：推送「次元蓝图材料空间」内容并打开查看界面。
@@ -19,7 +19,14 @@ import java.util.function.Supplier;
  * <p>每条对应一个当前次元袋或已消耗袋记录：携带完整的蓝图摘要（用于显示与 tooltip）
  * 和袋内剩余总件数。</p>
  */
-public class S2C_VoidBagSyncMessage {
+public class S2C_VoidBagSyncMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_VoidBagSyncMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_void_bag_sync_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_VoidBagSyncMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_VoidBagSyncMessage::encode, S2C_VoidBagSyncMessage::decode);
 
     /**
      * 一条次元蓝图材料记录。
@@ -52,8 +59,13 @@ public class S2C_VoidBagSyncMessage {
     public String      getTargetName() { return targetName; }
 
     public static void sendTo(ServerPlayer viewer, List<Entry> entries, String targetName) {
-        BlueprintNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> viewer),
+        BlueprintNetwork.sendToPlayer(viewer,
                 new S2C_VoidBagSyncMessage(entries, targetName));
+    }
+
+    @Override
+    public CustomPacketPayload.Type<S2C_VoidBagSyncMessage> type() {
+        return TYPE;
     }
 
     // ── Encode / Decode ───────────────────────────────────────────────────
@@ -91,19 +103,7 @@ public class S2C_VoidBagSyncMessage {
 
     // ── Handler ───────────────────────────────────────────────────────────
 
-    public static void handle(S2C_VoidBagSyncMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (FMLEnvironment.dist == Dist.CLIENT) {
-                openScreen(msg);
-            }
-        });
-        ctx.get().setPacketHandled(true);
-    }
-
-    @net.minecraftforge.api.distmarker.OnlyIn(Dist.CLIENT)
-    private static void openScreen(S2C_VoidBagSyncMessage msg) {
-        net.minecraft.client.Minecraft.getInstance().setScreen(
-                new com.xioyim.spatialblueprint.gui.VoidBagSpaceScreen(
-                        msg.getTargetName(), msg.getEntries()));
+    public static void handle(S2C_VoidBagSyncMessage msg, IPayloadContext ctx) {
+        // SB-TODO(P6): 客户端打开次元袋空间查看界面（原 openScreen：Minecraft.getInstance().setScreen(new gui.VoidBagSpaceScreen(msg.getTargetName(), msg.getEntries()))）
     }
 }

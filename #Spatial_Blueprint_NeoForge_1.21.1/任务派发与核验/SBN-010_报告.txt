@@ -1,0 +1,140 @@
+SBN-010 报告
+执行：本地辅助 AI · 2026-09-30 11:45:00 · 分支 task/SBN-010（切自 origin/task/SBN-010 @ 34c0293）
+提交：待推送（本报告 + 证据 + 交接件随下一提交）
+备份：D:\Mods\项目备份\Spatial_Blueprint_NeoForge_1.21.1_20260930_104039（SHA 前 8 位 80B42F82，SBN-010 执行前）
+
+一、完成情况：三.1～三.5 逐条
+三.1 BlueprintNetwork：5 条 playToServer 追加完毕，与 1.20.1 c2s 归类一致
+  主张见 network/BlueprintNetwork.java:258-270（SBN-010 注释块 + 5 条注册），diff 仅 +13 行。
+三.2 物品数据：全部走现有 public static 访问器（静态、与物品类型无关），无新访问器、无直接 set 组件
+  读 blueprintId 缺组件补 ""（访问器返回 null，调用处补空串，沿 1.20.1 语义）。
+三.3 1.21 API：J43 逐条落实，见二。
+三.4 解码：5 个 decode 只读定长字段与带上限字符串，无按客户端计数分配；fromOrdinal 3 处不改（行为与 1.20.1 同）。
+三.5 各要点：冷却→找空白→两点→槽位→体积→FORCE 降级→次元 SAFE 门→预扫→领地采样→捕获→写盘→换物品→冷却通知，
+  顺序原样；判定计数与 1.20.1 逐项相等（本报告三末尾表）。
+
+二、改了写法的调用（1.20.1 写法 → 1.21.1 写法 · file:line · 依据）
+网络样板（5 文件同式，C14 / BlueprintNetwork 类注释）：
+  class X → implements CustomPacketPayload + TYPE（ID=类名小写 snake_case）+ ofMember + type()
+  主张见 CaptureAreaMessage.java:41-53、CaptureProjectionMessage.java:48-60、
+  C2S_VoidRecaptureMessage.java:42-54、C2S_CreateEngineeringBlueprintMessage.java:45-57、
+  C2S_CreateSubProjectMessage.java:43-55。
+  handle(Supplier ctx)+enqueueWork+setPacketHandled → handle(IPayloadContext)+handleServer(ServerPlayer)
+  主张见 CaptureAreaMessage.java:149-155、CaptureProjectionMessage.java:122-128、
+  C2S_VoidRecaptureMessage.java:63-69、C2S_CreateEngineeringBlueprintMessage.java:120-126、
+  C2S_CreateSubProjectMessage.java:104-110。
+发包：
+  CHANNEL.send(PacketDistributor.PLAYER.with…) → BlueprintNetwork.sendToPlayer(player, …)
+  主张见 CaptureAreaMessage.java:824、C2S_VoidRecaptureMessage.java:439、
+  C2S_CreateEngineeringBlueprintMessage.java:145/201/383、C2S_CreateSubProjectMessage.java:346、
+  CaptureProjectionMessage.java:419。
+事件与存盘（C23 / J43）：
+  MinecraftForge.EVENT_BUS.post → NeoForge.EVENT_BUS.post
+  主张见 CaptureAreaMessage.java:333、C2S_VoidRecaptureMessage.java:191。
+  be.saveWithFullMetadata() → be.saveWithFullMetadata(level.registryAccess())，统一用 level 的 provider
+  （handler 内 level = player.serverLevel()，捕获/预扫/扫描各处同一来源）
+  主张见 CaptureAreaMessage.java:287/394、CaptureProjectionMessage.java:242、
+  C2S_VoidRecaptureMessage.java:158/217、C2S_CreateEngineeringBlueprintMessage.java:248。
+物品 NBT → 访问器逐键对照（三.2）：
+  次元蓝图写 captureMin/captureMax/creatorName（put+writeBlockPos/putString）→
+    VoidDimensionalBlueprintItem.setCaptureRange/setCreatorName
+  主张见 CaptureAreaMessage.java:556-557、C2S_VoidRecaptureMessage.java:343-344。
+  读 blueprintId（getTag().getString，缺 tag 补 ""）→ SpatialBlueprintItem.getBlueprintId /
+    AbstractBlueprintItem.getBlueprintId + null 补 ""（访问器缺组件返回 null，非 ""）
+  主张见 CaptureAreaMessage.java:570-571/583-584、C2S_VoidRecaptureMessage.java:108-109。
+  写 blueprintId（putString）→ AbstractBlueprintItem.setBlueprintId
+  主张见 C2S_VoidRecaptureMessage.java:342、C2S_CreateEngineeringBlueprintMessage.java:360。
+  VoidRecapture 新栈刻意不调 setBlueprintData（沿 1.20.1 注释：它会另起 UUID；复用原文件 ID）
+  主张见 C2S_VoidRecaptureMessage.java:336-344 注释与写法。
+  其余（setBlueprintData/setBlueprintName/setAnimDuration/setSaveMode/setBoundProject/冷却通知/推蓝图）
+  两边同名访问器，原样：CaptureAreaMessage.java:551-553/586/590、
+  CaptureProjectionMessage.java:357-359/365/369、C2S_CreateEngineeringBlueprintMessage.java:361-371。
+注册表：ForgeRegistries 未出现（1.20.1 本批已用 BuiltInRegistries，原样）
+  主张见 CaptureAreaMessage.java:686/723/784/801 等 4 处 getKey 调用。
+
+三、网络实测
+5 个 payload ID 与方向（t01 全断言，76 个互不重复；方向以 1.20.1 register c2s 归类为准，均为 playToServer）：
+  capture_area_message（C2S）· CaptureAreaMessage.java:43
+  capture_projection_message（C2S）· CaptureProjectionMessage.java:51
+  c2s_void_recapture_message（C2S）· C2S_VoidRecaptureMessage.java:44
+  c2s_create_engineering_blueprint_message（C2S）· C2S_CreateEngineeringBlueprintMessage.java:49
+  c2s_create_sub_project_message（C2S）· C2S_CreateSubProjectMessage.java:49
+A5 分配点清单（上限来源 · file:line）：本批无按客户端值分配之处
+  CaptureArea decode：name 上限 MAX_NAME_LENGTH*2（:137）、noteShort 15（:144）、noteLong 200（:145），其余定长
+  CaptureProjection decode：同上（:112/:116/:117）
+  VoidRecapture decode：空（无字段）
+  Engineering decode：sourceId 64（:100）、name 64（:101）、dimension 128（:102）、noteShort 15（:107）、noteLong 200（:108）
+  SubProject decode：name 128（:95）、projectId 64（:98）、noteShort 15（:99）、noteLong 200（:100）
+  服务端分配点：选区三重循环与实体遍历均以世界坐标为界（体积上限 1.6M 绝对值经 validateCaptureArea 先行），
+  无 new ArrayList(n)/new byte[n]/new HashMap(n) 类按包字段预分配（5 文件 grep 零命中）。
+fromOrdinal 调用点（3 处，均不改，与 1.20.1 同抛 ArrayIndexOutOfBoundsException，t03 实测）：
+  CaptureAreaMessage.java:143、CaptureProjectionMessage.java:115、
+  C2S_CreateEngineeringBlueprintMessage.java:105。
+本批权限/领地/降级判定清单（file:line；计数与 1.20.1 相等表附后）：
+  冷却 checkAndUpdateCooldown：CaptureArea:157、CaptureProjection:128（handleServer 内首行）、VoidRecapture:71
+  槽位 checkSlot：CaptureArea:193（dimensional/create 双分支）、CaptureProjection:154（project）、Engineering:154（engineering）
+  FORCE 降级（非 OP→SAFE）：CaptureArea:232-235、CaptureProjection:189-191、Engineering:171-173
+  次元仅 SAFE：CaptureArea:241-247
+  领地 BreakEvent 采样 + isCanceled：CaptureArea:326-345、VoidRecapture:182-199
+  主人校验 ownerUuidOf：VoidRecapture:116（归属）/ 文件存在 findFile:109 / 存档归属 belongsToCurrentWorld:87
+判定计数对照（1.20.1 五源文件合计 vs 1.21.1 五文件合计，逐项相等）：
+  checkAndUpdateCooldown 3=3、checkSlot 3=3、validateCaptureArea 3=3、hasPermissions(2) 6=6、
+  isCreative() 10=10、EVENT_BUS.post 2=2、isCanceled() 2=2、fromOrdinal 3=3、
+  isIllegalBlock 6=6、hasDangerousBlockNbt 3=3、findEntityWithIllegalItems 2=2、isExcluded 1=1、
+  notifySuccess 3=3、sendBlueprintTo 4=4、bagDepositAll 2=2、countNonAir 1=1、
+  ownerUuidOf 2=2、belongsToCurrentWorld 1=1、findFile 1=1。
+
+四、测试覆盖
+A1 compileJava --rerun：BUILD SUCCESSFUL、0 警告（证据编译.txt）。
+A2 runGameTestServer：84/84（@GameTest 注解实数 84；defaultBatch:0 50 + :1 34；2.223s）。
+  t01～t10 见证据 GameTest.txt。SBN001～009 的 74 条零改动全过。
+  t04 往返验证实际结论：SAFE 非 OP 创造捕获，箱子内容按语义被清（stripDangerousBlockNbt 删 Items），
+  捕获 NBT 读回新箱子为空（与源箱子 5 石头+附魔剑对照）；内容保留路径由 t06 OP FORCE 覆盖
+  （保留 Items，读回两格与源箱子 isSameItemSameComponents 一致）。
+A3 专服冒烟：runServer 到 Done (0.411s)、RCON stop 后 java 全退、gradle BUILD SUCCESSFUL、
+  0 条 ERROR、0 条本 mod WARN、BlueprintFileLogger 目录行 + logs 建出（证据服务端.txt）。
+A4 grep 门禁：network/server/log/util 下 0 命中（client/gui/net.minecraftforge）；
+  5 新文件 0 处 SB-TODO(；注释无示例污染（K10）。
+A5 K13 自查：见三.A5 段。
+迁移桩：新增 0 条；总数 SB-TODO( 实数 46（基线 46 + 本任务 0；diff 无增减）。
+
+五、迁移桩清单
+新增逐条：无。
+总数：46（= 基线 46 + 本任务 0）。
+
+六、任务书出入
+1. saveWithFullMetadata 的 provider 统一用 level.registryAccess()（任务书允许二选一；handler 内 level 即
+   player.serverLevel()，捕获/预扫/扫描各处同一来源）。
+2. getBlueprintId 缺组件返回 null（非 ""），调用处加 null 补 ""（CaptureArea:571/584、VoidRecapture:109），
+   语义与 1.20.1（getTag 缺键返回 ""）一致。
+3. t10 子工程测试：项目范围必须真包含选区且不与其完全一致（否则 same_as_project 拦截，
+   初版测试因此 1/84 失败）；改为 origin 外扩一圈，relP1/relP2 相应断言。
+4. A3 起服脚本三处写法注意（详见开发日志 SBN-010 节）：轮询看重定向 stdout 而非 run/logs/latest.log；
+   gradle stderr 的 ^C 提示不算错误；RCON stop 后以 java 进程消失 + gradle 成功为准。
+其余：以源码为准重写处无（API 结论与本地实测一致，无出入）。
+
+七、双端同步自查
+换物品后同步：5 条路径换手后一律 ItemSyncUtil.syncHand（CaptureArea:600、CaptureProjection:362、
+  VoidRecapture:384（新栈）、Engineering:367、VoidRecapture 孤儿分支换空白同步:112）。
+次元清区域：setBlock 用 UPDATE_CLIENTS 标志（CaptureArea:592 起 clearFlags、VoidRecapture:377 起），
+  客户端视图同步；蓝图数据经 sendBlueprintTo 主动推客户端缓存（CaptureArea:586、Projection:365、
+  Engineering:371、VoidRecapture:332 同 ID 覆盖推送防 placed 误判）。
+默认一切服务器权威；本批无客户端预测、无界面，P6 前无双端分歧点。
+
+八、教训同步
+基线 ebd488b 的副本 blob 与当前副本逐字节一致（git hash-object 相等），原件与副本 SHA-256 相等，
+A→C 0 条、C→A 0 条、无冲突。规程第五节追加 SBN-010 行（同步提交待本次推送后回填）。
+
+九、建议记入
+1. K（工具）：git 输出含非 ASCII 时不走 PowerShell 文本管道（| Out-File / > 会按 GBK 解码再写回，
+   中文变乱码且可能编坏字符串字面量）；一律按字节落地（py subprocess capture_output 写二进制）。
+   指到开发日志 SBN-010 节。
+2. K（工具）：runServer 冒烟轮询看重定向 stdout（run/logs/latest.log 是 GameTest 的）；
+   gradle stderr 的 ^C 提示不是错误；“正常退出”= RCON stop + java 消失 + gradle 成功。
+   指到开发日志 SBN-010 节与证据服务端.txt。
+3. 以上两条是否记入、记 K 段哪一号，由主会话问用户后定。
+
+十、需要用户做的事
+无（本任务预期无；手测无）。
+
+推送后对用户说：「已推送，去云端说『验收 SBN-010』」。

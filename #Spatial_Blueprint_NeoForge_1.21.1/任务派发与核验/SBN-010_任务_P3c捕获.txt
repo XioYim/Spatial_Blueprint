@@ -1,0 +1,164 @@
+SBN-010 · P3c-3 捕获（5 个消息）
+派发：2026-09-30 11:45:00（云端主会话）
+分支：task/SBN-010（从 neoforge-1.21.1 @ 6b1fa3a 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-010 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、K11、K12、K13、C2、C3、C5、C6、C12、C14、C20、C23；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-006 任务书三.2（补充口径）；功能联动手册第二节「物品 NBT 键 → 组件」映射表；
+迁移计划书 P3c 段（SBN-010 取证结论与「捕获 → DataFixer → 放置」顺序）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3 剩下 7 个消息（C2S_ReloadConfigMessage 在 P4）。用户已拍板按「捕获 → DataFixer → 放置」三步走：
+  SBN-010（本任务）：捕获 5 个 —— 产出 1.21 原生格式的蓝图数据
+  SBN-011：DataFixer（D2）—— 在 BlueprintData.deserialize 已留的 P4 桩处按 dataVersion 升级方块状态 / 方块实体 / 实体 / 物品（手写 1.20.1 格式样本测）
+  SBN-012：放置引擎 BlueprintPlacementHandler + PlaceBlueprintMessage —— 新旧两种数据的「捕获 → 放置」往返一起测
+
+本任务的 5 个（1.20.1 同路径，全部在 network\ 根下，全部 C2S）：
+  CaptureAreaMessage（空间 / 次元蓝图捕获，811 行）、CaptureProjectionMessage（投影 / 奖励蓝图，406 行）、C2S_VoidRecaptureMessage（空置次元蓝图重新储存，425 行）、
+  C2S_CreateEngineeringBlueprintMessage（工程蓝图，373 行）、C2S_CreateSubProjectMessage（子工程，333 行）
+云端已查：五个之间只有 VoidRecapture / CreateEngineering / CreateSubProject 调 CaptureAreaMessage 的静态方法（addEntityEntry、captureBoxEntities、
+removeBoxEntities、captureHangingEntity）；**不依赖放置引擎**；其余依赖全部已迁（BlueprintValidator、BlueprintSanitizer、BlueprintStorage、MaterialSpace、
+SBUndoData、WorldIdentity、ProjectStorage、BlueprintLogger、S2C_CaptureCooldownMessage 等）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  第一节的 5 个消息（network\ 根下，1.20.1 同路径）
+  改  network/BlueprintNetwork.java                                              ← 只加 5 条注册
+  新  gametest/SBN010Tests.java
+
+交接件（规程允许范围）：SBN-010_报告.txt、SBN-010_证据\、开发日志.md 文末「## SBN-010 执行记录」、
+测试清单.txt 正文末尾追加「十、SBN-010 捕获」（正文只收未完成项，云端验收后归档）、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（含物品类 —— 访问器都已存在，见三.2）。若某个消息实测引用了第二节以外、尚未迁移的类：按口径打桩并写进报告，不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005～009：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）与 SBN-006 任务书三.2 改写。
+每个文件 diff -w 残差逐条进报告。
+
+1. BlueprintNetwork：register 追加 5 条 playToServer（以 1.20.1 归类为准）。其余零改动。
+
+2. 物品数据（C12）：本批直读 / 直写物品 NBT 的地方一律走现有 public static 访问器 —— **访问器是静态方法、对任意 ItemStack 生效，与物品类型无关**：
+   a. 读 blueprintId → SpatialBlueprintItem.getBlueprintId / AbstractBlueprintItem.getBlueprintId（按该处的物品类型选；缺组件时按 1.20.1 语义补 ""）。
+   b. 写 blueprintId → AbstractBlueprintItem.setBlueprintId 或 SpatialBlueprintItem.setBlueprintData（1.20.1 若是后者则原样）。
+   c. CaptureAreaMessage 往次元蓝图上写 captureMin / captureMax / creatorName、C2S_VoidRecaptureMessage 往新栈写同样三项 →
+      VoidDimensionalBlueprintItem.setCaptureRange(stack, min, max) / setCreatorName(stack, name)（静态，组件与物品类型无关；BlockPos 内部已 immutable）。
+   d. 映射见功能联动手册第二节；确实没有访问器的键写进报告，不要直接 set 组件绕过访问器。
+
+3. 1.21 API（J43，云端已 javap）
+   a. be.saveWithFullMetadata() → be.saveWithFullMetadata(player.registryAccess())（或 level.registryAccess()，报告写明用哪个）—— C23。
+   b. BlockEvent.BreakEvent → net.neoforged.neoforge.event.level.BlockEvent.BreakEvent；MinecraftForge.EVENT_BUS.post → NeoForge.EVENT_BUS.post；isCanceled 不变 —— C23。
+   c. Entity#save(CompoundTag) / saveWithoutId 在 1.21 签名不变，原样。
+   d. ForgeRegistries.X.getKey → BuiltInRegistries.X.getKey（SBN-001 起的口径）。
+   e. NbtUtils.writeBlockPos 在 1.21 写 int 数组 —— 本批凡是写进**物品**的坐标都已改走三.2.c 的访问器（组件），不再用它；
+      写进**蓝图数据 / 文件**的坐标照 SBN-001 口径走 NbtCompat（1.20.1 若直接用 NbtUtils 写蓝图字段，改 NbtCompat 并进报告）。
+
+4. 解码（K13 / K14）
+   本批 5 个 decode 都只读定长字段与带上限的字符串，没有按客户端计数的分配（云端已查）。
+   CaptureMode.fromOrdinal(buf.readInt()) 越界会抛 ArrayIndexOutOfBoundsException → NeoForge 断开该客户端，与 1.20.1 行为相同，**本任务不改**
+   （功能联动手册已登记「fromOrdinal 不防越界」待查项，统一处理）。报告里列出本批所有 fromOrdinal 调用点。
+
+5. 各要点（以 1.20.1 源码为准，只点风险处）
+   a. CaptureAreaMessage：捕获冷却 checkAndUpdateCooldown → 找主 / 副手空白蓝图 → 两点 → 槽位 → validateCaptureArea → **FORCE 仅 OP（非 OP 降级 SAFE）** →
+      次元蓝图只允许 SAFE → **clearAfterCapture 时逐块 BreakEvent 领地采样（非创造，或配置 DENY_CREATIVE_PLACEMENT_IN_PROTECTED_AREA 为 true 时创造也采）** →
+      方块 / 方块实体 / 实体捕获（SAFE / SANITIZE / FORCE 各自的容器与实体规则）→ 写蓝图文件 → 次元蓝图清区域、材料入袋 → 换物品、发 S2C_CaptureCooldownMessage。顺序原样。
+   b. CaptureProjectionMessage：不清源区域；非 FORCE 时容器内容 / 展示框物品 / 盔甲架装备 / 驮兽箱子不带走（防复制）；reward 只在 OP 且创造时生效。
+   c. C2S_VoidRecaptureMessage：存档归属（belongsToCurrentWorld）→ 文件存在 → 主人校验（ownerUuidOf）→ 体积上限（OP 用绝对上限）→ 领地采样 → 覆盖写回原文件、清 placed。顺序原样。
+   d. C2S_CreateEngineeringBlueprintMessage / C2S_CreateSubProjectMessage：照 1.20.1；CreateSubProject 里 stripItemContents(be.saveWithFullMetadata(provider)) 原样。
+   e. SBUndoData / MaterialSpace / BlueprintLogger 的调用原样（均已迁）。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged）
+========================================================
+
+  J43 BlockEntity#saveWithFullMetadata(HolderLookup.Provider)（无无参版）；Entity#save(CompoundTag) / saveWithoutId(CompoundTag) / saveAsPassenger(CompoundTag)；
+      EntityType.create(CompoundTag, Level) → Optional<Entity>（SBN-012 放置用，本任务测试里用来验证捕获出的实体 NBT 能还原）；
+      BlockEntity#loadWithComponents(CompoundTag, HolderLookup.Provider)（本任务测试里用来验证捕获出的方块实体 NBT 能读回）
+  其余沿用 J31～J42（BreakEvent / NeoForge.EVENT_BUS / isCanceled 见 J40）。
+
+========================================================
+五、测试（新格式数据由真实世界 / 真实对象产生；伪造包是唯一允许手写处）
+========================================================
+
+注意：捕获有冷却（BlueprintValidator.checkAndUpdateCooldown），同一假玩家连续捕获前调 BlueprintValidator.clearCooldown(uuid)，或每条用例用新 GameProfile。
+捕获在测试结构区里用 helper.absolutePos 放方块，选区两点写进假玩家手里空白蓝图的 point1 / point2（BlankBlueprintItem.setPoint1 / setPoint2）。
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～009 的 74 条照旧全过。
+    t01_registration         5 个 payload ID 符合命名规则，与已有 71 个合计 76 个互不重复；方向全部 C2S，与 1.20.1 一致。
+    t02_codecRoundTrip       5 个各造一条真实实例 → 编码 → 解码 → 再编码，字节逐字相等。
+    t03_decodeGuards         名字 / 备注字符串超长各一条（C20）→ 拒收；CaptureMode ordinal 越界 → decode 抛异常（记录实际异常类型，与 1.20.1 同）。
+    t04_captureSpatial       创造假玩家、SAFE：选区内石头 + 一个装了真实物品（石头 ×5 + 附魔剑）的箱子 + 一个盔甲架 → CaptureArea（不清除）→
+                             空白蓝图换成空间蓝图，blueprint_id 经访问器读出且 BlueprintStorage.load 得到数据：方块数正确、箱子方块实体 NBT 存在、实体条目存在；
+                             **往返验证**：把捕获出的箱子 NBT 用 loadWithComponents(tag, provider) 读进一个新箱子 → 两格物品与原箱子 isSameItemSameComponents
+                             （若 1.20.1 SAFE 语义会清容器内容，则改为断言内容按语义被清，并在报告写明）；实体 NBT 经 EntityType.create 能还原出同类型实体。
+                             源区域不变（未清除）；sink 收到 S2C_CaptureCooldownMessage。
+    t05_captureDimensional   非创造假玩家、clearAfterCapture：选区被清成空气；手里变次元蓝图，capture_min / capture_max / creator_name 经访问器读出正确；
+                             MaterialSpace 次元袋按 1.20.1 语义入账（逐项断言）；蓝图文件 ownerUuid = 该玩家。
+    t06_forceDowngrade       非 OP 假玩家发 mode = FORCE → 按 SAFE 处理（opBypassCapture = false、容器按 SAFE 规则）；OP（K11）+ 创造发 FORCE → opBypassCapture = true、
+                             容器内容完整保留。
+    t07_claimBlocksCapture   注册临时 NeoForge.EVENT_BUS 监听取消 BreakEvent（finally 注销），非创造假玩家 clearAfterCapture → 收到 no_break_permission、
+                             选区方块原样、手里仍是空白蓝图、没有新蓝图文件；不注册监听时同一操作成功（与 t05 同口径）。
+    t08_captureProjection    非 FORCE：箱子内容不进蓝图（防复制）、源区域不清；reward = true 但非 OP → 按普通投影；OP + 创造 + reward → 奖励蓝图。
+    t09_voidRecapture        准备：t05 同法得到一份次元蓝图文件（placed 置 true，模拟已放置）与对应的空置次元蓝图物品（组件经访问器写）：
+                             非主人 → 被拒、文件不变；world_uuid 为别的存档 → foreign 分支；主人 → 覆盖写回原文件（blueprint_id 不变）、placed = false、
+                             新物品的 capture_min / capture_max / creator_name 正确。
+    t10_engineeringAndSub    按 1.20.1 前置造数据：CreateEngineeringBlueprint 得到的工程蓝图 eng_project_id / eng_start / eng_end / blueprint_id 经访问器读出正确；
+                             CreateSubProject 在 ProjectStorage 里新增子工程条目、子工程蓝图文件里容器内容按 stripItemContents 被清。
+    测试 finally 恢复 fakePlayerSink、op 状态、游戏模式、事件监听、配置、冷却；删测试写出的蓝图 / 项目文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR。
+A4  grep 门禁（必做）：network\、server\、log\、util\ 下无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 引用；注释里无 SB-TODO(（K10）。
+A5  K13 自查（必做）：本批 5 个 decode 与被调用的服务端分配点逐个列出「上限来源 · file:line」；本批 fromOrdinal 调用点列表。
+
+【手测】无（捕获界面在 P6）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  5 个搬迁文件与 1.20.1 源 diff -w 残差只在口径内（三.2、三.3）；权限 / 冷却 / 槽位 / 领地 / FORCE 降级等判定逐文件计数与 1.20.1 相等。
+V4  76 条注册方向与 1.20.1 逐条一致；A4 为空；A5 清单无未夹上限的分配点。
+V5  SB-TODO 实数 = 46 + 本任务新桩，逐条列出。
+V6  变异复核（云端验收时做）：CaptureAreaMessage 的「FORCE 仅 OP」降级、CaptureAreaMessage 的领地 evt.isCanceled() 分支、
+    C2S_VoidRecaptureMessage 的主人校验，各临时短路一次 → t06 / t07 / t09 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-010 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.5 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」；物品 NBT → 访问器逐键对照
+三、网络实测：5 个 payload 的 ID 与方向；A5 分配点清单与 fromOrdinal 调用点；本批权限 / 领地 / 降级判定清单（file:line）
+四、测试覆盖：A1～A5；t01～t10；@GameTest 实数；t04 往返验证的实际结论（容器内容按 SAFE 是保留还是清除）
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（换物品后客户端手里的蓝图组件同步；次元蓝图清区域后客户端方块更新）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-010』」。

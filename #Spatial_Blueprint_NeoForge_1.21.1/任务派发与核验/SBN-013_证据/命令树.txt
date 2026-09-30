@@ -1,0 +1,53 @@
+SBN-013 命令树 / requires / doReload / diff 残差证据
+（行号 = 该语句首次出现；1.20.1 = origin/forge-1.20.1）
+
+一、requires 挂载对照（数量与位置逐条相等）
+语句                                                         1.20.1   1.21.1
+config requires                                              [46]     [46]
+config src 权限谓词                                          [47, 50, 55, 58, 74, 77] [47, 50, 55, 58, 74, 77]
+reload literal                                               [49]     [49]
+space literal                                                [52]     [52]
+space player arg                                         [54, 60, 63] [54, 60, 63]
+tpperm literal                                               [57]     [57]
+project literal                                              [67]     [67]
+project release literal                                      [73]     [73]
+
+requires 计数（hasPermission(2) 谓词出现处）：old=6 new=6
+return 分支数（return 0 / return 1 / return N）：old=38 new=38
+
+二、SBCommands 与 1.20.1 的 diff -w 残差（全部）
+  --- 1.20.1
+  +++ 1.21.1
+  @@ -36 +36 @@
+  -import net.minecraftforge.event.RegisterCommandsEvent;
+  +import net.neoforged.neoforge.event.RegisterCommandsEvent;
+  @@ -439,2 +439 @@
+  - com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+  - net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+  + com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
+  @@ -459,2 +458 @@
+  - com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
+  - net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+  + com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(player,
+
+三、C2S_ReloadConfigMessage：doReload 三步落点（1.21.1 行号）
+  payload TYPE                                       24
+  handle → handleServer                              48
+  handleServer 权限判定                                  49
+  doReload 入口                                        55
+  第一步 读盘 CommentedFileConfig.of                      61
+  校正 isCorrect/correct                               64
+  REPLACE 重建 loaded config                           70
+  acceptConfig（重建值表）                                 77
+  afterReload（清 ConfigValue 缓存）                      78
+  第三步 BlueprintConfig.clearCache                     85
+  第三步 GeneratedSubstitutionsConfig.invalidateCache   86
+  WARN 原文                                            82
+
+四、主类 diff（相对 1.20.1 的功能等价物：MinecraftForge.EVENT_BUS → NeoForge.EVENT_BUS）
+    47: net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+    48: com.xioyim.spatialblueprint.command.SBCommands::register);
+  说明：主类唯一功能性改动 = 「// SB-TODO(P4): SBCommands（命令注册）」一行被上面的注册两行替换；
+  其余 diff 零（45 行为既有网络注册，未动）。
+
+五、桩数：SB-TODO( 实数 = 43 = 基线 44 − 1（主类命令注册桩）+ 本任务 0。

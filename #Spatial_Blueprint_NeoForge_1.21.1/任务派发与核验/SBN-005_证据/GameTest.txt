@@ -1,0 +1,22 @@
+SBN-005 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-29 21:09 左右
+日志关键行：
+  Running test batch 'defaultBatch:0' (41 tests)...
+  [+++++++++++++++++++++++++++++++++++++++++]
+  ========= 41 GAME TESTS COMPLETE IN 1.401 s ======================
+  All 41 required tests passed :)
+  BUILD SUCCESSFUL in 19s
+用例数核对（C2）：SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8（含云端验收追加的 t08）+ SBN005 7 = 41。
+SBN001～004 的 34 条照旧全过。
+t01 协议版本 == ModList 里本 mod 版本；
+t02 8 个消息编码往返字节逐字相等 + TYPE id 命名规则；
+t03 6 组越界包全部 DecoderException（Chunk totalChunks 0/257、index=total、length=CHUNK_SIZE+1；
+    OperationResult detailArgs=17；DataMessage length=1_048_577）；
+t04 分片 0/1/512000/512001/1500000 字节 → 0/1/1/2/3 块、拼回逐字相等、每块编码 < 1 MiB、chunkCount 上限 257/256；
+t05 请求蓝图：主人收分片拼回 = 原 NBT；500ms 内重发 = request_rate_limited；非主人 = blueprint_not_found；
+    不存在 id = blueprint_not_found；
+t06 废蓝图回收：placed=true → 换空白；placed=false → 不动；
+t07 桩接线：孤儿蓝图 → 空白 + OperationResult(file_missing)；空置次元蓝图有效文件 → OpenVoidScreen；
+    文件缺失 → 空白 + OperationResult(void_blueprint_orphaned)。
+run/ 已整目录删除。

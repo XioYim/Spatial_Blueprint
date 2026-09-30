@@ -1,5 +1,6 @@
 package com.xioyim.spatialblueprint.util;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -37,7 +38,7 @@ public class TeleportPermissions extends SavedData {
     public static TeleportPermissions get(ServerLevel level) {
         return level.getServer().overworld()
                 .getDataStorage()
-                .computeIfAbsent(TeleportPermissions::load, TeleportPermissions::new, SAVE_KEY);
+                .computeIfAbsent(new SavedData.Factory<>(TeleportPermissions::new, TeleportPermissions::load, null), SAVE_KEY);
     }
 
     private TeleportPermissions() {}
@@ -103,7 +104,7 @@ public class TeleportPermissions extends SavedData {
     // ── 序列化 ────────────────────────────────────────────────────────────
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         ListTag list = new ListTag();
         for (UUID id : allowed) {
             list.add(StringTag.valueOf(id.toString()));
@@ -112,7 +113,7 @@ public class TeleportPermissions extends SavedData {
         return tag;
     }
 
-    private static TeleportPermissions load(CompoundTag tag) {
+    private static TeleportPermissions load(CompoundTag tag, HolderLookup.Provider provider) {
         TeleportPermissions data = new TeleportPermissions();
         ListTag list = tag.getList(LIST_KEY, net.minecraft.nbt.Tag.TAG_STRING);
         for (int i = 0; i < list.size(); i++) {

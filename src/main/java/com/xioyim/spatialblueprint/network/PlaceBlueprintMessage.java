@@ -1,7 +1,10 @@
 package com.xioyim.spatialblueprint.network;
 
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
+import com.xioyim.spatialblueprint.item.AbstractBlueprintItem;
 import com.xioyim.spatialblueprint.item.BuildBlueprintItem;
+import com.xioyim.spatialblueprint.item.SpatialBlueprintComponents;
+import com.xioyim.spatialblueprint.item.VoidDimensionalBlueprintItem;
 import com.xioyim.spatialblueprint.item.DimensionalBlueprintItem;
 import com.xioyim.spatialblueprint.item.EngineeringBlueprintItem;
 import com.xioyim.spatialblueprint.item.ProjectionBlueprintItem;
@@ -20,21 +23,35 @@ import com.xioyim.spatialblueprint.util.ProjectProgressData;
 import com.xioyim.spatialblueprint.util.ProjectStorage;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Rotation;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.UUID;
-import java.util.function.Supplier;
 
-public class PlaceBlueprintMessage {
+public class PlaceBlueprintMessage implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<PlaceBlueprintMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "place_blueprint_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, PlaceBlueprintMessage> STREAM_CODEC =
+            StreamCodec.ofMember(PlaceBlueprintMessage::encode, PlaceBlueprintMessage::decode);
+
+    @Override
+    public CustomPacketPayload.Type<PlaceBlueprintMessage> type() {
+        return TYPE;
+    }
+
     public final BlockPos targetPos;
     public final Rotation rotation;
     public final int xOffset;
@@ -83,12 +100,16 @@ public class PlaceBlueprintMessage {
         return new PlaceBlueprintMessage(pos, rotation, x, y, z, clearFirst, fluidMode);
     }
 
-    public static void handle(PlaceBlueprintMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(PlaceBlueprintMessage msg, IPayloadContext ctx) {
+        if (ctx.player() instanceof ServerPlayer player) {
+            handleServer(msg, player);
+        }
+    }
 
-            if (!BlueprintValidator.checkAndUpdateCooldown(player)) {
+    public static void handleServer(PlaceBlueprintMessage msg, ServerPlayer player) {
+        if (player == null) return;
+
+        if (!BlueprintValidator.checkAndUpdateCooldown(player)) {
                 sendPlacementCancelled(player);
                 return;
             }
@@ -138,7 +159,8 @@ public class PlaceBlueprintMessage {
             //   · OP 直接豁免 —— 与「次元蓝图与主人的次元袋一一绑定」的前提冲突
             // 现在统一按 ownerUuid 判，与蓝图库、右键入口的判定完全一致。
             if (isDimensional) {
-                String bpId = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+                String bpId = AbstractBlueprintItem.getBlueprintId(stack);
+                if (bpId == null) bpId = "";
                 if (!player.getUUID().toString().equals(BlueprintStorage.ownerUuidOf(bpId))) {
                     sendResult(player, false, "spatial_blueprint.message.void_blueprint.not_owner");
                     return;
@@ -288,7 +310,8 @@ public class PlaceBlueprintMessage {
                     : SpatialBlueprintItem.getAnimDuration(stack, 8);
             animDuration = Math.max(configMin, animDuration);
 
-            String blueprintIdForBag = stack.hasTag() ? stack.getTag().getString("blueprintId") : "";
+            String blueprintIdForBag = AbstractBlueprintItem.getBlueprintId(stack);
+            if (blueprintIdForBag == null) blueprintIdForBag = "";
 
             // 领地插件的 EntityPlaceEvent / BreakEvent 检查必须先于任何材料、物品和文件状态修改。
             // 否则服务端二次预检拒绝时，结构没放出来但材料与蓝图已经被消耗。
@@ -328,27 +351,25 @@ public class PlaceBlueprintMessage {
                             ? actualPos.offset(data.size.getZ() - 1, data.size.getY() - 1, data.size.getX() - 1)
                             : actualPos.offset(data.size.getX() - 1, data.size.getY() - 1, data.size.getZ() - 1);
                     ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
-                    CompoundTag buildNbt = new CompoundTag();
-                    buildNbt.putString("blueprintName", data.name);
-                    buildNbt.putInt("saveMode", data.saveMode.ordinal());
-                    buildNbt.putLong("completionTime",
+                    buildStack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), data.name);
+                    buildStack.set(SpatialBlueprintComponents.SAVE_MODE.get(), data.saveMode);
+                    buildStack.set(SpatialBlueprintComponents.COMPLETION_TIME.get(),
                             player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
-                    buildNbt.putString("sourceType", "void_dimensional");
+                    buildStack.set(SpatialBlueprintComponents.SOURCE_TYPE.get(), "void_dimensional");
                     // 空置次元蓝图必须携带 blueprintId，否则「重新储存」找不到要覆盖写回的文件
-                    if (!blueprintIdForBag.isEmpty()) buildNbt.putString("blueprintId", blueprintIdForBag);
-                    buildNbt.put("captureMin", NbtUtils.writeBlockPos(placedMin));
-                    buildNbt.put("captureMax", NbtUtils.writeBlockPos(placedMax));
-                    buildNbt.putDouble("tpX", player.getX());
-                    buildNbt.putDouble("tpY", player.getY());
-                    buildNbt.putDouble("tpZ", player.getZ());
-                    buildNbt.putString("tpDimension", player.serverLevel().dimension().location().toString());
+                    if (!blueprintIdForBag.isEmpty()) buildStack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(), blueprintIdForBag);
+                    buildStack.set(SpatialBlueprintComponents.CAPTURE_MIN.get(), placedMin);
+                    buildStack.set(SpatialBlueprintComponents.CAPTURE_MAX.get(), placedMax);
+                    buildStack.set(SpatialBlueprintComponents.TP_X.get(), player.getX());
+                    buildStack.set(SpatialBlueprintComponents.TP_Y.get(), player.getY());
+                    buildStack.set(SpatialBlueprintComponents.TP_Z.get(), player.getZ());
+                    buildStack.set(SpatialBlueprintComponents.TP_DIMENSION.get(), player.serverLevel().dimension().location().toString());
                     // 存档身份：空置次元蓝图的坐标只在本档有意义，带到别的档里必须能认出来
-                    buildNbt.putString("worldUuid", com.xioyim.spatialblueprint.util.WorldIdentity
+                    buildStack.set(SpatialBlueprintComponents.WORLD_UUID.get(), com.xioyim.spatialblueprint.util.WorldIdentity
                             .get(player.serverLevel()).uuid().toString());
-                    buildNbt.putString("worldName", com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
-                    if (stack.hasTag() && stack.getTag().contains("creatorName"))
-                        buildNbt.putString("creatorName", stack.getTag().getString("creatorName"));
-                    buildStack.setTag(buildNbt);
+                    buildStack.set(SpatialBlueprintComponents.WORLD_NAME.get(), com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
+                    if (stack.has(SpatialBlueprintComponents.CREATOR_NAME.get()))
+                        buildStack.set(SpatialBlueprintComponents.CREATOR_NAME.get(), VoidDimensionalBlueprintItem.getCreatorName(stack));
                     player.setItemInHand(hand, buildStack);
                     ItemSyncUtil.syncHand(player, hand);
                 } else if (isProjection) {
@@ -374,18 +395,24 @@ public class PlaceBlueprintMessage {
                     } else {
                         // 投影蓝图：转为 BuildBlueprintItem 等待动画完成
                         ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
-                        CompoundTag buildNbt = new CompoundTag();
-                        buildNbt.putString("blueprintName", data.name);
-                        buildNbt.putInt("saveMode", data.saveMode.ordinal());
-                        if (stack.hasTag()) {
-                            CompoundTag src = stack.getTag();
-                            if (src.contains("blueprintId"))   buildNbt.putString("blueprintId", src.getString("blueprintId"));
-                            if (src.contains("blueprintData")) buildNbt.put("blueprintData", src.getCompound("blueprintData").copy());
+                        buildStack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), data.name);
+                        buildStack.set(SpatialBlueprintComponents.SAVE_MODE.get(), data.saveMode);
+                        if (stack.has(SpatialBlueprintComponents.BLUEPRINT_ID.get())) {
+                            buildStack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(),
+                                    stack.get(SpatialBlueprintComponents.BLUEPRINT_ID.get()));
                         }
-                        buildNbt.putLong("completionTime",
+                        // 旧内联数据留在 custom_data（LegacyItemMigration 类注释）：源有才复制
+                        CustomData srcCustom = stack.get(DataComponents.CUSTOM_DATA);
+                        if (srcCustom != null && srcCustom.copyTag().contains("blueprintData")) {
+                            CompoundTag dstCustom = buildStack
+                                    .getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY)
+                                    .copyTag().copy();
+                            dstCustom.put("blueprintData", srcCustom.copyTag().getCompound("blueprintData").copy());
+                            buildStack.set(DataComponents.CUSTOM_DATA, CustomData.of(dstCustom));
+                        }
+                        buildStack.set(SpatialBlueprintComponents.COMPLETION_TIME.get(),
                                 player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
-                        buildNbt.putString("sourceType", "project");
-                        buildStack.setTag(buildNbt);
+                        buildStack.set(SpatialBlueprintComponents.SOURCE_TYPE.get(), "project");
                         player.setItemInHand(hand, buildStack);
                         ItemSyncUtil.syncHand(player, hand);
                     }
@@ -408,28 +435,26 @@ public class PlaceBlueprintMessage {
                         ? actualPos.offset(data.size.getZ() - 1, data.size.getY() - 1, data.size.getX() - 1)
                         : actualPos.offset(data.size.getX() - 1, data.size.getY() - 1, data.size.getZ() - 1);
                 ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
-                CompoundTag buildNbt = new CompoundTag();
-                buildNbt.putString("blueprintName", data.name);
-                buildNbt.putInt("saveMode", data.saveMode.ordinal());
-                buildNbt.putLong("completionTime",
+                buildStack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), data.name);
+                buildStack.set(SpatialBlueprintComponents.SAVE_MODE.get(), data.saveMode);
+                buildStack.set(SpatialBlueprintComponents.COMPLETION_TIME.get(),
                         player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
-                buildNbt.putString("sourceType", "void_dimensional");
+                buildStack.set(SpatialBlueprintComponents.SOURCE_TYPE.get(), "void_dimensional");
                 // 空置次元蓝图必须携带 blueprintId，否则「重新储存」找不到要覆盖写回的文件，
                 // 右键时还会被判定为失效直接换成空白蓝图。
-                if (!blueprintIdForBag.isEmpty()) buildNbt.putString("blueprintId", blueprintIdForBag);
-                buildNbt.put("captureMin", NbtUtils.writeBlockPos(placedMin));
-                buildNbt.put("captureMax", NbtUtils.writeBlockPos(placedMax));
-                buildNbt.putDouble("tpX", player.getX());
-                buildNbt.putDouble("tpY", player.getY());
-                buildNbt.putDouble("tpZ", player.getZ());
-                buildNbt.putString("tpDimension", player.serverLevel().dimension().location().toString());
+                if (!blueprintIdForBag.isEmpty()) buildStack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(), blueprintIdForBag);
+                buildStack.set(SpatialBlueprintComponents.CAPTURE_MIN.get(), placedMin);
+                buildStack.set(SpatialBlueprintComponents.CAPTURE_MAX.get(), placedMax);
+                buildStack.set(SpatialBlueprintComponents.TP_X.get(), player.getX());
+                buildStack.set(SpatialBlueprintComponents.TP_Y.get(), player.getY());
+                buildStack.set(SpatialBlueprintComponents.TP_Z.get(), player.getZ());
+                buildStack.set(SpatialBlueprintComponents.TP_DIMENSION.get(), player.serverLevel().dimension().location().toString());
                 // 存档身份：空置次元蓝图的坐标只在本档有意义，带到别的档里必须能认出来
-                buildNbt.putString("worldUuid", com.xioyim.spatialblueprint.util.WorldIdentity
+                buildStack.set(SpatialBlueprintComponents.WORLD_UUID.get(), com.xioyim.spatialblueprint.util.WorldIdentity
                         .get(player.serverLevel()).uuid().toString());
-                buildNbt.putString("worldName", com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
-                if (stack.hasTag() && stack.getTag().contains("creatorName"))
-                    buildNbt.putString("creatorName", stack.getTag().getString("creatorName"));
-                buildStack.setTag(buildNbt);
+                buildStack.set(SpatialBlueprintComponents.WORLD_NAME.get(), com.xioyim.spatialblueprint.util.WorldIdentity.currentName());
+                if (stack.has(SpatialBlueprintComponents.CREATOR_NAME.get()))
+                    buildStack.set(SpatialBlueprintComponents.CREATOR_NAME.get(), VoidDimensionalBlueprintItem.getCreatorName(stack));
                 player.setItemInHand(hand, buildStack);
                 ItemSyncUtil.syncHand(player, hand);
             } else if (isProjection && (isReward || isEngineering)) {
@@ -443,18 +468,24 @@ public class PlaceBlueprintMessage {
             } else if (isProjection) {
                 // 创造模式投影蓝图：转为 BuildBlueprintItem（防止动画期间重复放置）
                 ItemStack buildStack = new ItemStack(SpatialBlueprintItems.BUILD_BLUEPRINT.get());
-                CompoundTag buildNbt = new CompoundTag();
-                buildNbt.putString("blueprintName", data.name);
-                buildNbt.putInt("saveMode", data.saveMode.ordinal());
-                if (stack.hasTag()) {
-                    CompoundTag src = stack.getTag();
-                    if (src.contains("blueprintId"))   buildNbt.putString("blueprintId", src.getString("blueprintId"));
-                    if (src.contains("blueprintData")) buildNbt.put("blueprintData", src.getCompound("blueprintData").copy());
+                buildStack.set(SpatialBlueprintComponents.BLUEPRINT_NAME.get(), data.name);
+                buildStack.set(SpatialBlueprintComponents.SAVE_MODE.get(), data.saveMode);
+                if (stack.has(SpatialBlueprintComponents.BLUEPRINT_ID.get())) {
+                    buildStack.set(SpatialBlueprintComponents.BLUEPRINT_ID.get(),
+                            stack.get(SpatialBlueprintComponents.BLUEPRINT_ID.get()));
                 }
-                buildNbt.putLong("completionTime",
+                // 旧内联数据留在 custom_data（LegacyItemMigration 类注释）：源有才复制
+                CustomData srcCustom = stack.get(DataComponents.CUSTOM_DATA);
+                if (srcCustom != null && srcCustom.copyTag().contains("blueprintData")) {
+                    CompoundTag dstCustom = buildStack
+                            .getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY)
+                            .copyTag().copy();
+                    dstCustom.put("blueprintData", srcCustom.copyTag().getCompound("blueprintData").copy());
+                    buildStack.set(DataComponents.CUSTOM_DATA, CustomData.of(dstCustom));
+                }
+                buildStack.set(SpatialBlueprintComponents.COMPLETION_TIME.get(),
                         player.serverLevel().getGameTime() + BuildBlueprintItem.buildTicks(animDuration));
-                buildNbt.putString("sourceType", "project");
-                buildStack.setTag(buildNbt);
+                buildStack.set(SpatialBlueprintComponents.SOURCE_TYPE.get(), "project");
                 player.setItemInHand(hand, buildStack);
                 ItemSyncUtil.syncHand(player, hand);
             }
@@ -525,8 +556,6 @@ public class PlaceBlueprintMessage {
                     + " animDuration=" + animDuration + "s");
 
             sendResult(player, true, "");
-        });
-        ctx.get().setPacketHandled(true);
     }
 
     /**
@@ -585,18 +614,14 @@ public class PlaceBlueprintMessage {
     }
 
     private static void sendResult(ServerPlayer player, boolean success, String messageKey) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
-                new S2C_OperationResult(success, messageKey)
-        );
+        BlueprintNetwork.sendToPlayer(player, new S2C_OperationResult(success, messageKey));
         if (!success) {
             sendPlacementCancelled(player);
         }
     }
 
     private static void sendPlacementCancelled(ServerPlayer player) {
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 new com.xioyim.spatialblueprint.network.s2c.S2C_PlacementProgressMessage(-1f));
     }
 
@@ -616,8 +641,7 @@ public class PlaceBlueprintMessage {
                 (int) Math.floor(player.getY()),
                 (int) Math.floor(player.getZ()),
                 player.serverLevel().dimension().location().toString());
-        BlueprintNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        BlueprintNetwork.sendToPlayer(player,
                 // H2：过滤后再推，避免放置一次就把全量列表泄一次。
                 new S2C_LibrarySyncMessage(C2S_RequestLibraryMessage.buildFilteredSummaries(player)));
         // 同时刷新客户端的 BlueprintData 缓存：玩家可能还持有其他指向同一文件的次元蓝图，

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "NDN",
+    "PPP",
+    "NDN"
+  ],
+  "key": {
+    "N": { "item": "minecraft:iron_nugget" },
+    "D": { "item": "minecraft:white_dye" },
+    "P": { "item": "minecraft:paper" }
+  },
+  "result": {
+    "id": "spatial_blueprint:blank_blueprint",
+    "count": 1
+  }
+}

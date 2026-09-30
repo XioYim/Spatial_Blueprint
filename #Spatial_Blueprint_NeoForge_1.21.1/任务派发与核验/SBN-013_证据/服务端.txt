@@ -1,0 +1,16 @@
+SBN-013 专服冒烟证据（A3，必做）
+时间：2026-09-30 17:22:24
+方式：run\ 预置 eula.txt + server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest, online-mode=false），Start-Process 后台起 runServer（stdout 重定向），轮询到 Done 后 RCON 先执行 "sb reload"（记录返回文本）再执行 stop，等待正常退出。
+
+  [17:22:23] [Worker-Main-3/INFO] [co.xi.sp.SpatialBlueprintMod/]: [SpatialBlueprint] Registered command: /sb undo, /sb config, /sb reload, /sb space, /sb tpperm, /sb project
+  [17:22:24] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.389s)! For help, type "help"
+  [17:22:42] [Server thread/INFO] [minecraft/MinecraftServer]: [Rcon: [SpatialBlueprint] Config hot-reloaded successfully]
+  [17:22:51] [Server thread/INFO] [minecraft/MinecraftServer]: [Rcon: Stopping the server]
+  rcon response: [SpatialBlueprint] Config hot-reloaded successfully（rcon_stop.ps1 输出）
+  rcon response: Stopping the server（rcon_stop.ps1 输出）
+  随后 java 进程全部消失；gradle runServer 任务 BUILD SUCCESSFUL。
+
+ERROR 统计：0 条。
+本 mod 相关 WARN：3 条，均为配置 correction 日志（ConfigTracker / ModConfigSpec 的列表项校验与 reload 回显）——C1 既有行为，非错误。全部 WARN 共 21 条（其余为原版命令歧义 / 资产 URL / 离线模式提示）。
+命令注册：日志打出 "[SpatialBlueprint] Registered command: /sb undo, /sb config, /sb reload, /sb space, /sb tpperm, /sb project"。
+取证后 run\ 整目录删除（沿 SBN-008/010/012 做法）。

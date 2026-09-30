@@ -1,0 +1,167 @@
+SBN-015 · P5a 客户端入口与缓存
+派发：2026-09-30 21:40:00（云端主会话）
+分支：task/SBN-015（从 neoforge-1.21.1 @ 799abb7 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-015 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2；本机取 git 输出按 K15。
+本任务要读：注意事项_目录.md 的 T1、K1、K2、K3、K7、K10、K16、K21、K25、K27、C2、C12、C14、C16、C29；
+迁移计划书「P5 细化」一节（三个设计决定）；network/BlueprintNetwork.java 类注释（S2C 客户端体打桩口径，本任务反过来把桩接上）；
+通用经验第五节（API 对照）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已 javap（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P5 第一段（迁移计划书 P5 细化）。服务端 P4 已完成；1.21.1 还没有 client 包。本任务建客户端入口、搬缓存 / 状态类，把「收包 → 写缓存」与「物品读缓存」这条链接通。
+渲染（SBN-016 / 017）与界面（P6）都不在本任务。
+
+1.20.1 要搬的类（client\ 下，云端已逐个查过引用）：
+  纯逻辑（不引用 net.minecraft.client）：ClientBlueprintCache(239)、ClientCaptureCooldown(48)、ClientConfigMirror(150)、ClientOtherPreviewCache(114)、
+      ClientProjectEntriesCache(62)、ClientProjectListCache(89)、ClientProjectStatusCache(58)、ClientTeleportPermCache(77)、ClientWorldIdentity(57)、
+      ConfigAccess(82，ForgeConfigSpec → ModConfigSpec)、OtherPlayerDownloadListener(33)
+  引用客户端类：ClientConfigPermCache(62，Minecraft)、ClientLibraryCache(138，Minecraft / LocalPlayer)、ClientMaterialSpaceCache(99，Minecraft + gui.MaterialSpaceScreen)、
+      ClientPreviewSettings(100，Minecraft)
+  入口：ClientModSetup(58) → 改写为新入口类（三.1）。
+  1.20.1 每个缓存类都自带 @Mod.EventBusSubscriber(Dist.CLIENT) 的 ClientPlayerNetworkEvent.LoggingOut 监听清自己 —— 本任务改为集中清（三.2）。
+
+要清的 22 条桩（逐条接上）：
+  S2C 接缓存 14：S2C_BlueprintChunkMessage、S2C_BlueprintDataMessage、S2C_BlueprintDataFailMessage、S2C_MaterialSpaceSyncMessage、S2C_LibrarySyncMessage、
+      S2C_WorldIdentityMessage、S2C_TeleportPermMessage、S2C_PreviewBroadcastMessage、s2c/S2C_ProjectListMessage、s2c/S2C_ProjectEntriesMessage、
+      s2c/S2C_ProjectStatusMessage、s2c/S2C_ConfigValuesMessage、s2c/S2C_CaptureCooldownMessage、s2c/S2C_ConfigPermMessage
+  物品 5：AbstractBlueprintItem.getBlueprintDataClient、SpatialBlueprintItem.getBlueprintDataClient、ProjectBlueprintItem 三处 ClientProjectStatusCache 读取
+  其它 3：util/NotifySound 客户端提示音、主类 clientSetup、主类登出方法的客户端分支（删除，见三.2）
+
+改标 P6 的 7 条（只改注释标签与说明，不接）：S2C_VoidBagSyncMessage、s2c/S2C_BlueprintMaterialsMessage、s2c/S2C_UploadReportMessage、
+  s2c/S2C_OpenVoidScreenMessage、s2c/S2C_OpCaptureConfirmMessage、s2c/S2C_OpenConfigMessage、s2c/S2C_OperationResult（失败弹窗依赖 gui.ErrorToastScreen）。
+留在 P5 的 2 条（016 / 017 做）：s2c/S2C_PlacementProgressMessage（渲染器）、block/RenderBlock 破坏特效。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  client/ 下第一节列出的 15 个缓存 / 状态类（1.20.1 同路径同名）
+  新  client/SpatialBlueprintClient.java            ← 客户端入口（三.1），取代 ClientModSetup（ClientModSetup 不搬）
+  新  client/ClientNotifySound.java（或照 1.20.1 NotifySound 客户端两个方法的实际落点命名，报告写明）
+  改  上面 14 个 S2C 消息                          ← 只改客户端体（桩 → 调用），其余零改动
+  改  上面 7 个 S2C 消息                           ← 只把 SB-TODO(P5) 改成 SB-TODO(P6)（说明文字保留）
+  改  item/AbstractBlueprintItem.java、item/SpatialBlueprintItem.java、item/ProjectBlueprintItem.java ← 只改桩处
+  改  util/NotifySound.java                        ← 只去掉桩注释（客户端半边搬到 client 包），服务端半边零改动
+  改  SpatialBlueprintMod.java                     ← 只去掉 clientSetup 桩与登出方法的 else 分支（服务端分支零改动）
+  新  gametest/SBN015Tests.java
+
+交接件（规程允许范围）：SBN-015_报告.txt、SBN-015_证据\、开发日志.md 文末「## SBN-015 执行记录」、
+测试清单.txt 追加「十五、SBN-015 客户端入口与缓存」（含【手测】H 项）、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切（含 BlueprintSelectionRenderer 相关、gui、outliner、RenderBlock、S2C_PlacementProgressMessage）。
+缓存类里引用 gui 的调用（如 ClientMaterialSpaceCache 刷新已打开的 MaterialSpaceScreen）按口径打 SB-TODO(P6) 桩；引用渲染器的打 SB-TODO(P5) 桩并写明 016 / 017。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则：缓存的字段、判断、上限、翻译键、日志文本一律不改；每个文件 diff -w 残差逐条进报告。
+
+1. 客户端入口 client/SpatialBlueprintClient
+   a. @Mod(value = SpatialBlueprintMod.MODID, dist = Dist.CLIENT)，构造器 (IEventBus modEventBus, ModContainer container)（J48）。
+   b. 1.20.1 ClientModSetup.init 的三件事：ClientPreviewSettings.load() 本任务做（FMLClientSetupEvent 里）；
+      BlockEntityRenderers 注册 RenderBlockRenderer → SB-TODO(P5) 桩（016）；配置界面工厂 → SB-TODO(P6) 桩（1.21 用 container.registerExtensionPoint(IConfigScreenFactory.class, …)，J48，写进桩说明）。
+   c. 主类 SpatialBlueprintMod 里不许出现任何对 client 包的引用（入口由 FML 按 dist 加载）。
+
+2. 断线清缓存（迁移计划书决定 2）
+   a. 缓存类去掉 @Mod.EventBusSubscriber 与 onLoggingOut 方法，保留 / 补一个 public static clear()（1.20.1 onLoggingOut 里清什么，clear 就清什么，逐类对照进报告）。
+   b. 入口类用 NeoForge.EVENT_BUS.addListener 监听 ClientPlayerNetworkEvent.LoggingOut，逐个调各缓存 clear()（清单与 1.20.1 带监听的类逐个对上）。
+   c. 主类 onPlayerLogout 的 else 分支（SB-TODO(P5) 桩）删除：服务端的玩家登出事件不是清客户端缓存的地方。
+
+3. 收包 → 缓存（14 个 S2C）
+   a. 客户端体照 1.20.1 handleClient 原样调用对应缓存方法；参数只传消息对象或其字段（公共类型），不在公共包里出现 net.minecraft.client 类型。
+   b. **分边铁律（T1 / 迁移计划书三.5）**：公共包（主类、block、command、item、log、network、server、util）里 **0 处** net.minecraft.client 引用；
+      对本 mod client 包的引用只允许出现在「只在客户端执行的方法体」里（S2C 客户端体、物品的 *Client 读法），逐处列进报告。
+   c. ClientBlueprintCache 的分块重组、失败标记、与 OtherPlayerDownloadListener 的衔接原样。
+
+4. 物品读缓存
+   a. getBlueprintDataClient（Abstract / Spatial）：1.20.1 语义 —— 有 blueprintId → ClientBlueprintCache.get(id)；AbstractBlueprintItem 无 id 时回退内联数据
+      （与 SBN-014 服务端 readInlineData 同一份只读读法，可复用那个 private 方法，允许改为包内可见）；SpatialBlueprintItem 只认缓存。
+   b. ProjectBlueprintItem 三处照 1.20.1 读 ClientProjectStatusCache。
+
+5. ConfigAccess：ForgeConfigSpec → ModConfigSpec；按路径取 ValueSpec 的写法照 C16 核对（1.21 getSpec().get(path) 仍在则原样，不在照实测改）。
+6. NotifySound 客户端两个方法（client / clientError）搬到 client 包，调用方（本任务内只有 S2C 客户端体会用到的）改调新位置；服务端半边不动。
+
+========================================================
+四、取证（云端 2026-09-30 已 javap neoforge-21.1.252-merged + fancymodloader loader-4.0.44）
+========================================================
+
+  J48 net.neoforged.fml.common.Mod#dist() → Dist[]；EventBusSubscriber#value() → Dist[]、#modid()；
+      ModContainer#registerExtensionPoint(Class, Supplier)；net.neoforged.neoforge.client.gui.IConfigScreenFactory#createScreen(ModContainer, Screen)；
+      net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent$LoggingOut(MultiPlayerGameMode, LocalPlayer, Connection)；
+      RegisterClientExtensionsEvent#registerBlock(IClientBlockExtensions, Block...)（016 用，列出备查）
+  其余沿用 J31～J47。
+
+========================================================
+五、测试
+========================================================
+
+GameTest 服是专用服务端：只能测不引用 net.minecraft.client 的纯逻辑缓存；引用客户端类的四个类不进 GameTest（照实写进报告）。
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2）。既有 119 条照旧全过。
+    t01_blueprintCache       S2C_BlueprintChunkMessage 分块（真实 BlueprintData 经服务端 sendBlueprintTo 同一切块逻辑产生）按乱序喂入 → 重组后 BlueprintData 与原件 serialize 逐字相等；
+                             缺块 / 超块数 / 超总长 → 按 1.20.1 语义丢弃（照源码断言）；S2C_BlueprintDataFailMessage → markFailed 状态；clear() 后全空。
+    t02_otherDownload        OtherPlayerDownloadListener.register(id, uuid) → 数据到达 → ClientOtherPreviewCache 该玩家条目挂上完整数据；未登记的 id 不挂。
+    t03_projectCaches        ProjectList / ProjectEntries / ProjectStatus 三个 S2C 真实实例（服务端 handleServer 产出的包，经 fakePlayerSink 截获）→ 喂客户端缓存 → 读回字段逐项相等；clear()。
+    t04_smallCaches          WorldIdentity / TeleportPerm / CaptureCooldown / ConfigMirror（S2C_ConfigValuesMessage 真实实例）→ 缓存读回；冷却随时间到期（照源码时钟口径）；clear()。
+    t05_configAccess         ConfigAccess 按完整路径（C16）读写若干配置项，与 BlueprintConfig.SPEC 的值一致；越界值按 ModConfigSpec 校验语义处理。
+    t06_itemClientRead       投影蓝图带 id 且缓存里有 → getBlueprintDataClient 返回缓存；无 id 带内联 → 内联（只读）；SpatialBlueprintItem 无缓存 → null；
+                             ProjectBlueprintItem 三处在缓存有 / 无状态时的返回值。
+    t07_logoutClears         逐个缓存填数据 → 调入口类里断线监听实际调用的那个方法（不 post 客户端事件）→ 全部为空；清单与 1.20.1 带监听的类逐个对上。
+    测试 finally 清所有客户端缓存与 fakePlayerSink。
+A3  专服冒烟（必做，**本任务的分边门禁**）：runServer 到 Done、stop 正常、0 条本 mod ERROR；且 runServer 与 runGameTestServer 两份日志里
+    「invalid dist」「Attempted to load class」「NoClassDefFoundError」**0 条**（K16）。
+A4  grep 门禁（必做）：公共包（主类、block\、command\、item\、log\、network\、server\、util\）下 net.minecraft.client / net.minecraftforge 0 命中；
+    spatialblueprint.client 的引用逐处列出并说明「只在客户端执行」；注释里无 SB-TODO( 示例字样（K10）。
+
+【手测】（写进测试清单十五，前置 → 操作 → 预期；用户回结果后再写回）
+H1  runClient 进单人新存档 → 创造模式拿空白 / 空间 / 投影蓝图各一个、鼠标悬停看提示 → 不崩、日志 0 条本 mod ERROR；退出到标题再进另一个存档 → 不崩。
+H2  runServer + runClient 连本机专服 → 登录成功不断开、日志无 invalid dist / 本 mod ERROR；断开重连一次 → 正常。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致；主类与 NotifySound 只动了桩处。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑两轮）；A3（含分边门禁）、A4 通过。
+V3  15 个搬迁类与 1.20.1 diff -w 残差只在口径内（去 @OnlyIn / 事件订阅、clear() 集中、ForgeConfigSpec → ModConfigSpec、gui / 渲染调用打桩）；14 个 S2C 客户端体与 1.20.1 handleClient 调用逐条相等。
+V4  SB-TODO( 实数 = 41 − 22 + 本任务新桩（逐条列出，预期是入口的 RenderBlockRenderer(P5) / 配置界面(P6) 与缓存里的 gui 刷新(P6)）；P5 / P6 分项计数。
+V5  断线清单：入口监听调用的 clear() 集合 = 1.20.1 带 LoggingOut 监听的类集合（逐个对上）。
+V6  变异复核（云端验收时做）：ClientBlueprintCache 缺块丢弃判定、OtherPlayerDownloadListener 的 PENDING 匹配、断线监听漏清一个缓存、
+    getBlueprintDataClient 的内联回退，各改坏一次 → t01 / t02 / t07 / t06 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-015 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.6 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」（按文件分组）
+三、分边实测：公共包对 client 包的引用清单（file:line + 为何只在客户端执行）；A3 两份日志的分边门禁计数
+四、测试覆盖：A1～A4；t01～t07；@GameTest 实数；H1 / H2 登记
+五、迁移桩清单（清掉的 22 条逐条 + 改标 P6 的 7 条 + 新增逐条 + P5 / P6 分项总数）
+六、任务书出入
+七、双端同步自查（每个缓存的来源包与失效时机；断线清理；单人（集成服）与多人两种情形）
+八、教训同步
+九、建议记入
+十、需要用户做的事（H1 / H2 手测）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-015』；H1 / H2 需要你 runClient 手测」。

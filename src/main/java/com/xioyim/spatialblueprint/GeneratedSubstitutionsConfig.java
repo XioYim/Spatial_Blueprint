@@ -1,6 +1,6 @@
 package com.xioyim.spatialblueprint;
 
-import net.minecraftforge.common.ForgeConfigSpec;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,17 +17,17 @@ import java.util.Map;
  * </ul>
  */
 public class GeneratedSubstitutionsConfig {
-    public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
-    public static final ForgeConfigSpec SPEC;
+    public static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    public static final ModConfigSpec SPEC;
 
     /** 方块替换表：source block → target block/item（迁移自主配置）。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> BLOCK_SUBSTITUTIONS;
+    public static final ModConfigSpec.ConfigValue<List<String>> BLOCK_SUBSTITUTIONS;
 
     /** 生成的候选映射（每行 {@code sourceBlockId=targetItemId}）。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> GENERATED;
+    public static final ModConfigSpec.ConfigValue<List<String>> GENERATED;
 
     /** 批量材料转换（每行 {@code sourceBlockId=threshold|item1*count1+item2*count2}）。 */
-    public static final ForgeConfigSpec.ConfigValue<List<String>> BULK_CONVERSIONS;
+    public static final ModConfigSpec.ConfigValue<List<String>> BULK_CONVERSIONS;
 
     static {
         BLOCK_SUBSTITUTIONS = BUILDER

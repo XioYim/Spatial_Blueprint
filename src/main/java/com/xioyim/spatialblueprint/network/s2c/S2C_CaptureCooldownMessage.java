@@ -1,9 +1,11 @@
 package com.xioyim.spatialblueprint.network.s2c;
 
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * S2C：一次<b>真正成功</b>的蓝图创建之后，通知客户端开始捕获冷却。
@@ -15,7 +17,14 @@ import java.util.function.Supplier;
  * <p>改由服务端在捕获全部成功、蓝图落盘之后才发这个包：中途取消、体积超限、
  * 槽位已满、检测被拒 —— 一律不会收到，也就不进冷却。<b>OP 直接不发</b>。</p>
  */
-public class S2C_CaptureCooldownMessage {
+public class S2C_CaptureCooldownMessage implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<S2C_CaptureCooldownMessage> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(
+                    SpatialBlueprintMod.MODID, "s2c_capture_cooldown_message"));
+
+    public static final StreamCodec<FriendlyByteBuf, S2C_CaptureCooldownMessage> STREAM_CODEC =
+            StreamCodec.ofMember(S2C_CaptureCooldownMessage::encode, S2C_CaptureCooldownMessage::decode);
 
     /** 捕获冷却时长（秒）。非 OP 玩家一次成功创建之后要等这么久才能再来一次。 */
     public static final int COOLDOWN_SECONDS = 15;
@@ -30,6 +39,11 @@ public class S2C_CaptureCooldownMessage {
         return seconds;
     }
 
+    @Override
+    public CustomPacketPayload.Type<S2C_CaptureCooldownMessage> type() {
+        return TYPE;
+    }
+
     public static void encode(S2C_CaptureCooldownMessage msg, FriendlyByteBuf buf) {
         buf.writeVarInt(msg.seconds);
     }
@@ -38,15 +52,7 @@ public class S2C_CaptureCooldownMessage {
         return new S2C_CaptureCooldownMessage(buf.readVarInt());
     }
 
-    public static void handle(S2C_CaptureCooldownMessage msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> handleClient(msg));
-        ctx.get().setPacketHandled(true);
-    }
-
-    // 必须标 @OnlyIn：lambda 体只调用本方法，客户端类型只出现在这里，
-    // 否则专用服务端注册消息时就会去加载客户端类。
-    @net.minecraftforge.api.distmarker.OnlyIn(net.minecraftforge.api.distmarker.Dist.CLIENT)
-    private static void handleClient(S2C_CaptureCooldownMessage msg) {
+    public static void handle(S2C_CaptureCooldownMessage msg, IPayloadContext ctx) {
         com.xioyim.spatialblueprint.client.ClientCaptureCooldown.start(msg.getSeconds());
     }
 
@@ -57,8 +63,7 @@ public class S2C_CaptureCooldownMessage {
      */
     public static void notifySuccess(net.minecraft.server.level.ServerPlayer player) {
         if (player == null || player.hasPermissions(2)) return;
-        com.xioyim.spatialblueprint.network.BlueprintNetwork.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-                new S2C_CaptureCooldownMessage(COOLDOWN_SECONDS));
+        com.xioyim.spatialblueprint.network.BlueprintNetwork.sendToPlayer(
+                player, new S2C_CaptureCooldownMessage(COOLDOWN_SECONDS));
     }
 }
