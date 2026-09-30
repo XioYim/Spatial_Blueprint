@@ -270,6 +270,10 @@ public class BlueprintNetwork {
         // ── SBN-012（P4）：放置 1 条（C2S）────────────────────────────────────
         r.playToServer(PlaceBlueprintMessage.TYPE, PlaceBlueprintMessage.STREAM_CODEC,
                 PlaceBlueprintMessage::handle);
+
+        // ── SBN-013（P4）：Reload 1 条（C2S）──────────────────────────────────
+        r.playToServer(C2S_ReloadConfigMessage.TYPE, C2S_ReloadConfigMessage.STREAM_CODEC,
+                C2S_ReloadConfigMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────

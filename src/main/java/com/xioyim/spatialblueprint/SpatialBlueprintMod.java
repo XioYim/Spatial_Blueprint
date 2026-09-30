@@ -44,7 +44,8 @@ public class SpatialBlueprintMod {
         SpatialBlueprintRegistry.register(modEventBus);
         modEventBus.addListener(com.xioyim.spatialblueprint.network.BlueprintNetwork::register);
 
-        // SB-TODO(P4): SBCommands（命令注册）
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                com.xioyim.spatialblueprint.command.SBCommands::register);
         // SB-TODO(P4): 登录登出事件（传送权限 / 存档身份 / 孤儿次元袋提示）
         // SB-TODO(P5): clientSetup（ClientModSetup）
         // SB-TODO(P4): ForagersInsightCompat（作物收获经验补丁）

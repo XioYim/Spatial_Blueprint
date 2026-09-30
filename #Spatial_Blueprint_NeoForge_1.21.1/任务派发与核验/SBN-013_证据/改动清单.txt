@@ -1,0 +1,26 @@
+SBN-013 改动清单（V1，两向比对）
+时间：2026-09-30 17:30:00 · 基准 task/SBN-013 @ 670b1b9（分支未提交改动）
+
+工作区改动（git status --short，按字节直出）：
+   M src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java
+   M src/main/java/com/xioyim/spatialblueprint/network/BlueprintNetwork.java
+  ?? "#Spatial_Blueprint_NeoForge_1.21.1/\344\273\273\345\212\241\346\264\276\345\217\221\344\270\216\346\240\270\351\252\214/SBN-013_\350\257\201\346\215\256/"
+  ?? src/main/java/com/xioyim/spatialblueprint/command/
+  ?? src/main/java/com/xioyim/spatialblueprint/gametest/SBN013Tests.java
+  ?? src/main/java/com/xioyim/spatialblueprint/network/C2S_ReloadConfigMessage.java
+
+已跟踪文件相对基线的 name-status：
+  M	src/main/java/com/xioyim/spatialblueprint/SpatialBlueprintMod.java
+  M	src/main/java/com/xioyim/spatialblueprint/network/BlueprintNetwork.java
+
+允许清单（任务书第二节）→ 实际：
+  新 command/SBCommands.java                → 有（1.20.1 同路径搬迁 + 口径改写：import 换 neoforge 包、2 处发包改 sendToPlayer）
+  新 network/C2S_ReloadConfigMessage.java   → 有（1.20.1 同路径搬迁 + 口径改写：payload 外壳 + doReload 三步改写）
+  改 network/BlueprintNetwork.java          → 有（只加 1 条 playToServer 注册，+4 行含注释）
+  改 SpatialBlueprintMod.java               → 有（「// SB-TODO(P4): SBCommands（命令注册）」一行替换为 NeoForge.EVENT_BUS.addListener(SBCommands::register) 两行）
+  新 gametest/SBN013Tests.java              → 有（t01～t08 共 8 条）
+  交接件：SBN-013_报告.txt / SBN-013_证据\ / 开发日志.md / 测试清单.txt / 云端协作规程.md → 全部按规程范围
+
+反向（实际 → 允许）：无允许清单外文件。SBCommands 的 diff -w 残差仅 import（1 行）+ 2 处发包（各 2 行→1 行），
+  其余逐字相同（详见 命令树.txt 二）。C2S_ReloadConfigMessage 的残差只有 payload 外壳与 doReload 的三步改写 + import。
+  run\ 取证后整目录删除；无其它工具类 / 物品类 / 客户端改动。
