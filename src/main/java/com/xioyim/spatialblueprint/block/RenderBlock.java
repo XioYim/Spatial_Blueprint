@@ -13,15 +13,9 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import javax.annotation.Nullable;
 
 public class RenderBlock extends Block implements EntityBlock {
-    // 客户端缓存：onRemove 时保存 targetBlock，供破坏粒子使用
-    // （levelEvent 2001 到达时 BlockEntity 已被移除，必须提前缓存）
-    private static final Map<BlockPos, BlockState> CLIENT_PARTICLE_CACHE = new HashMap<>();
 
     public RenderBlock() {
         super(Block.Properties.of()
@@ -77,8 +71,8 @@ public class RenderBlock extends Block implements EntityBlock {
         if (level.isClientSide() && !state.is(newState.getBlock()) && newState.isAir()) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof RenderBlockEntity rbe && rbe.targetBlock != null && !rbe.targetBlock.isAir()) {
-                // SB-TODO(P5): addDestroyEffects 改走 IClientBlockExtensions（initializeClient），连同这里的缓存一起恢复
-                // CLIENT_PARTICLE_CACHE.put(pos.immutable(), rbe.targetBlock);
+                // 破坏粒子缓存（客户端纯逻辑类，addDestroyEffects 走 IClientBlockExtensions）
+                com.xioyim.spatialblueprint.client.RenderBlockParticleCache.put(pos.immutable(), rbe.targetBlock);
             }
         }
         super.onRemove(state, level, pos, newState, movedByPiston);

@@ -1,12 +1,17 @@
 package com.xioyim.spatialblueprint.client;
 
 import com.xioyim.spatialblueprint.SpatialBlueprintMod;
+import com.xioyim.spatialblueprint.SpatialBlueprintRegistry;
+import com.xioyim.spatialblueprint.client.outliner.OutlinerDebug;
+import com.xioyim.spatialblueprint.client.renderer.RenderBlockRenderer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
 /**
@@ -22,7 +27,15 @@ public final class SpatialBlueprintClient {
 
     public SpatialBlueprintClient(IEventBus modEventBus, ModContainer container) {
         modEventBus.addListener(this::clientSetup);
+        modEventBus.addListener(this::registerRenderers);
+        modEventBus.addListener(this::registerClientExtensions);
         NeoForge.EVENT_BUS.addListener(SpatialBlueprintClient::onLoggingOut);
+        // 开发用 outliner 调试驱动：仅环境变量 SB_DEBUG_OUTLINER 非空时注册（默认构建零影响）
+        String debugOutliner = System.getenv("SB_DEBUG_OUTLINER");
+        if (debugOutliner != null && !debugOutliner.isEmpty()) {
+            NeoForge.EVENT_BUS.addListener(OutlinerDebug::onClientTick);
+            NeoForge.EVENT_BUS.addListener(OutlinerDebug::onRenderLevel);
+        }
     }
 
     /**
@@ -31,11 +44,21 @@ public final class SpatialBlueprintClient {
      * @param container ModContainer（配置界面工厂注册用，J48：container.registerExtensionPoint）
      */
     private void clientSetup(final FMLClientSetupEvent event) {
-        // SB-TODO(P5): 注册 RenderBlockRenderer（BlockEntityRenderers.register，SBN-016 渲染底座）
         ClientPreviewSettings.load();
         // SB-TODO(P6): 配置界面工厂（container.registerExtensionPoint(IConfigScreenFactory.class, …)，J48；
         // 原 1.20.1 在 ClientModSetup 里注册 ConfigScreenHandler.ConfigScreenFactory，
         // 打开前用 ClientConfigPermCache 拦非 OP）
+    }
+
+    /** 渲染方块（放置动画）的 BlockEntityRenderer 注册（J49）。 */
+    private void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(
+                SpatialBlueprintRegistry.RENDER_BLOCK_ENTITY.get(), RenderBlockRenderer::new);
+    }
+
+    /** RenderBlock 的破坏粒子扩展（1.21 的 addDestroyEffects 落点，J49）。 */
+    private void registerClientExtensions(RegisterClientExtensionsEvent event) {
+        event.registerBlock(new RenderBlockClientExtensions(), SpatialBlueprintRegistry.RENDER_BLOCK.get());
     }
 
     /**
@@ -67,7 +90,8 @@ public final class SpatialBlueprintClient {
      * <p>清单与 1.20.1 带 LoggingOut 监听的类逐个对上：ClientBlueprintCache / ClientCaptureCooldown /
      * ClientConfigMirror / ClientConfigPermCache / ClientLibraryCache / ClientMaterialSpaceCache /
      * ClientOtherPreviewCache / ClientProjectEntriesCache / ClientProjectListCache /
-     * ClientProjectStatusCache / ClientTeleportPermCache / ClientWorldIdentity（共 12 个）。</p>
+     * ClientProjectStatusCache / ClientTeleportPermCache / ClientWorldIdentity（共 12 个）；
+     * SBN-016 新增第 13 个 RenderBlockParticleCache（1.20.1 的静态表从未清过，这里有意纳入）。</p>
      */
     public static void clearAllCaches() {
         ClientBlueprintCache.clearAll();
@@ -82,5 +106,6 @@ public final class SpatialBlueprintClient {
         ClientProjectStatusCache.clear();
         ClientTeleportPermCache.clear();
         ClientWorldIdentity.clear();
+        RenderBlockParticleCache.clear();
     }
 }

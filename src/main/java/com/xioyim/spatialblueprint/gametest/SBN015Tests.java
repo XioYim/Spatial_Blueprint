@@ -17,6 +17,7 @@ import com.xioyim.spatialblueprint.client.ClientTeleportPermCache;
 import com.xioyim.spatialblueprint.client.ClientWorldIdentity;
 import com.xioyim.spatialblueprint.client.ConfigAccess;
 import com.xioyim.spatialblueprint.client.OtherPlayerDownloadListener;
+import com.xioyim.spatialblueprint.client.RenderBlockParticleCache;
 import com.xioyim.spatialblueprint.client.SpatialBlueprintClient;
 import com.xioyim.spatialblueprint.config.ConfigRegistry;
 import com.xioyim.spatialblueprint.item.AbstractBlueprintItem;
@@ -546,6 +547,8 @@ public class SBN015Tests {
             ClientProjectStatusCache.onReceive(S2C_ProjectStatusMessage.notFound("p-status"));
             ClientTeleportPermCache.set(true);
             ClientWorldIdentity.set("u", "n");
+            // SBN-016 第 13 个缓存：破坏粒子缓存（RenderBlock.onRemove 写入）
+            RenderBlockParticleCache.put(new BlockPos(2, 64, 2), Blocks.STONE.defaultBlockState());
 
             // 前置：确实填上了
             helper.assertTrue(ClientBlueprintCache.get("sbn015-x") != null, "cache pre-filled");
@@ -561,6 +564,12 @@ public class SBN015Tests {
             helper.assertTrue(ClientProjectStatusCache.get() != null, "status pre-filled");
             helper.assertTrue(ClientTeleportPermCache.canTeleport(), "tp perm pre-filled");
             helper.assertValueEqual(ClientWorldIdentity.uuid(), "u", "identity pre-filled");
+            // 粒子缓存只给 put / remove / clear 三个口：取出验证后放回（不破坏后续 clear 断言）
+            BlockPos particlePos = new BlockPos(2, 64, 2);
+            net.minecraft.world.level.block.state.BlockState pre =
+                    RenderBlockParticleCache.remove(particlePos);
+            helper.assertTrue(pre != null, "particle cache pre-filled");
+            RenderBlockParticleCache.put(particlePos, pre);
 
             // 断线监听实际调用的那个方法
             SpatialBlueprintClient.clearAllCaches();
@@ -580,6 +589,7 @@ public class SBN015Tests {
             helper.assertTrue(ClientProjectStatusCache.get() == null, "status cleared");
             helper.assertTrue(!ClientTeleportPermCache.canTeleport(), "tp perm cleared");
             helper.assertValueEqual(ClientWorldIdentity.uuid(), "", "identity cleared");
+            helper.assertTrue(RenderBlockParticleCache.remove(particlePos) == null, "particle cache cleared");
         } finally {
             SpatialBlueprintClient.clearAllCaches();
         }

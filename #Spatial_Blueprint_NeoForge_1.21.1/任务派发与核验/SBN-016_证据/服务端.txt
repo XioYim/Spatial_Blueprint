@@ -1,0 +1,19 @@
+SBN-016 A3 专服冒烟证据（含分边门禁）
+时间：2026-09-30 22:20:3x ～ 22:21:0x
+方式：run\ 预置 eula.txt；server.properties 改 enable-rcon=true / rcon.port=25585 / rcon.password=sbtest /
+  online-mode=false；Start-Process 后台起 runServer（stdout 重定向），轮询到 Done 后 RCON 发 stop，
+  等待 java 进程消失 + gradle 任务结束（K16）。
+命令（PowerShell，JAVA_HOME = C:\Program Files\Zulu\zulu-21）：
+  .\gradlew.bat runServer --offline
+关键日志：
+  [22:20:41] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.622s)! For help, type "help"
+  [22:20:44] [Server thread/INFO] [minecraft/MinecraftServer]: [Rcon: Stopping the server]
+  rcon response: Stopping the server（rcon_stop.ps1 输出）
+  随后 gradle runServer 任务 BUILD SUCCESSFUL in 30s（其 java 子进程随任务退出）。
+
+分边门禁（本任务核心指标）：
+  invalid dist = 0；Attempted to load class = 0；NoClassDefFoundError = 0；ClassNotFoundException = 0。
+ERROR 统计：0 条（全部 logger）；本 mod ERROR 0、本 mod WARN 0。
+附加说明：冒烟结束后系统里有 1 个 java 进程（PID 23120，监听 25567、启动于 22:01:00）——
+  是用户自己的测试服进程，早于本轮冒烟（22:20），不是本次残留；本次 runServer 的 java 已随 gradle 退出。
+取证后 run\ 整目录删除（沿 SBN-008/010/012/013/014/015 做法）。
