@@ -16,4 +16,15 @@ public enum CaptureMode {
     public static CaptureMode fromOrdinal(int ordinal) {
         return values()[ordinal];
     }
+
+    /**
+     * 越界回退 {@link #SAFE}（最低特权）：读蓝图文件 / 物品组件用。
+     *
+     * <p>文件与旧物品内联数据里的 saveMode 越界（如 99）时，{@link #fromOrdinal} 抛越界让整份蓝图读不出来（e17 坐实，用户拍板改回退）。
+     * C2S 解码仍用 {@link #fromOrdinal}：越界即整包拒收，与 1.20.1 一致。</p>
+     */
+    public static CaptureMode fromOrdinalOrSafe(int ordinal) {
+        CaptureMode[] modes = values();
+        return ordinal >= 0 && ordinal < modes.length ? modes[ordinal] : SAFE;
+    }
 }

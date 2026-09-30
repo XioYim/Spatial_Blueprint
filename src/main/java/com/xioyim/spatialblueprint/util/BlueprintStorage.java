@@ -519,7 +519,7 @@ public class BlueprintStorage {
                 String fixedDimension = mod.contains("fixedDimension") ? mod.getString("fixedDimension") : "";
                 com.xioyim.spatialblueprint.util.CaptureMode saveMode =
                         mod.contains("saveMode")
-                                ? com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"))
+                                ? com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinalOrSafe(mod.getInt("saveMode"))
                                 : com.xioyim.spatialblueprint.util.CaptureMode.SAFE;
                 boolean placed  = mod.getBoolean("placed");
                 int placedX     = mod.getInt("placedX");

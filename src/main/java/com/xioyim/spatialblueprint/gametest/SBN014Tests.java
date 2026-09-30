@@ -605,13 +605,23 @@ public class SBN014Tests {
             helper.assertTrue(beforeFile.equals(withFile.save(helper.getLevel().registryAccess())),
                     "file read is read-only");
 
-            // d. 内联是坏数据 → null 且不抛（saveMode 越界会让 deserialize 抛，readInlineData 兜住）
+            // d. 内联是坏数据 → 不抛、物品不被改。
+            //    e18 之前 saveMode = 99 让 deserialize 抛、readInlineData 的 catch 返回 null（K26）；
+            //    越界回退 SAFE 后 deserialize 已无已知抛出入口（空 BlockStates 跳过、坏方块读成空气、空 Regions 返回空蓝图），
+            //    catch 只剩防御作用。这里用「区域有尺寸但 BlockStates 为空」验证坏数据也只读、不抛。
             ItemStack bad = new ItemStack(SpatialBlueprintItems.PROJECTION_BLUEPRINT.get());
             CompoundTag badRoot = SBN011Tests.legacyBlueprintRoot();
-            badRoot.getCompound("SpatialBlueprintData").putInt("saveMode", 99);
+            CompoundTag badRegions = badRoot.getCompound("Regions");
+            for (String rk : badRegions.getAllKeys()) {
+                badRegions.getCompound(rk).putLongArray("BlockStates", new long[0]);
+            }
             setInlineData(bad, badRoot);
-            helper.assertTrue(AbstractBlueprintItem.getBlueprintDataServer(bad) == null,
-                    "bad inline data returns null");
+            CompoundTag beforeBad = (CompoundTag) bad.save(helper.getLevel().registryAccess());
+            BlueprintData badData = AbstractBlueprintItem.getBlueprintDataServer(bad);
+            helper.assertTrue(badData == null || badData.normalBlocks.isEmpty(),
+                    "bad inline data yields no blocks");
+            helper.assertTrue(beforeBad.equals(bad.save(helper.getLevel().registryAccess())),
+                    "bad inline read is read-only");
 
             // e. SpatialBlueprintItem 同样的内联物品 → null（1.20.1 只认文件）
             ItemStack spatialInline = new ItemStack(SpatialBlueprintItems.SPATIAL_BLUEPRINT.get());
@@ -714,6 +724,63 @@ public class SBN014Tests {
         net.minecraft.nbt.CompoundTag s2 = com.xioyim.spatialblueprint.util.SBSafeCoordData.load(s1, p)
                 .save(new net.minecraft.nbt.CompoundTag(), p);
         helper.assertTrue(s1.equals(s2), "SBSafeCoordData save order stable");
+        helper.succeed();
+    }
+
+    // ── t10：saveMode 越界回退 SAFE（e18，用户拍板）───────────────────────────
+    //
+    // 蓝图文件 / 旧物品内联数据里 saveMode 越界（如 99）原来让整份蓝图读不出来（e17 坐实）；
+    // 现在按物品组件同口径回退 SAFE（最低特权），其余内容照常读出。文件读取与蓝图库列表两条路径都测。
+
+    @GameTest(template = "empty")
+    public static void t10_saveModeOutOfRange(GameTestHelper helper) {
+        List<String> files = new ArrayList<>();
+        try {
+            // a. 内联：越界 saveMode 的旧蓝图照常读出，模式 SAFE、内容仍是升级后的数据
+            ItemStack inline = new ItemStack(SpatialBlueprintItems.PROJECTION_BLUEPRINT.get());
+            CompoundTag root = SBN011Tests.legacyBlueprintRoot();
+            root.getCompound("SpatialBlueprintData").putInt("saveMode", 99);
+            setInlineData(inline, root);
+            BlueprintData fromInline = AbstractBlueprintItem.getBlueprintDataServer(inline);
+            helper.assertTrue(fromInline != null, "out-of-range saveMode inline still loads");
+            helper.assertValueEqual(fromInline.saveMode, com.xioyim.spatialblueprint.util.CaptureMode.SAFE,
+                    "inline saveMode falls back to SAFE");
+            helper.assertTrue(fromInline.normalBlocks.size() + fromInline.dependentBlocks.size()
+                    + fromInline.lateBlocks.size() > 0, "inline blocks intact");
+
+            // b. 文件：真实蓝图落盘后把 saveMode 改成 -1 / 99 → load 与 listSummaries 都回退 SAFE
+            for (int bad : new int[]{-1, 99}) {
+                BlueprintData data = BlueprintData.deserialize(SBN011Tests.legacyBlueprintRoot());
+                data.name = "sbn014-t10-" + bad;
+                String id = BlueprintStorage.save(data).toString();
+                files.add(id);
+                java.nio.file.Path path = BlueprintStorage.findFile(id);
+                helper.assertTrue(path != null, "saved file found");
+                CompoundTag raw = com.xioyim.spatialblueprint.util.SafeNbtIo.readCompressed(path);
+                raw.getCompound("SpatialBlueprintData").putInt("saveMode", bad);
+                net.minecraft.nbt.NbtIo.writeCompressed(raw, path);
+                BlueprintStorage.invalidateSummaryCache();
+
+                BlueprintData loaded = BlueprintStorage.load(id);
+                helper.assertTrue(loaded != null, "file with saveMode " + bad + " still loads");
+                helper.assertValueEqual(loaded.saveMode, com.xioyim.spatialblueprint.util.CaptureMode.SAFE,
+                        "file saveMode " + bad + " falls back to SAFE");
+                boolean listed = false;
+                for (BlueprintStorage.BlueprintSummary sm : BlueprintStorage.listSummaries()) {
+                    if (sm.id().equals(id)) {
+                        listed = true;
+                        helper.assertValueEqual(sm.saveMode(), com.xioyim.spatialblueprint.util.CaptureMode.SAFE,
+                                "summary saveMode " + bad + " falls back to SAFE");
+                    }
+                }
+                helper.assertTrue(listed, "file with saveMode " + bad + " still listed");
+            }
+        } catch (java.io.IOException e) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException("io: " + e.getMessage());
+        } finally {
+            for (String fid : files) BlueprintStorage.delete(fid);
+            BlueprintStorage.invalidateSummaryCache();
+        }
         helper.succeed();
     }
 }

@@ -129,8 +129,7 @@ public final class SpatialBlueprintComponents {
                           .networkSynchronized(ByteBufCodecs.VAR_INT.map(SpatialBlueprintComponents::captureModeOf, CaptureMode::ordinal)));
 
     private static CaptureMode captureModeOf(int ordinal) {
-        CaptureMode[] modes = CaptureMode.values();
-        return ordinal >= 0 && ordinal < modes.length ? modes[ordinal] : CaptureMode.SAFE;
+        return CaptureMode.fromOrdinalOrSafe(ordinal);
     }
 
     // ── 注册辅助 ────────────────────────────────────────────────────────────

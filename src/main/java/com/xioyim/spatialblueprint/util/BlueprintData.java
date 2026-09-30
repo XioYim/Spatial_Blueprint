@@ -341,7 +341,7 @@ public class BlueprintData {
         data.parentProjectId = mod.contains("parentProjectId")
                 ? mod.getString("parentProjectId") : "";
         if (mod.contains("createdAt")) data.createdAt = mod.getLong("createdAt");
-        if (mod.contains("saveMode")) data.saveMode = com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinal(mod.getInt("saveMode"));
+        if (mod.contains("saveMode")) data.saveMode = com.xioyim.spatialblueprint.util.CaptureMode.fromOrdinalOrSafe(mod.getInt("saveMode"));
         if (mod.contains("opBypassCapture")) data.opBypassCapture = mod.getBoolean("opBypassCapture");
         if (mod.contains("noteShort")) data.noteShort = mod.getString("noteShort");
         if (mod.contains("noteLong")) data.noteLong = mod.getString("noteLong");
