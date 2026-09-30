@@ -627,9 +627,12 @@ public class BlueprintPlacementHandler {
         if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
         try {
             BlueprintNetwork.sendToPlayer(sp, S2C_ConfigSyncMessage.fromConfig());
-        } catch (Exception ignored) {
+        } catch (UnsupportedOperationException e) {
             // 半成品连接走不到发包：GameTest 自建的 mock 玩家（placeNewPlayer 直调）在配置阶段就触发
-            // 登录事件，NeoForge 相位检查拒绝 play 包；真玩家此时已是 play 阶段，不受影响
+            // 登录事件，NeoForge 相位检查拒绝 play 包；真玩家此时已是 play 阶段，不受影响。
+            // 只接这一种（云端验收收窄），其它异常照常抛出，不静默吞掉
+            SpatialBlueprintMod.LOGGER.debug("[SpatialBlueprint] Config sync skipped for {}: {}",
+                    sp.getGameProfile().getName(), e.getMessage());
         }
     }
 
