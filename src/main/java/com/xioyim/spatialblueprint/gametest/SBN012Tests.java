@@ -345,7 +345,9 @@ public class SBN012Tests {
             AABB cell = new AABB(wx, wy, wz, wx + 1.0, wy + 1.0, wz + 1.0);
             if ("minecraft:painting".equals(e.type)) {
                 List<Painting> found = level.getEntitiesOfClass(Painting.class, cell, x -> true);
-                helper.assertTrue(!found.isEmpty(), "painting placed at " + wx + "," + wy + "," + wz);
+                helper.assertTrue(!found.isEmpty(), "painting placed at " + wx + "," + wy + "," + wz + " ; entities near: "
+                        + level.getEntitiesOfClass(net.minecraft.world.entity.Entity.class, cell.inflate(3), x -> true)
+                                .stream().map(x -> x.getType().toString() + "@" + x.blockPosition()).toList());
                 CompoundTag pn = new CompoundTag();
                 found.get(0).save(pn);
                 helper.assertTrue(pn.getInt("TileX") == wx && pn.getInt("TileY") == wy
@@ -533,7 +535,8 @@ public class SBN012Tests {
             files.add(id);
             BlueprintData data = BlueprintStorage.load(id);
             helper.assertTrue(data != null && totalBlocks(data) > 0, "showcase captured");
-            helper.assertTrue(data.entities.size() == 3, "frame + painting + stand captured");
+            helper.assertTrue(data.entities.size() == 3, "frame + painting + stand captured: "
+                    + data.entities.stream().map(en -> en.type + "@" + en.tileX + "," + en.tileY + "," + en.tileZ).toList());
             // 源区装饰实体先清：NONE 直接盖在源区上放，clearFirst 不清盔甲架，避免新旧两只
             discardShowcaseEntities(helper, new BlockPos(1, 1, 1), new BlockPos(4, 3, 3));
 

@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入；SBN-015 自动部分 2026-09-30 22:05:00 移入）。
-更新：2026-09-30 22:25:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入；SBN-015 自动部分 2026-09-30 22:05:00 移入；SBN-016 自动部分 2026-09-30 23:05:00 移入）。
+更新：2026-09-30 23:05:00
 
 ========================================================
 【规矩】
@@ -57,40 +57,10 @@ H2. runClient 连本机专服（前置：`.\gradlew.bat runServer` 起服；runC
     结果：[ ] 未测
 
 --------------------------------------------------------
-十六、SBN-016 渲染底座 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[~]
+十六（手测）、SBN-016 渲染底座 —— H1～H4 待用户 runClient [ ]
 --------------------------------------------------------
 
-登记 2026-09-30 22:25:00 · 测于 2026-09-30 22:19:48
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，警告 0 条
-    结果：[✓] 全部通过
-A2. GameTest 129 条（SBN001～015 计 126 + SBN016 3）
-    预期：129 条全过
-    实际：========= 129 GAME TESTS COMPLETE IN 7.430 s ======================
-          All 129 required tests passed :)（连跑两轮一致）
-    t01 假世界：命中/未命中（空气）、流体、block/sky/raw 亮度恒 15、getShade 五档 + shade=false、
-        getBlockEntity null、高度取真实世界
-    t02 破坏粒子缓存：put→remove 取回并移除、再取 null；clear 全空；clearAllCaches 后第 13 个也空
-    t03 客户端边界：Class.forName(Outliner) 被 RuntimeDistCleaner 拒绝（消息含 "invalid dist"）—— outliner 专服不可测，
-        改为边界断言（SBN-017 的 runClient 手测覆盖其行为）
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做，分边门禁）
-    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR；两份日志 invalid dist / Attempted to load class /
-        NoClassDefFoundError 0 条（K16 / K29）
-    实际：Done (0.622s)；RCON stop 后 gradle BUILD SUCCESSFUL；0 ERROR、0 本 mod WARN；
-        两份日志 invalid dist / Attempted to load class / NoClassDefFoundError / ClassNotFoundException 全 0
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
-        spatialblueprint.client 引用逐处列出
-    实际：0 命中；对 client 包引用 22 处（+RenderBlock.java:75 在 isClientSide 分支内，逐条见报告三 / 门禁.txt）；
-        全仓桩数 22 = 基线 24 − 2（渲染器注册 + 破坏特效），P5 3 / P6 19
-    结果：[✓] 全部通过
+登记 2026-09-30 22:25:00 · 测于 —（自动部分已归档，见 测试清单_归档.txt 十六）
 
 【手测】需要用户进游戏（辅助 AI 本机 CLI 会话无显示 / 无法驱动 runClient 窗口，四项「未能目视」，见报告四）：
 H1. 渲染方块生长动画（前置：runClient 进新建单人创造世界）

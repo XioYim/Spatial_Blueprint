@@ -99,25 +99,25 @@ public class SBN016Tests {
         helper.succeed();
     }
 
-    // ── t03：outliner 在专用测试服不可加载（客户端边界，记录「不可测」）───────
+    // ── t03：outliner 属客户端类，专用测试服不可加载（记录「不可测」，不触发加载）──
 
     @GameTest(template = "empty")
     public static void t03_clientOnlyBoundary(GameTestHelper helper) {
         // SBN-016 实测：Outliner 的方法签名 / 字段引用 net.minecraft.client（MultiBufferSource 等），
-        // 专用服务端上 NeoForge RuntimeDistCleaner 直接拒绝加载客户端类：
-        //   "Attempted to load class net/minecraft/client/renderer/MultiBufferSource
-        //    for invalid dist DEDICATED_SERVER"
+        // 专用服务端上 NeoForge RuntimeDistCleaner 拒绝加载客户端类（K29 修订）：
+        //   "Attempted to load class net/minecraft/client/renderer/MultiBufferSource for invalid dist DEDICATED_SERVER"
         // → outliner 的槽位 / 淡出逻辑在本环境不可测（随 SBN-017 的 runClient 手测覆盖）。
-        // 本用例把「加载必被拒」钉成边界断言，不为测试改生产类。
-        Throwable rejection = null;
-        try {
-            Class.forName("com.xioyim.spatialblueprint.client.outliner.Outliner");
-        } catch (Throwable t) {
-            rejection = t;
+        // 云端验收改写：原写法 Class.forName 会真去触发加载，每轮在日志里留一条 ERROR，污染分边门禁的 grep；
+        // 现在只读 .class 字节：断言它存在，且常量池里确有客户端类引用 —— 即「它是客户端类，必须留在客户端入口链里」。
+        String path = "com/xioyim/spatialblueprint/client/outliner/Outliner.class";
+        try (java.io.InputStream in = SBN016Tests.class.getClassLoader().getResourceAsStream(path)) {
+            helper.assertTrue(in != null, "Outliner.class exists");
+            String pool = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1);
+            helper.assertTrue(pool.contains("net/minecraft/client/renderer/MultiBufferSource"),
+                    "Outliner references client classes (must stay behind the client entry)");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
         }
-        helper.assertTrue(rejection != null, "Outliner must not load on the dedicated server");
-        helper.assertTrue(String.valueOf(rejection.getMessage()).contains("invalid dist"),
-                "rejected by the dist guard: " + rejection.getMessage());
         helper.succeed();
     }
 }
