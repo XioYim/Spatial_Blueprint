@@ -1,0 +1,69 @@
+SBN-009 网络实测证据
+
+一、6 个 payload 的 TYPE id 与注册方向
+（与 1.20.1 BlueprintNetwork.register 归类逐条一致；5 C2S + 1 S2C，注册见 network/BlueprintNetwork.java）
+
+  c2s_upload_begin_message               C2S_UploadBeginMessage                 BlueprintNetwork.java:243
+  c2s_upload_chunk_message               C2S_UploadChunkMessage                 BlueprintNetwork.java:245
+  c2s_upload_projection_template_message C2S_UploadProjectionTemplateMessage   BlueprintNetwork.java:247
+  c2s_confirm_upload_message             C2S_ConfirmUploadMessage               BlueprintNetwork.java:249
+  c2s_request_engineering_report_message C2S_RequestEngineeringReportMessage   BlueprintNetwork.java:251
+  s2c_upload_report_message              s2c/S2C_UploadReportMessage            BlueprintNetwork.java:253
+
+t01 断言：71 个 TYPE id 与命名规则一致且互不重复（本批 6 + 已注册 65）。
+注册器版本仍为 protocolVersion()（D4，SBN-005 已验）。
+
+二、本批 decode 上限清单（K13 / C20）
+  C2S_UploadBeginMessage.decode           无分配（UUID / varint / varlong / readUtf(16) / boolean）
+  C2S_UploadChunkMessage.decode           readByteArray(30000)（:56，J42 先比长度再分配）
+  C2S_UploadProjectionTemplateMessage.decode
+      readByteArray(SINGLE_PACKET_LIMIT = 30000)（:150）——**有意差异**，见三
+  C2S_ConfirmUploadMessage.decode         无分配（boolean）
+  C2S_RequestEngineeringReportMessage.decode readUtf(64)
+  S2C_UploadReportMessage.decode          readUtf(128)/readUtf(32)；5 处列表计数全部经
+      capped → S2C_OperationResult.checkedCount(4096)（:231/236/259/290/296/312）
+t03 实测：Chunk/单包模板 30001 → DecoderException、单包模板 30000 → 通过；UploadReport 4097 → 抛。
+
+三、K13 有意差异（三.2，单列）
+  C2S_UploadProjectionTemplateMessage.decode 的旧上限 NETWORK_HARD_CAP_BYTES = 32 MiB 删除，
+  改为 C2S_UploadBeginMessage.SINGLE_PACKET_LIMIT（30000）· C2S_UploadProjectionTemplateMessage.java:144-152。
+  原因注释已写在 decode 上方：1.20.1 的 32767 单包上限先把大包挡掉，32 MiB 从来到不了；
+  NeoForge 1.21 的 GenericPacketSplitter（J41）会自动拆包拼回，32 MiB 变成真实可达，
+  改包客户端可绕过分块路径全部上限。合法客户端单包本来 ≤30000，行为不变。
+
+四、A5 分配点审计（file:line · 上限来源）
+  1. UploadStagingRegistry.begin 的 new ArrayList<>(totalChunks) · UploadStagingRegistry.java:41
+     上限来源：调用方 C2S_UploadBeginMessage.handleServer 的 totalChunks > MAX_CHUNKS 判定
+     （C2S_UploadBeginMessage.java:84，MAX_CHUNKS=256 :45）先于 begin 调用（:102）。
+  2. UploadStagingRegistry.append 的 new byte[total] · UploadStagingRegistry.java:113
+     上限来源：每块 payload ≤ 30000（:99 判定）+ running ≤ 声明 totalBytes 且 ≤ 配置上限（:102-107）；
+     声明值在 Begin 处已 ≤ BlueprintConfig.MAX_UPLOAD_FILE_BYTES（C2S_UploadBeginMessage.java:85-90）。
+  3. C2S_UploadChunkMessage.decode 的 readByteArray(30000) · C2S_UploadChunkMessage.java:56
+     上限来源：常量 30000（与客户端 CHUNK_SIZE 对齐）。
+  4. C2S_UploadProjectionTemplateMessage.decode 的 readByteArray(30000) ·
+     C2S_UploadProjectionTemplateMessage.java:150；decompress 经 SafeNbtIo.readCompressed(…,
+     MAX_UNCOMPRESSED_BYTES_UNTRUSTED = 64 MiB)（SafeNbtIo.java:23/43-49，NbtAccounter 计数）。
+     解压后的 BlueprintData.deserialize 集合规模受该 64 MiB 配额约束。
+  5. S2C_UploadReportMessage.decode 的 5 处 new ArrayList<>(…) ·
+     S2C_UploadReportMessage.java:236/259/290/296/312；n / tSize 全部经 capped（:231）→
+     checkedCount(4096)。（本类 S2C 由可信服务端发，属纵深防御。）
+  结论：本批无未夹上限的按客户端值分配点。
+
+五、本批权限 / 限流 / 槽位判定清单（file:line）
+  C2S_UploadProjectionTemplateMessage.java:171  create 分类仅创造模式
+  C2S_UploadProjectionTemplateMessage.java:186  上传限流（解码 / 解压之前）
+  C2S_UploadProjectionTemplateMessage.java:199  槽位预检（checkSlot，早于解压）
+  C2S_UploadProjectionTemplateMessage.java:210  压缩字节 ≤ MAX_UPLOAD_FILE_BYTES
+  C2S_UploadProjectionTemplateMessage.java:239  包围盒体积 ≤ MAX_BOUNDING_VOLUME
+  C2S_UploadProjectionTemplateMessage.java:275-281 FORCE 蓝图需 forceRequested 且 OP
+  C2S_UploadProjectionTemplateMessage.java:292-300 方块总数上限（OP 豁免）
+  C2S_UploadBeginMessage.java:84-96             轻校验（2≤totalChunks≤256、totalBytes≤配置、create 需创造）
+  C2S_ConfirmUploadMessage.java:92-95           force 仅 OP（服务端重验）
+  C2S_RequestEngineeringReportMessage.java:57   非创造直接 return
+  BlueprintValidator.java:78-101                限流参数：UPLOAD_COOLDOWN_SECONDS(_OP)/UPLOAD_MAX_PER_MINUTE
+  BlueprintValidator.java:112                   checkSlot（OP 豁免、0=不限）
+
+六、服务器侧登记表行为核对
+  PendingUploadRegistry.java:47-79   按玩家单条暂存、put 顶旧、take 取出即消费、5 分钟 TTL（原样）
+  UploadStagingRegistry.java:51-127  Begin 覆盖同玩家旧组包、WRONG_PLAYER/BAD_INDEX/DUPLICATE/OVERSIZE、
+                                     5 分钟 TTL、到齐组装后移除（原样；tick() 无调用者，靠 begin/append 清理）

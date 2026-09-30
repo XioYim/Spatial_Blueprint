@@ -1,0 +1,28 @@
+SBN-009 GameTest 证据（A2）
+命令：$env:JAVA_HOME = 'C:/Program Files/Zulu/zulu-21'; .\gradlew.bat runGameTestServer
+最终通过：2026-09-30 10:16（BUILD SUCCESSFUL in 32s）
+日志关键行（当次 run/logs/latest.log 摘录；跑完已随 run/ 删除）：
+  [10:16:23.872] Running test batch 'defaultBatch:0' (50 tests)...
+  [10:16:25.907] Running test batch 'defaultBatch:1' (24 tests)...
+  [10:16:26.451] ========= 74 GAME TESTS COMPLETE IN 3.059 s ======================
+  [10:16:26.451] All 74 required tests passed :)
+用例数核对（C2）：SBN001 8 + SBN002 11 + SBN003 7 + SBN004 8 + SBN005 7 + SBN006 7 +
+SBN007 8 + SBN008 10 + SBN009 8 = 74。SBN001～008 的 66 条照旧全过。
+
+t01 71 个 payload ID 命名 + 互不重复（本批 6 + 旧 65）；namespace = spatial_blueprint。
+t02 6 个消息编码往返字节逐字相等（UploadReport 带真实 scanBlueprintData / checkNbtBudget 结果；
+    UploadChunk 带真实 gzip 块）。
+t03 上限：UploadChunk 30001 → DecoderException；单包模板 30001 → DecoderException、30000 → 解码成功；
+    UploadReport scanEntries=4097 → DecoderException。
+t04 单包全链路：非创造传 create → creative_only；创造上传（含一个箱子方块实体）→ 收到报告
+    （name / totalBlocks / category 对上）→ ConfirmUpload(false) → S2C_LibrarySyncMessage +
+    BlueprintStorage 出现 uploadMode=1、ownerUuid=该玩家的蓝图。
+t05 分块：越界 index 5 / 重复块 / 30001 单块 / 他人玩家发块 / Begin totalChunks=257 /
+    Begin totalBytes 超配置 → 全部 staging_rejected 或 upload_too_large 且未建组包；
+    真实两块到齐 → 组装 → 收到报告。
+t06 上限：临时把 MAX_UPLOAD_FILE_BYTES 调小（1024）→ upload_file_too_large；
+    手写解压炸弹（声明 0x7FFFFFFF 长 IntArray 的 gzip）→ invalid_blueprint_data、测试外不抛。
+t07 工程报告：非创造请求 → 无回包；创造请求已存蓝图 → 收到 category=engineering 的报告。
+t08 限流：同一玩家连续两次单包上传 → 第二次 upload_rate_limited。
+测试 finally 恢复 fakePlayerSink / 配置值 / 游戏模式，清 PendingUploadRegistry 与 UploadStagingRegistry
+里测试玩家残留、删测试蓝图；run/ 已整目录删除。

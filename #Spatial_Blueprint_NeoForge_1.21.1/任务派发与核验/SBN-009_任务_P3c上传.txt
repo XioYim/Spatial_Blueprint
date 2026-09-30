@@ -1,0 +1,149 @@
+SBN-009 · P3c-2 上传（6 个消息 + 两个上传登记表）
+派发：2026-09-30 03:10:00（云端主会话）
+分支：task/SBN-009（从 neoforge-1.21.1 @ 3be0d97 拉出；本文件是分支第一个提交）
+
+========================================================
+第一段 · 备份
+========================================================
+
+PowerShell：D:\Mods\项目工具\备份.ps1 -Project D:\Mods\Spatial_Blueprint_NeoForge_1.21.1 -Note "SBN-009 执行前"
+
+========================================================
+第二段 · 接入
+========================================================
+
+读 项目记忆.md（按读取顺序）。开工先 git status：出现说不清来源的脏文件按 K3 处理。改 .java 按 K2。
+本任务要读：注意事项_目录.md 的 K1、K2、K3、K7、K9、K10、K11、K12、**K13**、C2、C3、C12、C14、C15、C20；
+network/BlueprintNetwork.java 的类注释（改写口径全文）；SBN-006 任务书三.2（补充口径）。
+1.20.1 源码：git show origin/forge-1.20.1:<路径>。以源码为准；API 结论云端已取证（第四节），与本地实测有出入时照实测做并写进报告「任务书出入」。
+
+========================================================
+一、背景与目标
+========================================================
+
+P3c 第二段：上传。客户端把本地蓝图文件（gzip NBT）传给服务端 → 服务端校验 / 扫描 → 回检测报告 → 玩家确认后写入蓝图库。
+两条路：≤ SINGLE_PACKET_LIMIT（30000 字节）走单包 C2S_UploadProjectionTemplateMessage；更大的走 Begin 声明 + Chunk 分块，组装后交回同一个 handleAssembled。
+
+本任务的 6 个消息 + 2 个类（1.20.1 同路径）：
+  network/C2S_UploadBeginMessage、network/C2S_UploadChunkMessage、network/C2S_UploadProjectionTemplateMessage、network/C2S_ConfirmUploadMessage、
+  network/C2S_RequestEngineeringReportMessage、network/s2c/S2C_UploadReportMessage
+  server/PendingUploadRegistry（80 行，待确认上传，按玩家、5 分钟 TTL）、server/UploadStagingRegistry（138 行，分块组包，同玩家一个、5 分钟 TTL）
+云端已查：除这两个登记表外，只依赖已迁的类（BlueprintSanitizer、BlueprintValidator、BlueprintStorage、SafeNbtIo、BlueprintFileLogger、S2C_LibrarySyncMessage 等）；
+两个登记表没有外部 tick / 事件接线（1.20.1 里 UploadStagingRegistry.tick() 无调用者，靠 begin / append / take 内顺手清理）。
+
+之后 SBN-010：捕获与放置 6 个 + BlueprintPlacementHandler（放置引擎，与 P4 DataFixer 一起设计）。
+
+========================================================
+二、允许修改的文件清单
+========================================================
+
+包根 src/main/java/com/xioyim/spatialblueprint/ 下：
+  新  第一节的 6 个消息与 2 个登记表（1.20.1 同路径）
+  改  network/BlueprintNetwork.java                                              ← 只加 6 条注册
+  新  gametest/SBN009Tests.java
+
+交接件（规程允许范围）：SBN-009_报告.txt、SBN-009_证据\、开发日志.md 文末「## SBN-009 执行记录」、
+测试清单.txt 正文末尾追加「九、SBN-009 上传」（正文只收未完成项，云端验收后归档）、云端协作规程.md 第五节表追加一行、通用经验副本（按第五节同步）。
+
+不动：其它一切。若某个消息实测引用了第二节以外、尚未迁移的类：按口径打桩并写进报告，不要顺手搬那个类。
+
+========================================================
+三、已定方案
+========================================================
+
+总原则同 SBN-005～008：字段、校验、上限常量、翻译键、日志文本、判断顺序一律不改；按 BlueprintNetwork 类注释（C14）与 SBN-006 任务书三.2 改写。
+每个文件 diff -w 残差逐条进报告。**唯一一处有意的行为差异见三.2**。
+
+1. BlueprintNetwork：register 追加 6 条（5 条 playToServer、S2C_UploadReportMessage 一条 playToClient，以 1.20.1 归类为准）。其余零改动。
+
+2. 单包上传的解码上限（有意差异，K13）
+   1.20.1 的 C2S_UploadProjectionTemplateMessage.decode 用 buf.readByteArray(NETWORK_HARD_CAP_BYTES = 32 MiB)。
+   1.20.1 线上这个上限从来到不了：原版 C2S 单包上限 32767 字节先把大包挡掉，大文件只能走 Begin / Chunk。
+   **NeoForge 1.21 会把超长 C2S 自动拆包再在服务端拼回（GenericPacketSplitter，J41）**，32 MiB 变成真实可达 ——
+   改包客户端可以绕过分块路径的全部上限（MAX_CHUNKS、每块 30000、配置总量、TTL），单包直接让服务端为解码分配 32 MiB。
+   → 1.21.1 把单包 decode 上限改为 C2S_UploadBeginMessage.SINGLE_PACKET_LIMIT（30000）：合法客户端单包本来就 ≤ 30000，更大的本来就走分块，
+     行为对合法客户端不变，只把 1.20.1 实际生效的上限恢复出来。NETWORK_HARD_CAP_BYTES 常量删掉或改名都可以，注释写清上面这段原因。
+   分块路径的 readByteArray(30000) 原样。其余 decode 原样。
+
+3. 各要点（以 1.20.1 源码为准，只点风险处）
+   a. C2S_UploadBeginMessage：totalChunks ∈ [2, MAX_CHUNKS]、totalBytes ∈ (0, 配置上限]、create 分类需创造 —— 这些判定在调 UploadStagingRegistry.begin **之前**，
+      begin 内按 totalChunks 预分配（≤ 256），顺序不许动（K13）。
+   b. UploadStagingRegistry：WRONG_PLAYER / BAD_INDEX / DUPLICATE / OVERSIZE（每块 ≤ 30000、累计 ≤ 声明总量 且 ≤ 配置上限）与 5 分钟 TTL 原样。
+   c. C2S_UploadProjectionTemplateMessage：创造判定、上传限流 checkAndUpdateUploadRateLimit、checkSlot、MAX_UPLOAD_FILE_BYTES（解压前）、
+      SafeNbtIo.readCompressed(…, MAX_UNCOMPRESSED_BYTES_UNTRUSTED)、checkNbtBudget、filterOutOfRangeBlocksInPlace、enforceTemplateFieldRules、体积上限、
+      scanBlueprintData → PendingUploadRegistry.put → 回 S2C_UploadReportMessage —— 顺序原样。
+      BlueprintData.deserialize 前的 DataFixer 桩（SBN-001 已留）不动：上传的旧格式文件升级在 P4。
+   d. C2S_ConfirmUploadMessage：PendingUploadRegistry.take、force 只对 OP 生效、sanitizeForUploadInPlace、写盘、BlueprintFileLogger、回 S2C_LibrarySyncMessage —— 原样。
+   e. C2S_RequestEngineeringReportMessage：非创造直接 return 原样。
+   f. S2C_UploadReportMessage：客户端体（打开上传报告界面 / 更新上传界面）按口径打桩 SB-TODO(P5)；服务端组包与 decode 计数原样。
+
+========================================================
+四、取证（云端 2026-09-30）
+========================================================
+
+  J41 net.neoforged.neoforge.network.filters.GenericPacketSplitter（neoforge 21.1.252 源码）：encode 时按
+      CompressionDecoder.MAXIMUM_COMPRESSED_LENGTH（2097152）/ MAXIMUM_UNCOMPRESSED_LENGTH（8388608）切块，SERVERBOUND / CLIENTBOUND 两个方向都拆；
+      接收端 receivedPacket 逐块累加到 STATE_LAST 再按入站协议解码 —— 所以 C2S 负载在 1.21 可以远超 32767。
+      （接收端累加本身没有总量上限，属框架行为，本 mod 管不到，报告里不用处理。）
+  J42 FriendlyByteBuf#readByteArray(int maxLength)：先比长度再分配（越界抛 DecoderException）。
+  其余沿用 J31～J40。
+
+========================================================
+五、测试（新格式数据由真实对象产生；伪造 / 越界包、解压炸弹是唯一允许手写处）
+========================================================
+
+【自动】
+A1  compileJava --rerun：BUILD SUCCESSFUL、0 警告（K1）。
+A2  runGameTestServer：全部通过（C2：@GameTest 实数）。SBN001～008 的 66 条照旧全过。
+    t01_registration         6 个 payload ID 符合命名规则，与已有 65 个合计 71 个互不重复；方向与 1.20.1 逐条一致。
+    t02_codecRoundTrip       6 个各造一条真实实例（UploadReport 带真实 scanBlueprintData 结果；UploadChunk 带一块真实压缩字节）
+                             → 编码 → 解码 → 再编码，字节逐字相等。
+    t03_decodeGuards         UploadChunk 负载 30001 字节 → 拒收；UploadProjectionTemplate 负载 30001 字节 → 拒收（三.2 的新上限）、30000 字节 → 解码成功；
+                             S2C_UploadReportMessage 的列表计数按 1.20.1 语义断言（C20）；逐个列进报告。
+    t04_singleUpload         真实 BlueprintData（含方块与一个箱子方块实体）serialize → writeCompressed（≤ 30000 字节）→ 创造假玩家 handleServer →
+                             sink 收到 S2C_UploadReportMessage、PendingUploadRegistry 有该玩家的待确认项；C2S_ConfirmUploadMessage → BlueprintStorage 里出现该蓝图、
+                             sink 收到 S2C_LibrarySyncMessage；非创造玩家传 create 分类 → 按 1.20.1 语义被拒。测试文件 finally 清理。
+    t05_chunkedUpload        同一份数据切成 ≥ 2 块：Begin → 逐块 Chunk → 组装后走与单包相同的流程（收到 UploadReport）；
+                             另起一次：他人玩家发 Chunk → WRONG_PLAYER 语义；越界 index / 重复块 / 单块 30001 字节 各按 1.20.1 语义处理；
+                             Begin 的 totalChunks = 257 或 totalBytes 超配置上限 → 被拒且 UploadStagingRegistry 未建组包。
+    t06_limits               临时把 MAX_UPLOAD_FILE_BYTES 调小（finally 复原、不 save）→ 超限上传回 upload_too_large；
+                             解压炸弹（手写：小压缩体、解压后超 SafeNbtIo 不可信上限）→ 被拒、服务端不抛到测试外。
+    t07_engineeringReport    非创造假玩家 RequestEngineeringReport → 无回包；创造假玩家、对一份已存蓝图 → 收到 S2C_UploadReportMessage。
+    t08_rateLimit            同一玩家连续两次单包上传（间隔小于 1.20.1 的限流窗口）→ 第二次按 1.20.1 语义被限流。
+    测试 finally 恢复 fakePlayerSink、配置、游戏模式，清两个登记表里测试玩家的残留，删测试文件；run\ 残留清理。
+A3  专服冒烟（必做）：runServer 到 Done、stop 正常、0 条本 mod ERROR。
+A4  grep 门禁（必做）：network\、server\、log\、util\ 下无 net.minecraft.client / 本 mod client / gui / net.minecraftforge 引用；注释里无 SB-TODO(（K10）。
+A5  K13 自查（必做）：本批每个 C2S decode 与被它们调用的服务端分配点（按客户端数值 new 数组 / 集合处）逐个列出「上限来源 · file:line」，写进报告第三节。
+
+【手测】无（上传界面在 P6）。
+
+========================================================
+六、验收标准
+========================================================
+
+V1  改动与第二节清单两向一致。
+V2  0 警告、GameTest 全过（云端复编译 + 复跑）；A3、A4 通过。
+V3  8 个搬迁文件与 1.20.1 源 diff -w 残差只在口径内与三.2；上限常量、权限 / 限流 / 槽位判定逐文件计数与 1.20.1 相等（三.2 那一处除外，且注释写明）。
+V4  71 条注册方向与 1.20.1 逐条一致；A4 为空；A5 清单无未夹上限的分配点。
+V5  SB-TODO 实数 = 45 + 本任务新桩，逐条列出。
+V6  变异复核（云端验收时做）：C2S_UploadBeginMessage 的 MAX_CHUNKS 判定、UploadStagingRegistry.append 的 WRONG_PLAYER 判定、
+    C2S_UploadProjectionTemplateMessage 的 MAX_UPLOAD_FILE_BYTES 判定，各临时短路一次 → t05 / t05 / t06 应分别转红。
+
+========================================================
+七、报告模板（禁止代码块，只给「主张 + file:line」）
+========================================================
+
+SBN-009 报告
+执行 / 提交 / 备份
+一、完成情况：三.1～三.3 逐条
+二、改了写法的调用：「1.20.1 写法 → 1.21.1 写法 · file:line · 依据」；三.2 的有意差异单列
+三、网络实测：6 个 payload 的 ID 与方向；A5 分配点清单（file:line · 上限来源）；本批权限 / 限流 / 槽位判定清单
+四、测试覆盖：A1～A5；t01～t08；@GameTest 实数
+五、迁移桩清单（新增逐条 + 总数）
+六、任务书出入
+七、双端同步自查（上传报告回包、确认后蓝图库同步；两个登记表的清理时机）
+八、教训同步
+九、建议记入
+十、需要用户做的事（本任务预期无）
+
+推送后对用户说：「已推送，去云端说『验收 SBN-009』」。
