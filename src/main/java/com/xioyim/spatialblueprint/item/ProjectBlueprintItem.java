@@ -105,8 +105,9 @@ public class ProjectBlueprintItem extends Item {
     private static boolean isProjectMissing(ItemStack stack) {
         String pid = getProjectId(stack);
         if (pid == null) return false;
-        // SB-TODO(P5): ClientProjectStatusCache 读取（状态包缓存）
-        return false;
+        com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage st =
+                com.xioyim.spatialblueprint.client.ClientProjectStatusCache.get();
+        return st != null && !st.found && pid.equals(st.projectId);
     }
 
     /** 项目已被删除的拦截横幅（右键没有宿主界面，走独立横幅）。 */
@@ -124,7 +125,9 @@ public class ProjectBlueprintItem extends Item {
         if (!dim.isEmpty()) return dim;
         String pid = getProjectId(stack);
         if (pid == null) return null;
-        // SB-TODO(P5): ClientProjectStatusCache 读取（状态包缓存兜底）
+        com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage st =
+                com.xioyim.spatialblueprint.client.ClientProjectStatusCache.get();
+        if (st != null && st.found && pid.equals(st.projectId) && !st.dimension.isEmpty()) return st.dimension;
         return null;
     }
 
@@ -169,8 +172,10 @@ public class ProjectBlueprintItem extends Item {
         if (isRangeEditableStage(stack)) return true;
         String pid = getProjectId(stack);
         if (pid == null) return false;
-        // SB-TODO(P5): ClientProjectStatusCache 读取（状态包兜底：authorSize 三轴 > 0）
-        return false;
+        com.xioyim.spatialblueprint.network.s2c.S2C_ProjectStatusMessage st =
+                com.xioyim.spatialblueprint.client.ClientProjectStatusCache.get();
+        return st != null && st.found && pid.equals(st.projectId)
+                && st.authorSize.getX() > 0 && st.authorSize.getY() > 0 && st.authorSize.getZ() > 0;
     }
 
     /** 未划定项目范围的拦截横幅（世界中右键没有宿主界面，走独立横幅）。 */

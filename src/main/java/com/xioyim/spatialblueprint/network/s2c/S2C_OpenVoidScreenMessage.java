@@ -38,6 +38,6 @@ public class S2C_OpenVoidScreenMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_OpenVoidScreenMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端打开空置次元蓝图界面（VoidDimensionalScreen，主手/副手找物品）
+        // SB-TODO(P6): 客户端打开空置次元蓝图界面（VoidDimensionalScreen，主手/副手找物品）
     }
 }

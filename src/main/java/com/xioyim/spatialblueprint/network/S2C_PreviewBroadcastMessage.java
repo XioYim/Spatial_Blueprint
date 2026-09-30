@@ -84,7 +84,6 @@ public class S2C_PreviewBroadcastMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_PreviewBroadcastMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端其他玩家预览缓存（原 handleClient：跳过自己的广播，
-        // ClientOtherPreviewCache.receive(msg)）
+        com.xioyim.spatialblueprint.client.SpatialBlueprintClient.receiveOtherPreview(msg);
     }
 }

@@ -58,6 +58,6 @@ public class S2C_OpCaptureConfirmMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_OpCaptureConfirmMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端打开 OP 捕获确认界面（原 handleClient：mc.setScreen(new gui.OpCaptureConfirmScreen(...))）
+        // SB-TODO(P6): 客户端打开 OP 捕获确认界面（原 handleClient：mc.setScreen(new gui.OpCaptureConfirmScreen(...))）
     }
 }

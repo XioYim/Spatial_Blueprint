@@ -1,0 +1,42 @@
+SBN-015 A4 grep 门禁证据
+时间：2026-09-30 21:23
+范围：公共包 = 主类 SpatialBlueprintMod.java + block\ command\ item\ log\ network\ server\ util\ 全部 .java
+
+1) net.minecraft.client / net.minecraftforge 引用（模式 net\.minecraft\.client|net\.minecraftforge）：命中 0。
+   公共包无任何原版客户端 / 旧 Forge 类型引用。
+
+2) 公共包对 spatialblueprint.client 的引用（逐处，共 21 处 = 18 处执行代码 + 3 处 Javadoc）：
+   AbstractBlueprintItem.java:98   Javadoc @link（注释）
+   AbstractBlueprintItem.java:110  getBlueprintDataClient：物品 *Client 读法（只在客户端执行，1.20.1 同法）
+   ProjectBlueprintItem.java:109   isProjectMissing（调用点均在 use() 的 level.isClientSide 分支）
+   ProjectBlueprintItem.java:129   knownProjectDimension（同上；另被 isOutsideProjectDimension 调）
+   ProjectBlueprintItem.java:176   canEnterQuickPlan（同上）
+   SpatialBlueprintItem.java:109   getBlueprintDataClient：物品 *Client 读法
+   S2C_BlueprintChunkMessage.java:84    客户端体（playToClient 的 handle）
+   S2C_BlueprintDataFailMessage.java:48 客户端体
+   S2C_BlueprintDataMessage.java:92     客户端体
+   S2C_LibrarySyncMessage.java:152      客户端体
+   S2C_MaterialSpaceSyncMessage.java:173 客户端体
+   S2C_PreviewBroadcastMessage.java:87  客户端体（转入口 SpatialBlueprintClient.receiveOtherPreview）
+   S2C_TeleportPermMessage.java:52      客户端体
+   S2C_WorldIdentityMessage.java:54     客户端体
+   s2c/S2C_CaptureCooldownMessage.java:56 客户端体
+   s2c/S2C_ConfigPermMessage.java:46      客户端体
+   s2c/S2C_ConfigValuesMessage.java:118   客户端体
+   s2c/S2C_ProjectEntriesMessage.java:85  客户端体
+   s2c/S2C_ProjectListMessage.java:89     客户端体
+   s2c/S2C_ProjectStatusMessage.java:253  客户端体
+   util/NotifySound.java:17              Javadoc @link（注释）
+   说明：S2C 的 handle 体在 playToClient 注册方向上只由客户端执行；物品 *Client 读法 / Project 的三处判定
+   均被 isClientSide 分支或界面路径包着；专用服务端只加载消息类本身，不会执行这些方法体（A3 两份日志的
+   分边门禁 0 命中互为佐证）。client 包内新类之间的互相引用（入口、缓存）不在此列。
+
+3) 注释里的 SB-TODO 示例：全角括号 SB-TODO（P5）示例 1 处（BlueprintNetwork.java:35，K10 口径），
+   不污染桩数；全仓 SB-TODO( 实数 24 = 41 − 22（本任务清掉）+ 5（本任务新桩）。
+   分项：P5 = 5、P6 = 19。
+   新桩逐条：
+     client/SpatialBlueprintClient.java:34   P5  RenderBlockRenderer 注册（SBN-016）
+     client/SpatialBlueprintClient.java:36   P6  配置界面工厂（registerExtensionPoint，P6 配置界面）
+     client/ClientMaterialSpaceCache.java:64 P6  材料空间查看界面（原 MaterialSpaceScreen）
+     client/ClientProjectStatusCache.java:41 P5  预览渲染接线 onStatus（SBN-016 / 017）
+     client/ClientProjectStatusCache.java:47 P5  ClientSubProjectPreview.clear（SBN-017）

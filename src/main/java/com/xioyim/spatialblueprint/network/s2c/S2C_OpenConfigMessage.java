@@ -31,6 +31,6 @@ public class S2C_OpenConfigMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_OpenConfigMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端打开 Spatial Blueprint 游戏内配置主页面（SpatialBlueprintConfigScreen，/sb config）
+        // SB-TODO(P6): 客户端打开 Spatial Blueprint 游戏内配置主页面（SpatialBlueprintConfigScreen，/sb config）
     }
 }

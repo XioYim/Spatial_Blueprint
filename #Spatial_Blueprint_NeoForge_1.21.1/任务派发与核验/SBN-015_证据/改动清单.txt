@@ -1,0 +1,47 @@
+SBN-015 改动清单（V1，两向比对）
+时间：2026-09-30 21:24 · 基准 task/SBN-015 @ acdfa46（分支未提交改动；origin/neoforge-1.21.1 @ d198ab8）
+
+工作区改动（git status --short，按字节直出）：
+   M SpatialBlueprintMod.java
+   M item/AbstractBlueprintItem.java / item/ProjectBlueprintItem.java / item/SpatialBlueprintItem.java
+   M network/S2C_BlueprintChunkMessage / S2C_BlueprintDataFailMessage / S2C_BlueprintDataMessage /
+     S2C_LibrarySyncMessage / S2C_MaterialSpaceSyncMessage / S2C_PreviewBroadcastMessage /
+     S2C_TeleportPermMessage / S2C_VoidBagSyncMessage / S2C_WorldIdentityMessage
+   M network/s2c/S2C_BlueprintMaterialsMessage / S2C_CaptureCooldownMessage / S2C_ConfigPermMessage /
+     S2C_ConfigValuesMessage / S2C_OpCaptureConfirmMessage / S2C_OpenConfigMessage /
+     S2C_OpenVoidScreenMessage / S2C_OperationResult / S2C_ProjectEntriesMessage /
+     S2C_ProjectListMessage / S2C_ProjectStatusMessage / S2C_UploadReportMessage
+   M util/NotifySound.java
+  ?? src/main/java/com/xioyim/spatialblueprint/client/（17 个新文件）
+  ?? src/main/java/com/xioyim/spatialblueprint/gametest/SBN015Tests.java
+  ?? "#Spatial_Blueprint_NeoForge_1.21.1/任务派发与核验/SBN-015_证据/"
+
+允许清单（任务书第二节）→ 实际：
+  新 client/ 15 个缓存 / 状态类（1.20.1 同路径同名）      → 有（ClientBlueprintCache / ClientCaptureCooldown /
+      ClientConfigMirror / ClientOtherPreviewCache / ClientProjectEntriesCache / ClientProjectListCache /
+      ClientProjectStatusCache / ClientTeleportPermCache / ClientWorldIdentity / ConfigAccess /
+      OtherPlayerDownloadListener / ClientConfigPermCache / ClientLibraryCache / ClientMaterialSpaceCache /
+      ClientPreviewSettings）
+  新 client/SpatialBlueprintClient.java（入口，取代 ClientModSetup，ClientModSetup 不搬） → 有
+  新 client/ClientNotifySound.java（1.20.1 NotifySound client / clientError 的落点）      → 有
+  改 14 个 S2C 消息（只改客户端体）  → 有（Chunk / DataFail / Data / LibrarySync / MaterialSpaceSync /
+      PreviewBroadcast / TeleportPerm / WorldIdentity + s2c 的 CaptureCooldown / ConfigPerm / ConfigValues /
+      ProjectEntries / ProjectList / ProjectStatus；其余零改动）
+  改 7 个 S2C 消息（P5 桩改标 P6）  → 有（VoidBagSync / BlueprintMaterials / UploadReport / OpenVoidScreen /
+      OpCaptureConfirm / OpenConfig / OperationResult；说明文字保留）
+  改 item 3 个文件（只改桩处，5 处） → 有（Abstract 1 处 + Spatial 1 处 + Project 3 处）
+  改 util/NotifySound.java（只去掉桩注释） → 有（客户端半边搬到 client 包，服务端零改动）
+  改 SpatialBlueprintMod.java（只去掉 clientSetup 桩与登出 else 分支） → 有（服务端分支零改动）
+  新 gametest/SBN015Tests.java（t01～t07） → 有
+  交接件：SBN-015_报告.txt / SBN-015_证据\ / 开发日志.md / 测试清单.txt（含 H1/H2 手测） /
+    云端协作规程.md 第五节表 / 通用经验副本 → 按规程范围
+
+反向（实际 → 允许）：无允许清单外文件。
+  15 个搬迁类的 diff -w 残差统计（/tmp 比对，行数含头）：ClientBlueprintCache -16（去 forge 订阅 / onLoggingOut）；
+  ClientCaptureCooldown +1-9、ClientConfigMirror +1-9、ClientProjectEntriesCache +2-10、ClientProjectListCache +2-10、
+  ClientProjectStatusCache +4-13（补 clear() 与渲染 P5 桩）、ClientTeleportPermCache -11、ClientWorldIdentity -11、
+  ConfigAccess +10-13（ForgeConfigSpec→ModConfigSpec、CHANNEL→sendToServer）、OtherPlayerDownloadListener -3、
+  ClientConfigPermCache -11、ClientLibraryCache +3-21（去订阅 + CHANNEL→sendToServer）、
+  ClientMaterialSpaceCache +1-18（去订阅 + 界面开屏 P6 桩）、ClientOtherPreviewCache -15、ClientPreviewSettings -3。
+  14 个 S2C 客户端体与 1.20.1 handleClient 调用逐条相等（唯一口径差见报告六.4：预览的自广播过滤下沉到客户端入口）。
+  run\ 取证后整目录删除；无其它工具类 / 物品类 / 服务端逻辑改动。

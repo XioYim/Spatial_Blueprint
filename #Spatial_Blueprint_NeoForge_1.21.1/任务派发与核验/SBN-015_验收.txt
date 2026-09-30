@@ -1,0 +1,22 @@
+SBN-015 验收
+验收：2026-09-30 22:05:00（云端主会话）
+对象：task/SBN-015 @ 1371a5e（+ 126e022 规程回填）
+结论：PASS（自动部分）→ 合并进 neoforge-1.21.1；H1 / H2 手测待用户，留在测试清单正文单独跟踪
+
+V1 改动清单：acdfa46..126e022 的 client 包 17 个新文件、14 个 S2C 客户端体、7 个 S2C 桩改标 P6、3 个物品类的桩处、NotifySound 桩注释、主类两处删除、SBN015Tests
+   与任务书第二节两向一致；主类只删了 clientSetup 桩与登出方法的 else 分支，NotifySound 服务端半边零改动 —— 通过。
+V2 云端复编译 0 警告；复跑两轮 126/126。
+   **分边门禁云端自跑**：runServer 起到 Done（0.474s），日志 invalid dist / Attempted to load class / NoClassDefFoundError / ERROR 0 条；
+   两轮 runGameTestServer 日志同样 0 条。A4：公共包（主类、block\、command\、item\、log\、network\、server\、util\）net.minecraft.client / net.minecraftforge 0 命中；
+   对 client 包的引用 18 处全部在「只在客户端执行的方法体」（14 个 S2C 客户端体、物品 *Client 读法与 isProjectMissing 等三处），注释里无 SB-TODO( —— 通过。
+V3 缓存类与 1.20.1 diff -w：10 个纯逻辑类只差去 @OnlyIn / @Mod.EventBusSubscriber、onLoggingOut 换成 clear()、CHANNEL.send → sendToServer；
+   ConfigAccess 只差 ForgeConfigSpec → ModConfigSpec；ClientLibraryCache 只差发包封装；ClientMaterialSpaceCache 只差 setScreen 桩（P6）；
+   ClientProjectStatusCache 的渲染接线打 P5 桩（016 / 017）—— 通过。
+V4 桩数 41 → 24（清 22、新 5：入口 RenderBlockRenderer P5 + 配置界面工厂 P6、材料空间开屏 P6、预览渲染接线 P5 × 2），P5 5 / P6 19，与逐条核对一致 —— 通过。
+V5 断线清单 12 个与 1.20.1 带 LoggingOut 监听的类逐个对上（ClientPreviewSettings / ConfigAccess / OtherPlayerDownloadListener 在 1.20.1 本就无监听）—— 通过。
+V6 变异复核（K7，四处，均已还原）：ClientBlueprintCache 下标越界守卫去掉 → t01；OtherPlayerDownloadListener 的 PENDING 匹配置空 → t02；
+   断线清单漏 ClientWorldIdentity → t07；AbstractBlueprintItem.getBlueprintDataClient 去内联回退 → t06 —— 通过。
+
+报告「任务书出入」1～5 接受：t01 缺块 / 越界的守卫实际构成以源码为准；新桩多 2 条是 016 / 017 口径要求；预览自广播过滤下沉到入口保住缓存的 GameTest 可测性（折中合理）。
+报告九四条建议待用户点头。
+遗留：H1 / H2 手测未做（测试清单十五）。自动部分与云端专服冒烟都通过，风险低；SBN-016 本地执行时自带 runClient，客户端入口若有问题会先暴露。

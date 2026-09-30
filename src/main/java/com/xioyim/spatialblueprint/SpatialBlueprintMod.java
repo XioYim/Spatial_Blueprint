@@ -53,7 +53,6 @@ public class SpatialBlueprintMod {
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogout);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onPlayerLogin);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SpatialBlueprintMod::onChangeGameMode);
-        // SB-TODO(P5): clientSetup（ClientModSetup）
 
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
                 (net.neoforged.neoforge.event.server.ServerStoppingEvent event)
@@ -168,12 +167,6 @@ public class SpatialBlueprintMod {
         // Clear server-side preview entry so nearby players stop seeing a stale box
         if (event.getEntity() instanceof ServerPlayer sp) {
             com.xioyim.spatialblueprint.server.ServerPreviewTracker.clear(sp);
-        } else {
-            // SB-TODO(P5): 客户端分支——清 ClientMaterialSpaceCache / ClientTeleportPermCache /
-            // ClientConfigPermCache 三个缓存（1.20.1 用 DistExecutor.unsafeRunWhenOn(Dist.CLIENT, ...)）。
-            // 不许用运行时 dist 判断代替类加载隔离：专用服务端加载本类时就会连带解析
-            // ClientMaterialSpaceCache，它又引用 MaterialSpaceScreen（extends Screen），
-            // 触发 RuntimeDistCleaner 的 "invalid dist DEDICATED_SERVER" 直接让服务端启动失败。
         }
     }
 

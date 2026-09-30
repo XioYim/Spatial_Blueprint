@@ -86,6 +86,6 @@ public class S2C_ProjectListMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_ProjectListMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端项目列表缓存（原 handleClient：ClientProjectListCache.onReceive(msg)）
+        com.xioyim.spatialblueprint.client.ClientProjectListCache.onReceive(msg);
     }
 }

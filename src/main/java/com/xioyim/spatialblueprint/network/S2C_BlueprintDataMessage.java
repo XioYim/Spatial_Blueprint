@@ -86,6 +86,12 @@ public class S2C_BlueprintDataMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_BlueprintDataMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端缓存写入（ClientBlueprintCache.put，含反序列化失败静默）
+        try {
+            com.xioyim.spatialblueprint.util.BlueprintData data =
+                    com.xioyim.spatialblueprint.util.BlueprintData.deserialize(msg.serializedData);
+            com.xioyim.spatialblueprint.client.ClientBlueprintCache.put(msg.blueprintId, data);
+        } catch (Exception ignored) {
+            // Malformed data — leave cache empty; player can retry by re-clicking download
+        }
     }
 }

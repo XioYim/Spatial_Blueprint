@@ -81,6 +81,7 @@ public class S2C_BlueprintChunkMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_BlueprintChunkMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端缓存收块（ClientBlueprintCache.receiveChunk）
+        com.xioyim.spatialblueprint.client.ClientBlueprintCache.receiveChunk(
+                msg.blueprintId, msg.chunkIndex, msg.totalChunks, msg.data);
     }
 }

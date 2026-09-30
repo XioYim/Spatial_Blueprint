@@ -53,7 +53,7 @@ public class S2C_CaptureCooldownMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_CaptureCooldownMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端捕获冷却（原 handleClient：ClientCaptureCooldown.start(msg.getSeconds())）
+        com.xioyim.spatialblueprint.client.ClientCaptureCooldown.start(msg.getSeconds());
     }
 
     /**

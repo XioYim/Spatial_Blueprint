@@ -94,14 +94,22 @@ public abstract class AbstractBlueprintItem extends Item {
     }
 
     /**
-     * 客户端读法：只认 S2C 包填进来的内存缓存。
+     * 客户端读法：有 {@code blueprintId} 时只认 S2C 包填进来的内存缓存
+     * （{@link com.xioyim.spatialblueprint.client.ClientBlueprintCache}），
+     * 没有 id 的旧物品回退读内联数据（与服务端 readInlineData 同一份只读读法）。
      *
-     * <p>客户端在多人游戏里没有蓝图文件，因此<b>永远不读本地文件</b>。</p>
+     * <p>客户端在多人游戏里没有蓝图文件，因此<b>永远不读本地文件</b>。
+     * 带 id 却没缓存时返回 null（界面会显示「下载数据」按钮）。</p>
+     *
+     * <p>只允许在客户端线程调用（方法体引用 client 包，专用服务端不执行到这里）。</p>
      */
     @Nullable
     public static BlueprintData getBlueprintDataClient(ItemStack stack) {
-        // SB-TODO(P5): ClientBlueprintCache 读取（S2C 蓝图数据缓存）
-        return null;
+        String id = getBlueprintId(stack);
+        if (id != null && !id.isEmpty()) {
+            return com.xioyim.spatialblueprint.client.ClientBlueprintCache.get(id);
+        }
+        return readInlineData(stack);
     }
 
     // ── 材料清单（内嵌于 BlueprintData）──────────────────────────────────────

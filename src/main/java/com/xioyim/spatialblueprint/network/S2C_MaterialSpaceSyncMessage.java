@@ -170,7 +170,7 @@ public class S2C_MaterialSpaceSyncMessage implements CustomPacketPayload {
     // ── Handler ───────────────────────────────────────────────────────────
 
     public static void handle(S2C_MaterialSpaceSyncMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端材料空间缓存（ClientMaterialSpaceCache.onReceive：增量刷新「已存入 / 需要」，openScreen 时打开查看界面）
+        com.xioyim.spatialblueprint.client.ClientMaterialSpaceCache.onReceive(msg);
     }
 
     /** 便于调试：键的可读形式（带 NBT 的键会保留摘要后缀）。 */

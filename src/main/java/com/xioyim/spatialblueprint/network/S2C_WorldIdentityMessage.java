@@ -51,6 +51,6 @@ public class S2C_WorldIdentityMessage implements CustomPacketPayload {
     }
 
     public static void handle(S2C_WorldIdentityMessage msg, IPayloadContext ctx) {
-        // SB-TODO(P5): 客户端存档身份缓存（原 handleClient：ClientWorldIdentity.set(msg.getUuid(), msg.getName())）
+        com.xioyim.spatialblueprint.client.ClientWorldIdentity.set(msg.getUuid(), msg.getName());
     }
 }
