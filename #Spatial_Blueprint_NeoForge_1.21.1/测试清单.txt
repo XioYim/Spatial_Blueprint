@@ -2,8 +2,8 @@
 
 测试项与实测结果 · AI 写入前必须询问；要不要写由 AI 自己判断，写什么由用户授权
 只收未完成项；已通过项归档（另存文件，头部注明位置）。
-归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入）。
-更新：2026-09-30 20:10:00
+归档：同目录 `测试清单_归档.txt`（SBN-001～006 共 8 组 2026-09-30 00:55:00 移入；SBN-007 2026-09-30 01:30:00 移入；SBN-008 2026-09-30 02:40:00 移入；SBN-009 2026-09-30 10:50:00 移入；SBN-010 2026-09-30 12:30:00 移入；SBN-011 2026-09-30 13:30:00 移入；SBN-012 2026-09-30 15:50:00 移入；SBN-013 2026-09-30 19:05:00 移入；SBN-014 2026-09-30 20:30:00 移入）。
+更新：2026-09-30 20:30:00
 
 ========================================================
 【规矩】
@@ -37,46 +37,3 @@ A1. 旧文件读取基线
     结果：[~] 升级逻辑已由手写样本覆盖；待用户提供真实旧文件
 
 【手测】无。
-
---------------------------------------------------------
-十四、SBN-014 登录事件与兼容 —— 构建 3.0.0（无部署，gametest 服务器 + 专服冒烟实测）[✓]
---------------------------------------------------------
-
-登记 2026-09-30 20:10:00 · 测于 2026-09-30 19:58:04
-
-前置：Zulu 21，compileJava --rerun 通过；runGameTestServer 连跑两轮全过；专服 runServer 起到 Done 后 RCON stop。
-
-【自动】辅助 AI 自己测（结果当场写）：
-A1. 编译 compileJava --rerun
-    预期：BUILD SUCCESSFUL，警告 0 条
-    实际：BUILD SUCCESSFUL，警告 0 条
-    结果：[✓] 全部通过
-A2. GameTest 117 条（SBN001～013 计 109 + SBN014 8）
-    预期：117 条全过
-    实际：========= 117 GAME TESTS COMPLETE IN 5.569 s ======================
-          All 117 required tests passed :)（连跑两轮一致）
-    t01 登录：非 OP 假玩家 post 登录 → TeleportPerm(false)、WorldIdentity（uuid = WorldIdentity、名字 = 存档名）、
-        ConfigPerm(false)，ConfigSync 恰好一次；OP → TeleportPerm(true) + ConfigPerm(true)
-    t02 孤儿袋：文件缺 + 有料 → lost_notice；文件在 → 无；total=0（反射造空袋）→ 无
-    t03 mock 玩家（配置相位）：post 不抛；四步 debug 各自兜住；ORPHAN_BAGS_DETECTED 行政日志照写
-    t04 切模式：SURVIVAL→CREATIVE 放行（当前模式不变，证明用 newGameMode）；CREATIVE→SURVIVAL 拒；
-        授权后 true；OP true
-    t05 登出：撤回冷却、项目列表缓存（冷却重现）、预览清除广播（watcher 收到 origin=null）三清
-    t06 ForagersInsightCompat：true→false 且只改一行、幂等、已是 false 不动、无文件不抛（C28 原字节写回）
-    t07 内联回退：无 id → 升级数据（short_grass / 箱剑）；文件缺 → 用内联；文件在 → 用文件；
-        坏数据（saveMode=99）→ null 且不抛；空间蓝图仍只认文件；调用前后组件逐字相等
-    t08 内联旧物品端到端：创造假玩家 handleServer → 世界 short_grass + 箱第 0 格锋利 III 有名钻石剑
-    结果：[✓] 全部通过
-A3. 专服冒烟（必做）
-    预期：runServer 到 Done、stop 正常、0 条本 mod ERROR（K16）；启动日志无 ForagersInsight 相关异常
-    实际：Done (0.394s)；RCON stop 后 java 全部退出、gradle BUILD SUCCESSFUL；全文 0 条 ERROR、
-        0 条本 mod WARN；stdout 无 ForagersInsight 行（FI 未装 → 静默跳过）
-    结果：[✓] 全部通过
-A4. grep 门禁（必做）
-    预期：主类、command\、network\、server\、log\、util\、item\ 无 net.minecraft.client / 本 mod client / gui /
-        net.minecraftforge 类引用；注释无 SB-TODO( 示例字样
-    实际：0 命中（gui 字符串命中 12 条为既有翻译键 spatial_blueprint.gui.*，非类引用）；
-        全仓桩数 41 = 基线 43 − 3（两条主类 P4 + AbstractBlueprintItem P4）+ 1（登出客户端分支 P5 桩）
-    结果：[✓] 全部通过
-
-【手测】无（登录后界面表现随 P5 / P6；本任务未部署）。
