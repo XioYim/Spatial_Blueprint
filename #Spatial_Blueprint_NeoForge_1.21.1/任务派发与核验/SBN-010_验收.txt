@@ -1,0 +1,25 @@
+SBN-010 验收
+验收：2026-09-30 12:30:00（云端主会话）
+对象：task/SBN-010 @ 9a1dd94
+结论：PASS → 合并进 neoforge-1.21.1
+
+V1 改动清单：34c0293..9a1dd94 的 7 个 .java（5 消息 + BlueprintNetwork + 测试）与任务书第二节两向一致；交接件在规程允许范围内 —— 通过。
+   规程第五节 SBN-010 行的同步提交原写「待推送」，云端验收时回填为 9a1dd94。
+V2 云端复编译：bash gradlew compileJava --rerun BUILD SUCCESSFUL、源文件行号警告 0；runGameTestServer 84 进 84 出。
+   A3 专服冒烟按本地证据审（Done、RCON stop、0 ERROR、0 本 mod WARN）；A4 云端自跑 grep：network\、server\、log\、util\ 无客户端 / gui / net.minecraftforge 引用；
+   注释里无 SB-TODO(（K10）—— 通过。
+V3 5 个搬迁文件：权限 / 冷却 / 槽位 / 选区校验 / 领地 / FORCE 降级 / 存档归属 / 主人 / 容器清理等判定逐文件计数与 1.20.1 全部相等
+   （CaptureArea 20、CaptureProjection 15、Engineering 13、VoidRecapture 10、SubProject 2）。残差只有：
+   saveWithFullMetadata() → saveWithFullMetadata(level.registryAccess())（7 处）、MinecraftForge.EVENT_BUS → NeoForge.EVENT_BUS（2 处）、
+   物品 NBT 直写 → VoidDimensionalBlueprintItem.setCaptureRange / setCreatorName、AbstractBlueprintItem.setBlueprintId，
+   直读 → SpatialBlueprintItem / AbstractBlueprintItem.getBlueprintId 且三处调用点都补了 null → ""（CaptureArea:571 / 584、VoidRecapture:109），
+   与 1.20.1 缺键得 "" 的语义一致 —— 通过。
+V4 76 条注册（52 C2S / 24 S2C）逐条与 1.20.1 c2s / s2c 归类比对，0 处不一致；A4 为空；A5：5 个 decode 无按客户端计数分配；fromOrdinal 3 处行为与 1.20.1 同 —— 通过。
+V5 SB-TODO( 实数 46（本任务新桩 0）—— 通过。
+V6 变异复核（K7）：
+   CaptureAreaMessage:244「FORCE 仅 OP」降级短路 → t06 失败；
+   CaptureAreaMessage:334 领地 evt.isCanceled() 分支短路 → t07 失败；
+   C2S_VoidRecaptureMessage:118 主人校验短路 → t09 失败；三处均已还原 —— 通过。
+   附注：测试里 assertValueEqual 的实际值 / 期望值参数顺序写反，失败信息读起来是反的；不影响判定，下次任务里顺手改。
+
+报告「任务书出入」1～4 接受（t04 实测：SAFE 非 OP 捕获时箱子内容按语义被清，保留路径由 t06 的 OP FORCE 覆盖并逐格往返一致）。
