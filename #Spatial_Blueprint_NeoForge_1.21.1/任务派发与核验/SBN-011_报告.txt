@@ -1,0 +1,104 @@
+SBN-011 报告
+执行：本地辅助 AI · 2026-09-30 13:05:00 · 分支 task/SBN-011（切自 origin/task/SBN-011 @ 9ab94ec）
+提交：待推送（本报告 + 证据 + 交接件随下一提交）
+备份：D:\Mods\项目备份\Spatial_Blueprint_NeoForge_1.21.1_20260930_122914（SHA 前 8 位 05396952，SBN-011 执行前）
+
+一、完成情况：三.1～三.5 逐条
+三.1 LegacyDataFixer 新文件（纯函数，双端可调）：版本口径 + 四个升级函数 + 材料键迁移，见二。
+三.2 BlueprintData.deserialize：SB-TODO(P4) 桩删除；dataVersion 仍记原值；
+  调色板先 fixBlockState 再 readPaletteEntry、TE 先 fixBlockEntity 再进 tileMap（相对坐标键不变，
+  升级后仍按原逻辑覆盖成世界坐标）、实体先 fixEntity 再建条目、材料清单走三.3 重载；
+  needsFix 为 false 逻辑逐字相同（t03）；失败计数超 0 记一条 WARN。serialize 不改。
+三.3 MaterialList：deserialize(tag) 保留（等价 from=current）；新增 deserialize(tag, from[, unupgraded])，
+  升级时旧键迁移、同一新键合并数量、keyTags 换新 components、无 tag 键原样；
+  buildDisplayStack 旧格式分支保留防御、桩注释改“旧键已在载入时迁移，这里只兜底”。
+三.4 MaterialSpace：save 写 DataVersion=int 当前版；load 无字段→3465，迁移 pool/袋/tagRegistry
+  （同键合并），迁移过就 setDirty；有字段且 ≥current 原样。
+三.5 SBUndoData：同口径版本标记；旧数据快照的状态→fixBlockState、BE→fixBlockEntity、实体→fixEntity；
+  迁移过就 setDirty；撤销/冷却规则不改。
+
+二、改动点
+LegacyDataFixer（新，util/LegacyDataFixer.java）：公开方法清单
+  LEGACY_DEFAULT=3465（:31）、current()（:34）、effectiveFrom（:41，≤0→3465）、needsFix（:48，from<current）、
+  FixResult(tag, ok)（:53）、MigratedKey(key, components, ok)（:56，多一个 ok 位，见六.2）、
+  fixBlockState/Entity/Item（:58/:62/:66/:70，薄包装）/ tryFix*（:74/:79/:85/:91，计数用）、
+  runUpdate（:95 私有：DataFixer.update + 非 compound/抛异常→原 copy）、
+  migrateMaterialKey（:118：无# / 无 tag / 不需修→原样；否则组 1.20.1 物品→fixItemStack→取 components→make，
+  附带规范化 components；成功判据见六.1）/ collapsePlainText + collapseTextJson（:145 起，见六.1）。
+BlueprintData.java：import SpatialBlueprintMod（:4）；from/fix/unupgraded（:326-328）；
+  材料清单走重载（:334）；调色板升级（:377-378）；TE 升级（:393-394）；实体升级（:445-446）；
+  WARN（:454-457）。
+MaterialList.java：兜底注释（:179）；deserialize(tag)（:253-254）；deserialize(tag, from, unupgraded)（:264 起，
+  不需修分支是旧体逐字搬）；deserialize(tag, from)（:321-322）。
+MaterialSpace.java：import SpatialBlueprintMod（:4）；版本读取（:322）；迁移+dirty+WARN（:375-380）；
+  migrateLegacyKeys（:389 起：先由 registry 建旧→新映射，再重写 pool/袋计数表，registry 换键）；
+  remapKeys（:421 起）；save 写 DataVersion（:373 附近 putInt，见三）。
+SBUndoData.java：save 写 DataVersion（:58）；版本读取（:79）；deserializeRecord 加参（:90/:141 起）；
+  dirty+WARN（:99-102）。
+
+三、实测（证据/样本.txt 摘录）
+grass → short_grass（fixBlockState，3465→当前；输入不 mutated）。
+旧附魔剑 → components（minecraft:enchantments levels sharpness 3 + custom_name），
+  ItemStack.parse 成功并与 1.21 真实剑 isSameItemSameComponents 一致。
+旧键 minecraft:diamond_sword#legacyA（数量 2）与 #legacyB（同样附魔+RepairCost，数量 3）
+  → 同一新键（== MaterialKey.of(真实锋利 III 命名钻石剑)，逐字相等）数量 5；stone 原样；
+  keyTags 为新 components（可组展示栈，与真实剑一致）。
+版本字段：MaterialSpace / SBUndoData 均用顶层 int "DataVersion"（与已有 pools/bags/players 等键无冲突；
+  NbtUtils 的读写 helper 没用，直接 putInt/getInt + effectiveFrom，少一层间接）。
+  save 写 LegacyDataFixer.current()；load 缺字段→3465；≥current 原样。
+
+四、测试覆盖
+A1 compileJava --rerun：BUILD SUCCESSFUL、0 警告（证据编译.txt；中间因 NbtIo.readCompressed(Path)
+  在 1.21 需 NbtAccounter 参数失败一次，测试改走 SafeNbtIo 后通过）。
+A2 runGameTestServer：91/91（@GameTest 注解实数 91；defaultBatch:0 50 + :1 41）。
+  t01～t07 见证据 GameTest.txt。SBN001～010 的 84 条零改动全过。
+  注：DFU 升级旧箱子/展示框 NBT 时打数条 mojang/DataFixerUpper ERROR（Index mismatch /
+  Unsupported key，schema 遍历内部恢复日志），结果正确，非本 mod 错误。
+A3 专服冒烟：runServer 到 Done (0.433s)、RCON stop 后 java 全退、gradle BUILD SUCCESSFUL、
+  0 条 ERROR、0 条本 mod WARN、FileLogger 目录行 + logs 建出（证据服务端.txt，K16 三条齐）。
+A4 grep 门禁：6 个新改文件 0 命中（client/gui/net.minecraftforge）；注释无 SB-TODO(（K10）。
+迁移桩：删 2 条（BlueprintData deserialize 桩、MaterialList buildDisplayStack 桩；diff 确认只此 2 处 − 行，
+  无 + 行）；新增 0 条；总数 SB-TODO( 实数 44（= 46 − 2 + 0）。
+
+五、迁移桩清单
+删：BlueprintData.java:323 原 SB-TODO(P4) DataFixer 桩；MaterialList.java:179 原 SB-TODO(P4) 旧键迁移桩。
+新增：无（LegacyDataFixer 无桩；MigratedKey 的 ok 位不是桩）。
+总数：44。
+
+六、任务书出入
+1. 成功判据（有意差异）：初版以“旧 tag 残留即失败”判，实测修复器保留 tag 与 components 并存
+   （部分转换），改判据为“无 components 且 tag 残留才是失败”（LegacyDataFixer.java:130-134）。
+2. MigratedKey 多一个 ok 位（key, components, ok）：fix 失败（抛异常/非 compound）时 probe 原样返回，
+   此时 components 缺失、make 会算出纯 ID 键——按 key 是否变化无法区分失败与“旧 tag 被吃光的成功”，
+   故用显式 ok 位；失败时调用方保留原键与原 tag 并计数（与迁移前行为一致）。
+3. 纯文本压平（有意差异，D8 一致性真问题）：修复器 custom_name 写展开形 '{"text":"X"}'，
+   1.21 存盘写裸形 '"X"'（enchantments 逐字相同，调试 prettyPrint 实测），语义同但摘要异——
+   不压则升级出的旧物与新造的同物异键（存入/消耗对不上）。迁移时把纯文本 JSON 压成裸形
+   （custom_name / lore，collapsePlainText；仅单 text 键对象，失败原样保留）。
+   测试用带名剑覆盖（比任务书 t04 要求的无名剑更强）；放置路径用的 NBT 不碰，只影响键计算。
+4. 其余：BE/ENTITY 修复器会递归容器/展示框物品（t02 箱剑与框物品都正确升级），无需手写递归；
+   以源码为准重写处无（J44 结论与实测一致）。
+
+七、双端同步自查
+升级只在读盘时发生（deserialize / SavedData load），纯函数、无随机、无配置、无网络；
+客户端收到的蓝图数据是服务端升级后 serialize 的 1.21 格式。S2C 蓝图数据路径：
+sendBlueprintTo → S2C_BlueprintChunkMessage 分片，
+数据源头 BlueprintStorage.load / C2S_RequestBlueprintDataMessage.handleServer 均走
+BlueprintData.deserialize（已升级），无旁路。LegacyItemMigration（物品半边）与本任务正交，
+互不读写对方字段。
+
+八、教训同步
+基线（规程第五节末表最新同步提交）之后副本 blob 未变（git hash-object == 基线 blob），
+原件与副本 SHA-256 相等，A→C 0 条、C→A 0 条、无冲突。规程第五节追加 SBN-011 行（同步提交待本次推送后回填）。
+
+九、建议记入
+1. K（DFU）：1.20.1→1.21 物品修复器保留旧 tag（与 components 并存），成功判据看 components
+   （或 tag 消失），不能看 tag 残留。指到开发日志 SBN-011 节。
+2. K（D8）：修复器 custom_name 展开形 vs 1.21 裸形，语义同但摘要异；材料键迁移必须压平
+   （LegacyDataFixer.collapsePlainText），否则新旧同物异键。指到开发日志 SBN-011 节。
+3. 以上是否记入、记 K 段哪一号，由主会话问用户后定。
+
+十、需要用户做的事
+无（本任务预期无；旧存档实机升级留待有用户旧文件时，测试清单“旧文件读取基线”继续跟踪）。
+
+推送后对用户说：「已推送，去云端说『验收 SBN-011』」。

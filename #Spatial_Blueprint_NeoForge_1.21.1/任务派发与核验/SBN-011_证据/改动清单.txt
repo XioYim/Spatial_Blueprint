@@ -1,0 +1,20 @@
+SBN-011 改动清单（V1，两向比对）
+时间：2026-09-30 12:59:00 · 基准 origin/neoforge-1.21.1（分支 task/SBN-011 未提交改动）
+
+工作区改动（git status）：
+ M src/main/java/com/xioyim/spatialblueprint/util/BlueprintData.java
+ M src/main/java/com/xioyim/spatialblueprint/util/MaterialList.java
+ M src/main/java/com/xioyim/spatialblueprint/util/MaterialSpace.java
+ M src/main/java/com/xioyim/spatialblueprint/util/SBUndoData.java
+ 新 src/main/java/com/xioyim/spatialblueprint/util/LegacyDataFixer.java
+ 新 src/main/java/com/xioyim/spatialblueprint/gametest/SBN011Tests.java
+
+允许清单（任务书第二节）→ 实际：6 个文件齐备，无多无少。
+BlueprintData：只改 deserialize（桩删除 + from/fix/unupgraded + 调色板/TE/实体三处升级 + 材料清单走重载 + WARN），
+  serialize 与其余方法零改动。
+MaterialList：deserialize 加 from 重载（+ 计数重载）+ buildDisplayStack 桩注释改兜底，其余零改动。
+MaterialSpace：load 加版本读取与迁移 + save 加 DataVersion 字段 + 两个私有迁移方法 + 1 个 import，其余零改动。
+SBUndoData：load 加版本读取与迁移 + save 加 DataVersion 字段 + deserializeRecord 加参升级，其余零改动。
+
+反向（实际 → 允许）：生产代码无允许清单外文件；MaterialKey / LegacyItemMigration / 存储文件格式 /
+ 物品类 / 网络零改动（grep 确认无扩散）。

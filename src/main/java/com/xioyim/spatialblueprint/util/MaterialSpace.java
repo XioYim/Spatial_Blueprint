@@ -1,6 +1,7 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -316,6 +317,11 @@ public class MaterialSpace extends SavedData {
 
     public static MaterialSpace load(CompoundTag tag, HolderLookup.Provider provider) {
         MaterialSpace data = new MaterialSpace();
+        // D2（SBN-011）：读不到版本字段视为 1.20.1 存档，按旧材料键迁移
+        int from = LegacyDataFixer.effectiveFrom(
+                tag.contains("DataVersion", Tag.TAG_INT) ? tag.getInt("DataVersion") : 0);
+        boolean fix = LegacyDataFixer.needsFix(from);
+        int unupgraded = 0;
 
         ListTag poolList = tag.getList("pools", Tag.TAG_COMPOUND);
         for (int i = 0; i < poolList.size(); i++) {
@@ -364,11 +370,70 @@ public class MaterialSpace extends SavedData {
         for (String key : names.getAllKeys()) {
             data.bagNames.put(key, names.getString(key));
         }
+
+        if (fix) {
+            unupgraded = data.migrateLegacyKeys(from);
+            data.setDirty();
+            if (unupgraded > 0) {
+                SpatialBlueprintMod.LOGGER.warn(
+                        "[MaterialSpace] {} material keys could not be upgraded from dataVersion {}",
+                        unupgraded, from);
+            }
+        }
         return data;
+    }
+
+    /**
+     * D2 旧键迁移：先由 tagRegistry（旧键 → 旧 tag）算出旧键 → 新键映射，
+     * 再把 pool / 次元袋里的键按映射重写（同一新键合并数量），tagRegistry 换键并换成新 components。
+     * registry 里没有对应 tag 的键（legacyTag 为 null）按规范原样保留。
+     *
+     * @return 未能升级条目数
+     */
+    private int migrateLegacyKeys(int from) {
+        int unupgraded = 0;
+        Map<String, String> keyMap = new LinkedHashMap<>();
+        Map<String, CompoundTag> newRegistry = new LinkedHashMap<>();
+        for (Map.Entry<String, CompoundTag> e : tagRegistry.entrySet()) {
+            LegacyDataFixer.MigratedKey m =
+                    LegacyDataFixer.migrateMaterialKey(e.getKey(), e.getValue(), from);
+            if (!m.ok()) {
+                unupgraded++;
+                newRegistry.putIfAbsent(e.getKey(), e.getValue());
+            } else {
+                keyMap.put(e.getKey(), m.key());
+                if (m.components() != null) newRegistry.putIfAbsent(m.key(), m.components());
+            }
+        }
+        if (!keyMap.isEmpty()) {
+            for (Map<String, Integer> pool : pools.values()) {
+                remapKeys(pool, keyMap);
+            }
+            for (Map<String, Map<String, Integer>> byBp : bags.values()) {
+                for (Map<String, Integer> bag : byBp.values()) {
+                    remapKeys(bag, keyMap);
+                }
+            }
+        }
+        tagRegistry.clear();
+        tagRegistry.putAll(newRegistry);
+        return unupgraded;
+    }
+
+    /** 按映射重写计数表的键（命中映射的才动，同一新键合并数量）。 */
+    private static void remapKeys(Map<String, Integer> map, Map<String, String> keyMap) {
+        if (map.isEmpty()) return;
+        Map<String, Integer> merged = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : map.entrySet()) {
+            merged.merge(keyMap.getOrDefault(e.getKey(), e.getKey()), e.getValue(), Integer::sum);
+        }
+        map.clear();
+        map.putAll(merged);
     }
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
+        tag.putInt("DataVersion", LegacyDataFixer.current());
         ListTag poolList = new ListTag();
         for (Map.Entry<UUID, Map<String, Integer>> e : pools.entrySet()) {
             if (e.getValue().isEmpty()) continue;

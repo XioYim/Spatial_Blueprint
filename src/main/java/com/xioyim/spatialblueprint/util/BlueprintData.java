@@ -1,6 +1,7 @@
 package com.xioyim.spatialblueprint.util;
 
 import com.xioyim.spatialblueprint.BlueprintConfig;
+import com.xioyim.spatialblueprint.SpatialBlueprintMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -320,15 +321,18 @@ public class BlueprintData {
     public static BlueprintData deserialize(CompoundTag tag) {
         BlueprintData data = new BlueprintData();
 
-        // SB-TODO(P4): DataFixer —— 按 dataVersion 升级调色板方块状态 / TileEntities / Entities（D2）
+        // D2（SBN-011）：按 dataVersion 走原版 DataFixer 升级旧数据；dataVersion 字段仍记原值。
         data.dataVersion = tag.contains("MinecraftDataVersion") ? tag.getInt("MinecraftDataVersion") : 0;
+        final int from = LegacyDataFixer.effectiveFrom(data.dataVersion);
+        final boolean fix = LegacyDataFixer.needsFix(from);
+        final int[] unupgraded = new int[1];
 
         CompoundTag metadata = tag.getCompound("Metadata");
         data.name = metadata.getString("Name");
 
         CompoundTag mod = tag.getCompound("SpatialBlueprintData");
         if (mod.contains("category")) data.category = mod.getString("category");
-        if (mod.contains("materialList")) data.materialList = MaterialList.deserialize(mod.getCompound("materialList"));
+        if (mod.contains("materialList")) data.materialList = MaterialList.deserialize(mod.getCompound("materialList"), from, unupgraded);
         if (mod.contains("creatorName")) data.creatorName = mod.getString("creatorName");
         if (mod.contains("sourceName")) data.sourceName = mod.getString("sourceName");
         if (mod.contains("ownerUuid")) data.ownerUuid = mod.getString("ownerUuid");
@@ -368,7 +372,13 @@ public class BlueprintData {
         ListTag paletteTag = region.getList("BlockStatePalette", 10);
         List<BlockState> palette = new ArrayList<>(paletteTag.size());
         for (int i = 0; i < paletteTag.size(); i++) {
-            palette.add(readPaletteEntry(paletteTag.getCompound(i)));
+            CompoundTag stateTag = paletteTag.getCompound(i);
+            if (fix) {
+                LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockState(stateTag, from);
+                if (!r.ok()) unupgraded[0]++;
+                stateTag = r.tag();
+            }
+            palette.add(readPaletteEntry(stateTag));
         }
         if (palette.isEmpty()) palette.add(Blocks.AIR.defaultBlockState());
         final int bits = LitematicaCodec.bitsPerEntry(palette.size());
@@ -379,6 +389,11 @@ public class BlueprintData {
             ListTag teList = region.getList("TileEntities", 10);
             for (int i = 0; i < teList.size(); i++) {
                 CompoundTag te = teList.getCompound(i);
+                if (fix) {
+                    LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixBlockEntity(te, from);
+                    if (!r.ok()) unupgraded[0]++;
+                    te = r.tag();
+                }
                 tileMap.put(LitematicaCodec.packXYZ(te.getInt("x"), te.getInt("y"), te.getInt("z")), te);
             }
         }
@@ -425,9 +440,21 @@ public class BlueprintData {
         if (region.contains("Entities", 9)) {
             ListTag entitiesTag = region.getList("Entities", 10);
             for (int i = 0; i < entitiesTag.size(); i++) {
-                EntityEntry entry = deserializeEntity(entitiesTag.getCompound(i));
+                CompoundTag entityTag = entitiesTag.getCompound(i);
+                if (fix) {
+                    LegacyDataFixer.FixResult r = LegacyDataFixer.tryFixEntity(entityTag, from);
+                    if (!r.ok()) unupgraded[0]++;
+                    entityTag = r.tag();
+                }
+                EntityEntry entry = deserializeEntity(entityTag);
                 if (entry != null) data.entities.add(entry);
             }
+        }
+
+        if (unupgraded[0] > 0) {
+            SpatialBlueprintMod.LOGGER.warn(
+                    "[BlueprintData] {} entries could not be upgraded from dataVersion {} (blueprint='{}')",
+                    unupgraded[0], data.dataVersion, data.name);
         }
 
         return data;
