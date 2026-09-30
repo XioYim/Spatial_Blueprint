@@ -253,6 +253,19 @@ public class BlueprintNetwork {
         r.playToClient(com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage.TYPE,
                 com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage.STREAM_CODEC,
                 com.xioyim.spatialblueprint.network.s2c.S2C_UploadReportMessage::handle);
+
+        // ── SBN-010（P3c-3）：捕获 5 条（全 C2S）──────────────────────────────
+        r.playToServer(CaptureAreaMessage.TYPE, CaptureAreaMessage.STREAM_CODEC,
+                CaptureAreaMessage::handle);
+        r.playToServer(CaptureProjectionMessage.TYPE, CaptureProjectionMessage.STREAM_CODEC,
+                CaptureProjectionMessage::handle);
+        r.playToServer(C2S_VoidRecaptureMessage.TYPE, C2S_VoidRecaptureMessage.STREAM_CODEC,
+                C2S_VoidRecaptureMessage::handle);
+        r.playToServer(C2S_CreateEngineeringBlueprintMessage.TYPE,
+                C2S_CreateEngineeringBlueprintMessage.STREAM_CODEC,
+                C2S_CreateEngineeringBlueprintMessage::handle);
+        r.playToServer(C2S_CreateSubProjectMessage.TYPE, C2S_CreateSubProjectMessage.STREAM_CODEC,
+                C2S_CreateSubProjectMessage::handle);
     }
 
     // ── D5：蓝图分片传输（保留自有分片）──────────────────────────────────────

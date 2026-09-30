@@ -1,0 +1,16 @@
+SBN-010 专服冒烟证据（A3，必做）
+时间：2026-09-30 11:17:04
+方式：run\ 预置 eula.txt + server.properties（enable-rcon=true, rcon.port=25585, rcon.password=sbtest,
+online-mode=false），`.\gradlew.bat runServer --console=plain` 后台起服，轮询输出到 Done，
+再用 RCON（Source 协议，C:\Users\Yim\AppData\Local\Temp\opencode\rcon_stop.ps1）发 stop，等待进程正常退出。未强杀进程树。
+关键日志（sbn010_runserver_stdout3.log 摘录）：
+  [11:17:04] [Server thread/INFO] [minecraft/DedicatedServer]: Done (0.411s)! For help, type "help"
+  [11:17:04] [Server thread/INFO] [minecraft/RconThread]: RCON running on 0.0.0.0:25585
+  rcon response: Stopping the server
+  随后 java 进程全部退出；gradle runServer 任务 BUILD SUCCESSFUL（20m 37s 含起服等待）。
+ERROR 统计：0 条（全文 grep [ERROR] 为空）。
+本 mod WARN：0 条。
+备注：首次起服脚本轮询了 run/logs/latest.log（陈旧的 GameTest 日志），包装进程提前退出但服务实际到 Done；
+第二次脚本误把 gradle 的 ^C 提示当错误中断；第三次脚本在 RCON 前被工具超时杀掉，服务滞留运行，
+由本轮手动 RCON stop 收尾。起服→Done→RCON stop→正常退出链路完整，无强杀。建议记入见报告九。
+取证后 run\ 整目录删除（沿 SBN-008 做法，dev 产物可再生）。
